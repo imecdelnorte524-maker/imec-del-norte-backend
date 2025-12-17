@@ -1,0 +1,62 @@
+services:
+  backend:
+    build:
+      context: .
+      target: production
+    container_name: imec_del_norte_backend
+    ports:
+      - "4001:4001"
+    environment:
+      - RUN_SEED=true
+      - UPLOADS_PATH=/app/uploads  # Variable para el path de uploads
+    env_file:
+      - .env
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - app-network
+    # 🔥 VOLUMEN PERSISTENTE AÑADIDO AQUÍ 🔥
+    volumes:
+      - uploads_data:/app/uploads
+    healthcheck:
+      test: [ "CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:4001/api/health" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  postgres:
+    image: postgres:16
+    container_name: postgres-db
+    restart: always
+    ports:
+      - "5431:5432"
+    env_file:
+      - .env
+    environment:
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - app-network
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}" ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+# 🔥 VOLÚMENES PERSISTENTES AÑADIDOS 🔥
+volumes:
+  postgres_data:
+    driver: local
+  uploads_data:
+    driver: local
+    name: imec_uploads_data
+networks:
+  app-network:
+    driver: bridge
