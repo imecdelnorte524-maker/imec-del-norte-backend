@@ -9,11 +9,15 @@ import {
   UseGuards,
   Query,
   ParseIntPipe,
-  UploadedFile,
-  UseInterceptors,
-  BadRequestException
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiQuery, ApiConsumes, ApiBody } from '@nestjs/swagger';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiBearerAuth,
+  ApiQuery,
+  ApiBody,
+} from '@nestjs/swagger';
 import { ToolService } from './tool.service';
 import { CreateToolDto } from './dto/create-tools.dto';
 import { UpdateToolDto } from './dto/update-tools.dto';
@@ -22,87 +26,61 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { Tool } from './entities/tool.entity';
-import { FileInterceptor } from '@nestjs/platform-express';
 
 @ApiTags('tool')
 @Controller('tool')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @ApiBearerAuth()
 export class ToolController {
-  constructor(private readonly toolService: ToolService) { }
+  constructor(private readonly toolService: ToolService) {}
 
   @Post()
   @Roles('Administrador', 'Técnico')
-  @UseInterceptors(FileInterceptor('foto'))
   @ApiOperation({
     summary: 'Crear herramienta',
-    description: 'Crea un nuevo herramienta (Administrador y Técnico)'
+    description: 'Crea una nueva herramienta (Administrador y Técnico)',
   })
-  @ApiConsumes('multipart/form-data')
-  @ApiBody({
-    schema: {
-      type: 'object',
-      properties: {
-        nombre: { type: 'string' },
-        marca: { type: 'string' },
-        serial: { type: 'string' },
-        modelo: { type: 'string' },
-        caracteristicasTecnicas: { type: 'string' },
-        observacion: { type: 'string' },
-        tipo: { type: 'string' },
-        estado: { type: 'string' },
-        valorUnitario: { type: 'number' },
-        foto: {
-          type: 'string',
-          format: 'binary',
-        },
-      },
-    },
-  })
-  async create(
-    @Body() createToolDto: CreateToolDto,
-    @UploadedFile() foto?: Express.Multer.File, // Esto funciona, pero mejor usar el tipo correcto
-  ) {
-    // Si hay foto, guardar la ruta
-    if (foto) {
-      createToolDto.fotoUrl = `/uploads/tool/${foto.filename}`;
-    }
-
+  @ApiBody({ type: CreateToolDto })
+  @ApiResponse({ status: 201, description: 'Herramienta creada exitosamente' })
+  async create(@Body() createToolDto: CreateToolDto) {
     const tool = await this.toolService.create(createToolDto);
     return {
-      message: 'Herramienta creado exitosamente',
+      message: 'Herramienta creada exitosamente',
       data: this.mapToResponseDto(tool),
     };
   }
 
-
   @Get()
   @ApiOperation({
-    summary: 'Obtener todos los equipos',
-    description: 'Obtiene la lista de todos los equipos'
+    summary: 'Obtener todas las herramientas',
+    description: 'Obtiene la lista de todas las herramientas',
   })
   @ApiQuery({
     name: 'search',
     required: false,
-    description: 'Buscar equipos por nombre, marca, modelo, serial o tipo'
+    description:
+      'Buscar herramientas por nombre, marca, modelo, serial o tipo',
   })
   @ApiQuery({
     name: 'estado',
     required: false,
-    description: 'Filtrar por estado del herramienta'
+    description: 'Filtrar por estado de la herramienta',
   })
   @ApiQuery({
     name: 'tipo',
     required: false,
-    description: 'Filtrar por tipo de herramienta'
+    description: 'Filtrar por tipo de herramienta',
   })
   @ApiQuery({
     name: 'stats',
     required: false,
-    description: 'Obtener estadísticas de equipos',
-    type: Boolean
+    description: 'Obtener estadísticas de herramientas',
+    type: Boolean,
   })
-  @ApiResponse({ status: 200, description: 'Lista de equipos obtenida exitosamente' })
+  @ApiResponse({
+    status: 200,
+    description: 'Lista de herramientas obtenida exitosamente',
+  })
   async findAll(
     @Query('search') search?: string,
     @Query('estado') estado?: string,
@@ -114,7 +92,7 @@ export class ToolController {
     if (stats) {
       data = await this.toolService.getEquipmentStats();
       return {
-        message: 'Estadísticas de equipos obtenidas exitosamente',
+        message: 'Estadísticas de herramientas obtenidas exitosamente',
         data,
       };
     }
@@ -130,22 +108,25 @@ export class ToolController {
     }
 
     return {
-      message: 'Equipos obtenidos exitosamente',
-      data: data.map(tool => this.mapToResponseDto(tool)),
+      message: 'Herramientas obtenidas exitosamente',
+      data: data.map((tool) => this.mapToResponseDto(tool)),
     };
   }
 
   @Get(':id')
   @ApiOperation({
     summary: 'Obtener herramienta por ID',
-    description: 'Obtiene un herramienta específico por su ID'
+    description: 'Obtiene una herramienta específica por su ID',
   })
-  @ApiResponse({ status: 200, description: 'Herramienta obtenido exitosamente' })
-  @ApiResponse({ status: 404, description: 'Herramienta no encontrado' })
+  @ApiResponse({
+    status: 200,
+    description: 'Herramienta obtenida exitosamente',
+  })
+  @ApiResponse({ status: 404, description: 'Herramienta no encontrada' })
   async findOne(@Param('id', ParseIntPipe) id: number) {
     const tool = await this.toolService.findOne(id);
     return {
-      message: 'Herramienta obtenido exitosamente',
+      message: 'Herramienta obtenida exitosamente',
       data: this.mapToResponseDto(tool),
     };
   }
@@ -154,10 +135,14 @@ export class ToolController {
   @Roles('Administrador', 'Técnico')
   @ApiOperation({
     summary: 'Actualizar herramienta',
-    description: 'Actualiza un herramienta existente (Administrador y Técnico)'
+    description:
+      'Actualiza una herramienta existente (Administrador y Técnico)',
   })
-  @ApiResponse({ status: 200, description: 'Herramienta actualizado exitosamente' })
-  @ApiResponse({ status: 404, description: 'Herramienta no encontrado' })
+  @ApiResponse({
+    status: 200,
+    description: 'Herramienta actualizada exitosamente',
+  })
+  @ApiResponse({ status: 404, description: 'Herramienta no encontrada' })
   @ApiResponse({ status: 409, description: 'El número de serie ya existe' })
   async update(
     @Param('id', ParseIntPipe) id: number,
@@ -165,7 +150,7 @@ export class ToolController {
   ) {
     const tool = await this.toolService.update(id, updateToolDto);
     return {
-      message: 'Herramienta actualizado exitosamente',
+      message: 'Herramienta actualizada exitosamente',
       data: this.mapToResponseDto(tool),
     };
   }
@@ -174,33 +159,45 @@ export class ToolController {
   @Roles('Administrador')
   @ApiOperation({
     summary: 'Eliminar herramienta',
-    description: 'Elimina un herramienta permanentemente (Solo Administrador)'
+    description:
+      'Elimina una herramienta permanentemente (Solo Administrador)',
   })
-  @ApiResponse({ status: 200, description: 'Herramienta eliminado exitosamente' })
-  @ApiResponse({ status: 404, description: 'Herramienta no encontrado' })
-  @ApiResponse({ status: 409, description: 'No se puede eliminar el herramienta porque está en uso' })
+  @ApiResponse({
+    status: 200,
+    description: 'Herramienta eliminada exitosamente',
+  })
+  @ApiResponse({ status: 404, description: 'Herramienta no encontrada' })
+  @ApiResponse({
+    status: 409,
+    description:
+      'No se puede eliminar la herramienta porque está en uso en órdenes de trabajo',
+  })
   async remove(@Param('id', ParseIntPipe) id: number) {
     await this.toolService.remove(id);
     return {
-      message: 'Herramienta eliminado exitosamente',
+      message: 'Herramienta eliminada exitosamente',
     };
   }
 
   @Patch(':id/status')
   @Roles('Administrador', 'Técnico')
   @ApiOperation({
-    summary: 'Actualizar estado del herramienta',
-    description: 'Actualiza el estado de un herramienta (Administrador y Técnico)'
+    summary: 'Actualizar estado de la herramienta',
+    description:
+      'Actualiza el estado de una herramienta (Administrador y Técnico)',
   })
-  @ApiResponse({ status: 200, description: 'Estado del herramienta actualizado exitosamente' })
-  @ApiResponse({ status: 404, description: 'Herramienta no encontrado' })
+  @ApiResponse({
+    status: 200,
+    description: 'Estado de la herramienta actualizado exitosamente',
+  })
+  @ApiResponse({ status: 404, description: 'Herramienta no encontrada' })
   async updateStatus(
     @Param('id', ParseIntPipe) id: number,
     @Body('estado') estado: string,
   ) {
     const tool = await this.toolService.updateStatus(id, estado);
     return {
-      message: 'Estado del herramienta actualizado exitosamente',
+      message: 'Estado de la herramienta actualizado exitosamente',
       data: this.mapToResponseDto(tool),
     };
   }
@@ -218,12 +215,9 @@ export class ToolController {
       tipo: tool.tipo,
       estado: tool.estado,
       valorUnitario: tool.valorUnitario,
-      fotoUrl: tool.fotoUrl,
-      // Información del inventario
       ubicacion: tool.inventory ? tool.inventory.ubicacion : '',
       cantidadActual: tool.inventory ? tool.inventory.cantidadActual : 0,
       inventarioId: tool.inventory ? tool.inventory.inventarioId : undefined,
     };
   }
-
 }

@@ -13,9 +13,6 @@ class SupplyInfo {
   @ApiProperty({ example: 'Par', description: 'Unidad de medida' })
   unidadMedida: string;
 
-  @ApiProperty({ example: 'http://example.com/foto.jpg', description: 'URL de la foto del insumo' })
-  fotoUrl: string;
-
   @ApiProperty({ example: 10, description: 'Stock mínimo' })
   stockMin: number;
 
@@ -41,9 +38,6 @@ class ToolInfo {
 
   @ApiProperty({ example: '87V', description: 'Modelo del herramienta' })
   modelo: string;
-
-  @ApiProperty({ example: 'http://example.com/foto.jpg', description: 'URL de la foto del herramienta' })
-  fotoUrl: string;
 
   @ApiProperty({ example: 'Disponible', description: 'Estado del herramienta' })
   estado: string;

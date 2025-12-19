@@ -87,13 +87,4 @@ export class UpdateToolDto extends PartialType(CreateToolDto) {
   @IsOptional()
   @IsNumber({}, { message: 'El valor unitario debe ser un número' })
   valorUnitario?: number;
-
-  @ApiProperty({
-    example: 'https://example.com/nueva-foto-herramienta.jpg',
-    description: 'URL de la foto del herramienta',
-    required: false,
-  })
-  @IsOptional()
-  @IsString({ message: 'La URL de la foto debe ser una cadena de texto' })
-  fotoUrl?: string;
 }

@@ -63,16 +63,6 @@ export class UpdateSupplyDto extends PartialType(CreateSupplyDto) {
   @IsOptional()
   @IsNumber({}, { message: 'El valor unitario debe ser un número' })
   @Min(0, { message: 'El valor unitario no puede ser negativo' })
-  valorUnitario?: number;
-
-  @ApiProperty({
-    example: 'https://example.com/nueva-foto-insumo.jpg',
-    description: 'URL de la foto del insumo',
-    required: false,
-  })
-  @IsOptional()
-  @IsString({ message: 'La URL de la foto debe ser una cadena de texto' })
-  fotoUrl?: string;
 
   // Campos para actualizar inventario
   @ApiProperty({

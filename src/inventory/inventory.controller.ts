@@ -214,7 +214,6 @@ export class InventoryController {
         nombre: inventory.supply.nombre,
         categoria: inventory.supply.categoria,
         unidadMedida: inventory.supply.unidadMedida,
-        fotoUrl: inventory.supply.fotoUrl,
         stockMin: inventory.supply.stockMin,
         estado: inventory.supply.estado,
         valorUnitario: inventory.supply.valorUnitario,
@@ -228,7 +227,6 @@ export class InventoryController {
         marca: inventory.tool.marca,
         serial: inventory.tool.serial,
         modelo: inventory.tool.modelo,
-        fotoUrl: inventory.tool.fotoUrl,
         estado: inventory.tool.estado,
         valorUnitario: inventory.tool.valorUnitario,
       };

@@ -55,9 +55,6 @@ export class Supply {
   @Column({ name: 'valor_unitario', type: 'decimal', precision: 10, scale: 2 })
   valorUnitario: number;
 
-  @Column({ name: 'foto_url', nullable: true })
-  fotoUrl: string;
-
   @OneToMany(() => Image, (image) => image.supply)
   images: Image[];
 

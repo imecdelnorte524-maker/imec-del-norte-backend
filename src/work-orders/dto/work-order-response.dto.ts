@@ -5,248 +5,156 @@ import {
   WorkNature,
   MaintenanceType,
 } from '../../services/enums/service.enums';
+import { BillingStatus } from '../enums/billing-status.enum';
 
 class ServiceInfo {
-  @ApiProperty({ example: 1, description: 'ID del servicio' })
+  @ApiProperty({ example: 1 })
   servicioId: number;
 
-  @ApiProperty({
-    example: 'Instalación de Aires Acondicionados',
-    description: 'Nombre del servicio',
-  })
+  @ApiProperty({ example: 'Instalación de Aires Acondicionados' })
   nombreServicio: string;
 
-  @ApiProperty({
-    example: 150000.0,
-    description: 'Precio base del servicio',
-  })
+  @ApiProperty({ example: 150000 })
   precioBase: number;
 
-  @ApiProperty({
-    example: 'Aires Acondicionados',
-    description: 'Categoría del servicio (línea de negocio)',
-    enum: ServiceCategory,
-    required: false,
-  })
+  @ApiProperty({ enum: ServiceCategory, required: false })
   categoriaServicio?: ServiceCategory;
 
-  @ApiProperty({
-    example: 'Mantenimiento',
-    description: 'Tipo de trabajo (Instalación, Mantenimiento, Construcción)',
-    enum: WorkNature,
-    required: false,
-  })
+  @ApiProperty({ enum: WorkNature, required: false })
   tipoTrabajo?: WorkNature;
 
-  @ApiProperty({
-    example: 'Preventivo',
-    description:
-      'Tipo de mantenimiento (Preventivo, Correctivo) cuando aplica',
-    enum: MaintenanceType,
-    required: false,
-  })
+  @ApiProperty({ enum: MaintenanceType, required: false })
   tipoMantenimiento?: MaintenanceType;
 }
 
 class UserInfo {
-  @ApiProperty({ example: 1, description: 'ID del usuario' })
+  @ApiProperty({ example: 1 })
   usuarioId: number;
 
-  @ApiProperty({ example: 'Juan', description: 'Nombre del usuario' })
+  @ApiProperty({ example: 'Juan' })
   nombre: string;
 
-  @ApiProperty({ example: 'Pérez', description: 'Apellido del usuario' })
+  @ApiProperty({ example: 'Pérez' })
   apellido: string;
 
-  @ApiProperty({
-    example: 'juan.perez@cliente.com',
-    description: 'Email del usuario',
-  })
+  @ApiProperty({ example: 'juan.perez@correo.com' })
   email: string;
 }
 
 class ClientCompanyInfo {
-  @ApiProperty({ example: 5, description: 'ID del cliente empresa' })
+  @ApiProperty({ example: 5 })
   idCliente: number;
 
-  @ApiProperty({
-    example: 'Empresa XYZ',
-    description: 'Nombre de la empresa',
-  })
+  @ApiProperty({ example: 'Empresa XYZ' })
   nombre: string;
 
-  @ApiProperty({ example: '900123456-7', description: 'NIT de la empresa' })
+  @ApiProperty({ example: '900123456-7' })
   nit: string;
 
-  @ApiProperty({
-    example: 'cliente@empresa.com',
-    description: 'Email del cliente empresa',
-  })
+  @ApiProperty({ example: 'empresa@correo.com' })
   email: string;
 
-  @ApiProperty({
-    example: '3001234567',
-    description: 'Teléfono del cliente empresa',
-  })
+  @ApiProperty({ example: '3001234567' })
   telefono: string;
 
-  @ApiProperty({
-    example: 'Bogotá, Colombia',
-    description: 'Localización del cliente empresa',
-  })
+  @ApiProperty({ example: 'Bogotá, Colombia' })
   localizacion: string;
 }
 
 class EquipmentInfo {
-  @ApiProperty({
-    example: 10,
-    description: 'ID del equipo (hoja de vida) asociado',
-  })
+  @ApiProperty({ example: 10 })
   equipmentId: number;
 
-  @ApiProperty({
-    example: 'Aire acondicionado sala de juntas 1',
-    description: 'Nombre del equipo',
-  })
+  @ApiProperty({ example: 'Aire acondicionado sala juntas' })
   name: string;
 
-  @ApiProperty({
-    example: 'AA-SJ-001',
-    description: 'Código interno del equipo',
-    required: false,
-  })
+  @ApiProperty({ example: 'AA-001', required: false })
   code?: string;
 
-  @ApiProperty({
-    example: 'Aires Acondicionados',
-    description: 'Categoría del equipo',
-    enum: ServiceCategory,
-  })
+  @ApiProperty({ enum: ServiceCategory })
   category: ServiceCategory;
 }
 
 class SupplyDetailInfo {
-  @ApiProperty({ example: 1, description: 'ID del detalle de insumo' })
+  @ApiProperty({ example: 1 })
   detalleInsumoId: number;
 
-  @ApiProperty({ example: 2.5, description: 'Cantidad usada' })
+  @ApiProperty({ example: 2 })
   cantidadUsada: number;
 
-  @ApiProperty({ example: 15000.0, description: 'Costo unitario' })
+  @ApiProperty({ example: 15000 })
   costoUnitarioAlMomento: number;
 
-  @ApiProperty({
-    example: 'Cables de Prueba',
-    description: 'Nombre del insumo',
-  })
+  @ApiProperty({ example: 'Cable eléctrico' })
   nombreInsumo: string;
 }
 
 class ToolDetailInfo {
-  @ApiProperty({ example: 1, description: 'ID del detalle de herramienta' })
+  @ApiProperty({ example: 1 })
   detalleHerramientaId: number;
 
-  @ApiProperty({
-    example: '4 horas',
-    description: 'Tiempo de uso',
-  })
+  @ApiProperty({ example: '4 horas' })
   tiempoUso: string;
 
-  @ApiProperty({
-    example: 'Multímetro Digital',
-    description: 'Nombre de la herramienta',
-  })
+  @ApiProperty({ example: 'Taladro' })
   nombreHerramienta: string;
 
-  @ApiProperty({ example: 'Fluke', description: 'Marca de la herramienta' })
+  @ApiProperty({ example: 'Bosch' })
   marca: string;
 }
 
 export class WorkOrderResponseDto {
-  @ApiProperty({ example: 1, description: 'ID de la orden de trabajo' })
+  @ApiProperty({ example: 1 })
   ordenId: number;
 
-  @ApiProperty({ type: ServiceInfo, description: 'Información del servicio' })
+  @ApiProperty({ type: ServiceInfo })
   service: ServiceInfo;
 
-  @ApiProperty({
-    type: ClientCompanyInfo,
-    description: 'Información del cliente empresa',
-    required: false,
-  })
+  @ApiProperty({ type: ClientCompanyInfo, required: false })
   clienteEmpresa?: ClientCompanyInfo;
 
-  @ApiProperty({ type: UserInfo, description: 'Información del cliente' })
+  @ApiProperty({ type: UserInfo })
   cliente: UserInfo;
 
-  @ApiProperty({
-    type: UserInfo,
-    description: 'Información del técnico',
-    required: false,
-  })
+  @ApiProperty({ type: UserInfo, required: false })
   tecnico?: UserInfo;
 
   @ApiProperty({
-    type: EquipmentInfo,
-    description: 'Información del equipo asociado (hoja de vida)',
-    required: false,
+    type: [EquipmentInfo],
+    description: 'Equipos asociados a la orden',
   })
-  equipo?: EquipmentInfo;
+  equipos: EquipmentInfo[];
 
-  @ApiProperty({
-    example: '2024-01-01T00:00:00.000Z',
-    description: 'Fecha de solicitud',
-  })
+  @ApiProperty()
   fechaSolicitud: Date;
 
-  @ApiProperty({
-    example: '2024-01-15T08:00:00.000Z',
-    description: 'Fecha de inicio',
-    required: false,
-  })
+  @ApiProperty({ required: false })
   fechaInicio?: Date;
 
-  @ApiProperty({
-    example: '2024-01-15T12:00:00.000Z',
-    description: 'Fecha de finalización',
-    required: false,
-  })
+  @ApiProperty({ required: false })
   fechaFinalizacion?: Date;
 
-  @ApiProperty({
-    example: 'En proceso',
-    description: 'Estado de la orden',
-    enum: WorkOrderStatus,
-  })
+  @ApiProperty({ enum: WorkOrderStatus })
   estado: WorkOrderStatus;
 
-  @ApiProperty({
-    example: 'Trabajo en progreso',
-    description: 'Comentarios',
-  })
+  @ApiProperty({ required: false })
   comentarios?: string;
 
-  @ApiProperty({
-    type: [SupplyDetailInfo],
-    description: 'Detalles de insumos usados',
-  })
+  @ApiProperty({ type: [SupplyDetailInfo] })
   supplyDetails: SupplyDetailInfo[];
 
-  @ApiProperty({
-    type: [ToolDetailInfo],
-    description: 'Detalles de equipos/herramientas asignados',
-  })
+  @ApiProperty({ type: [ToolDetailInfo] })
   toolDetails: ToolDetailInfo[];
 
-  @ApiProperty({
-    example: 37500.0,
-    description: 'Costo total de insumos',
-  })
+  @ApiProperty()
   costoTotalInsumos: number;
 
-  @ApiProperty({
-    example: 187500.0,
-    description: 'Costo total estimado (servicio + insumos)',
-  })
+  @ApiProperty()
   costoTotalEstimado: number;
+
+  @ApiProperty({ enum: BillingStatus })
+  estadoFacturacion: BillingStatus;
+
+  @ApiProperty({ required: false })
+  facturaPdfUrl?: string;
 }

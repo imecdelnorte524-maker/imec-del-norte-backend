@@ -23,6 +23,7 @@ import { AddSupplyDetailDto } from './dto/add-supply-detail.dto';
 import { AddToolDetailDto } from './dto/add-tool-detail.dto';
 import { ToolStatus, SupplyStatus } from 'src/shared/enums';
 import { WorkOrderStatus } from './enums/work-order-status.enum';
+import { BillingStatus } from './enums/billing-status.enum';
 
 @Injectable()
 export class WorkOrdersService {
@@ -66,147 +67,22 @@ export class WorkOrdersService {
    *    - Si no envía clienteId, se usa idUsuarioContacto del cliente empresa.
    */
   async create(
-    createWorkOrderDto: CreateWorkOrderDto,
+    dto: CreateWorkOrderDto,
     currentUser: any,
   ): Promise<WorkOrder> {
-    const service = await this.servicesRepository.findOne({
-      where: { servicioId: createWorkOrderDto.servicioId },
-    });
-    if (!service) {
-      throw new NotFoundException(
-        `Servicio con ID ${createWorkOrderDto.servicioId} no encontrado`,
-      );
-    }
-
-    const currentRoleName = this.getRoleName(currentUser);
-
-    let clienteEmpresa: Client | null = null;
-
-    // === LÓGICA PARA CLIENTE ===
-    if (currentRoleName === 'Cliente') {
-      // Buscar empresas donde este usuario es el contacto
-      const companies = await this.clientsRepository.find({
-        where: { idUsuarioContacto: currentUser.userId },
-      });
-
-      if (!companies.length) {
-        // Aquí el frontend puede detectar este mensaje y mostrar el botón "Crear empresa"
-        throw new ForbiddenException(
-          'No tiene una empresa registrada. Debe crear una empresa antes de solicitar una orden de servicio.',
-        );
-      }
-
-      if (companies.length === 1) {
-        clienteEmpresa = companies[0];
-      } else {
-        // Si en tu modelo un cliente puede ser contacto de varias empresas,
-        // aquí podrías permitir que envíe clienteEmpresaId y validarlo.
-        if (createWorkOrderDto.clienteEmpresaId) {
-          const selected = companies.find(
-            (c) => c.idCliente === createWorkOrderDto.clienteEmpresaId,
-          );
-          if (!selected) {
-            throw new ForbiddenException(
-              'No tiene permiso para crear órdenes para esta empresa',
-            );
-          }
-          clienteEmpresa = selected;
-        } else {
-          throw new ForbiddenException(
-            'Tiene más de una empresa asociada. Debe seleccionar la empresa para la orden de servicio.',
-          );
-        }
-      }
-
-      // Forzamos la empresa y el cliente en el DTO
-      createWorkOrderDto.clienteEmpresaId = clienteEmpresa.idCliente;
-      createWorkOrderDto.clienteId = currentUser.userId;
-    }
-
-    // === LÓGICA PARA ADMIN (u otros roles con permiso futuro) ===
-    else {
-      if (!createWorkOrderDto.clienteEmpresaId) {
-        throw new BadRequestException(
-          'El ID del cliente empresa es requerido',
-        );
-      }
-
-      clienteEmpresa = await this.clientsRepository.findOne({
-        where: { idCliente: createWorkOrderDto.clienteEmpresaId },
-      });
-      if (!clienteEmpresa) {
-        throw new NotFoundException(
-          `Cliente empresa con ID ${createWorkOrderDto.clienteEmpresaId} no encontrado`,
-        );
-      }
-
-      // Si no se envía clienteId, usar el usuarioContacto de la empresa
-      if (!createWorkOrderDto.clienteId) {
-        createWorkOrderDto.clienteId = clienteEmpresa.idUsuarioContacto;
-      }
-    }
-
-    // Validar cliente (usuario)
-    const cliente = await this.usersRepository.findOne({
-      where: { usuarioId: createWorkOrderDto.clienteId },
-    });
-    if (!cliente) {
-      throw new NotFoundException(
-        `Cliente (usuario) con ID ${createWorkOrderDto.clienteId} no encontrado`,
-      );
-    }
-
-    // Validar técnico si viene
-    if (createWorkOrderDto.tecnicoId) {
-      const tecnico = await this.usersRepository
-        .createQueryBuilder('user')
-        .leftJoinAndSelect('user.role', 'role')
-        .where('user.usuarioId = :id', { id: createWorkOrderDto.tecnicoId })
-        .andWhere('role.nombreRol = :rol', { rol: 'Técnico' })
-        .getOne();
-
-      if (!tecnico) {
-        throw new NotFoundException(
-          `Técnico con ID ${createWorkOrderDto.tecnicoId} no encontrado o no tiene rol Técnico`,
-        );
-      }
-    }
-
-    // Validar equipo si viene
-    if (createWorkOrderDto.equipoId) {
-      const equipment = await this.equipmentRepository.findOne({
-        where: { equipmentId: createWorkOrderDto.equipoId },
-      });
-      if (!equipment) {
-        throw new NotFoundException(
-          `Equipo con ID ${createWorkOrderDto.equipoId} no encontrado`,
-        );
-      }
-    }
-
-    const estadoInicial = createWorkOrderDto.tecnicoId
-      ? WorkOrderStatus.REQUESTED_ASSIGNED
-      : WorkOrderStatus.REQUESTED_UNASSIGNED;
-
-    const workOrder = this.workOrdersRepository.create({
-      ...createWorkOrderDto,
-      estado: estadoInicial,
-    });
-
+    const workOrder = this.workOrdersRepository.create(dto);
     const saved = await this.workOrdersRepository.save(workOrder);
-
-    // Recargar la orden con todas las relaciones
-    return await this.findOne(saved.ordenId);
+    return this.findOne(saved.ordenId);
   }
 
   async findAll(): Promise<WorkOrder[]> {
-    return await this.workOrdersRepository.find({
+    return this.workOrdersRepository.find({
       relations: [
         'service',
         'cliente',
         'clienteEmpresa',
         'tecnico',
-        'equipment',
+        'equipments',
         'supplyDetails',
         'supplyDetails.supply',
         'toolDetails',
@@ -224,7 +100,7 @@ export class WorkOrdersService {
         'cliente',
         'clienteEmpresa',
         'tecnico',
-        'equipment',
+        'equipments',
         'supplyDetails',
         'supplyDetails.supply',
         'toolDetails',
@@ -233,9 +109,7 @@ export class WorkOrdersService {
     });
 
     if (!workOrder) {
-      throw new NotFoundException(
-        `Orden de trabajo con ID ${id} no encontrada`,
-      );
+      throw new NotFoundException(`Orden ${id} no encontrada`);
     }
 
     return workOrder;
@@ -317,9 +191,7 @@ export class WorkOrdersService {
     }
 
     if (workOrder.clienteId !== currentUser.userId) {
-      throw new ForbiddenException(
-        'No tiene permiso para cancelar esta orden',
-      );
+      throw new ForbiddenException('No tiene permiso para cancelar esta orden');
     }
 
     if (
@@ -653,17 +525,28 @@ export class WorkOrdersService {
   }
 
   async getWorkOrdersByStatus(estado: string): Promise<WorkOrder[]> {
-    return await this.workOrdersRepository.find({
-      where: { estado: estado as WorkOrderStatus },
-      relations: [
-        'service',
-        'cliente',
-        'clienteEmpresa',
-        'tecnico',
-        'equipment',
-      ],
-      order: { fechaSolicitud: 'DESC' },
-    });
+    return await this.workOrdersRepository
+      .createQueryBuilder('workOrder')
+      .leftJoinAndSelect('workOrder.service', 'service')
+      .leftJoinAndSelect('workOrder.cliente', 'cliente')
+      .leftJoinAndSelect('workOrder.clienteEmpresa', 'clienteEmpresa')
+      .leftJoinAndSelect('workOrder.tecnico', 'tecnico')
+      .leftJoinAndSelect('workOrder.equipment', 'equipment')
+      .where('workOrder.estado = :estado', {
+        estado: estado as WorkOrderStatus,
+      })
+      .orderBy(
+        `
+      CASE
+        WHEN workOrder.estado = :pendiente THEN 1
+        ELSE 2
+      END
+      `,
+        'ASC',
+      )
+      .setParameter('pendiente', WorkOrderStatus.REQUESTED_UNASSIGNED)
+      .addOrderBy('workOrder.createdAt', 'DESC')
+      .getMany();
   }
 
   async getWorkOrdersByClient(clienteId: number): Promise<WorkOrder[]> {
@@ -836,5 +719,29 @@ export class WorkOrdersService {
       }
     }
     return result;
+  }
+
+  async uploadInvoice(
+    ordenId: number,
+    file: Express.Multer.File,
+  ): Promise<WorkOrder> {
+    const workOrder = await this.findOne(ordenId);
+
+    if (workOrder.estado !== WorkOrderStatus.COMPLETED) {
+      throw new BadRequestException(
+        'Solo se puede facturar una orden que esté Finalizada',
+      );
+    }
+
+    if (workOrder.estadoFacturacion === BillingStatus.BILLED) {
+      throw new BadRequestException('La orden ya está facturada');
+    }
+
+    // ✅ Usar el prefijo estático real
+    workOrder.facturaPdfUrl = `/api/uploads/invoices/${file.filename}`;
+    workOrder.estadoFacturacion = BillingStatus.BILLED;
+
+    await this.workOrdersRepository.save(workOrder);
+    return this.findOne(ordenId);
   }
 }

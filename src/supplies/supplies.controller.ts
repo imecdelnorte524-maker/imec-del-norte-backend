@@ -122,7 +122,6 @@ export class SuppliesController {
       fechaRegistro: supply.fechaRegistro,
       stockMin: supply.stockMin,
       valorUnitario: supply.valorUnitario,
-      fotoUrl: supply.fotoUrl,
       ubicacion: supply.inventory?.ubicacion ?? '',
       cantidadActual: supply.inventory?.cantidadActual ?? 0,
       inventarioId: supply.inventory?.inventarioId,

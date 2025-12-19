@@ -56,12 +56,6 @@ export class SupplyResponseDto {
   })
   valorUnitario: number;
 
-  @ApiProperty({
-    example: 'https://example.com/foto-insumo.jpg',
-    description: 'URL de la foto del insumo',
-  })
-  fotoUrl: string;
-
   // NUEVO: Información del inventario
   @ApiProperty({
     example: 'Almacén Principal - Estante A',

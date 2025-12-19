@@ -1,3 +1,4 @@
+// src/equipment/equipment.controller.ts
 import {
   Controller,
   Get,
@@ -21,7 +22,6 @@ import { EquipmentService } from './equipment.service';
 import { CreateEquipmentDto } from './dto/create-equipment.dto';
 import { UpdateEquipmentDto } from './dto/update-equipment.dto';
 import { EquipmentResponseDto } from './dto/equipment-response.dto';
-import { AddEquipmentPhotoDto } from './dto/add-equipment-photo.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -125,7 +125,10 @@ export class EquipmentController {
     @Param('id', ParseIntPipe) id: number,
     @Body() updateEquipmentDto: UpdateEquipmentDto,
   ) {
-    const equipment = await this.equipmentService.update(id, updateEquipmentDto);
+    const equipment = await this.equipmentService.update(
+      id,
+      updateEquipmentDto,
+    );
     return {
       message: 'Equipo actualizado exitosamente',
       data: this.mapToResponseDto(equipment),
@@ -137,7 +140,7 @@ export class EquipmentController {
   @ApiOperation({
     summary: 'Eliminar equipo',
     description:
-      'Elimina un equipo permanentemente (incluye sus fotos asociadas)',
+      'Elimina un equipo permanentemente (y las imágenes asociadas en Cloudinary)',
   })
   @ApiResponse({ status: 200, description: 'Equipo eliminado exitosamente' })
   @ApiResponse({ status: 404, description: 'Equipo no encontrado' })
@@ -145,42 +148,6 @@ export class EquipmentController {
     await this.equipmentService.remove(id);
     return {
       message: 'Equipo eliminado exitosamente',
-    };
-  }
-
-  @Post(':id/photos')
-  @Roles('Administrador', 'Técnico')
-  @ApiOperation({
-    summary: 'Agregar foto a equipo',
-    description: 'Agrega una foto (por URL) a la hoja de vida del equipo',
-  })
-  @ApiResponse({ status: 201, description: 'Foto agregada exitosamente' })
-  async addPhoto(
-    @Param('id', ParseIntPipe) id: number,
-    @Body() addEquipmentPhotoDto: AddEquipmentPhotoDto,
-  ) {
-    const photo = await this.equipmentService.addPhoto(id, addEquipmentPhotoDto);
-    return {
-      message: 'Foto agregada exitosamente al equipo',
-      data: photo,
-    };
-  }
-
-  @Delete(':id/photos/:photoId')
-  @Roles('Administrador', 'Técnico')
-  @ApiOperation({
-    summary: 'Eliminar foto de equipo',
-    description: 'Elimina una foto de la hoja de vida del equipo',
-  })
-  @ApiResponse({ status: 200, description: 'Foto eliminada exitosamente' })
-  @ApiResponse({ status: 404, description: 'Foto no encontrada' })
-  async removePhoto(
-    @Param('id', ParseIntPipe) id: number,
-    @Param('photoId', ParseIntPipe) photoId: number,
-  ) {
-    await this.equipmentService.removePhoto(id, photoId);
-    return {
-      message: 'Foto eliminada exitosamente del equipo',
     };
   }
 
@@ -204,6 +171,10 @@ export class EquipmentController {
             nombreSubArea: equipment.subArea.nombreSubArea,
           }
         : undefined,
+
+      // ✅ CLAVE
+      orderId: equipment.workOrderId ?? null,
+
       category: equipment.category,
       name: equipment.name,
       code: equipment.code,
@@ -220,15 +191,14 @@ export class EquipmentController {
       notes: equipment.notes,
       createdAt: equipment.createdAt,
       updatedAt: equipment.updatedAt,
-      photos: Array.isArray(equipment.photos)
-        ? equipment.photos.map((p) => ({
-            photoId: p.photoId,
-            equipmentId: p.equipmentId,
-            url: p.url,
-            description: p.description ?? null,
-            createdAt: p.createdAt,
-          }))
-        : [],
+      photos:
+        equipment.images?.map((img) => ({
+          photoId: img.id,
+          equipmentId: equipment.equipmentId,
+          url: img.url,
+          description: null,
+          createdAt: img.created_at.toISOString(),
+        })) ?? [],
     };
   }
 }

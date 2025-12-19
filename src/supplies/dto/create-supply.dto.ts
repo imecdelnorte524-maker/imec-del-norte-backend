@@ -63,9 +63,6 @@ export class CreateSupplyDto {
     description: 'URL de la foto del insumo',
     required: false,
   })
-  @IsOptional()
-  @IsString({ message: 'La URL de la foto debe ser una cadena de texto' })
-  fotoUrl?: string;
 
   // NUEVO: Campos para el inventario asociado
   @ApiProperty({

@@ -84,15 +84,6 @@ export class CreateToolDto {
   @Min(0, { message: 'El valor unitario no puede ser negativo' })
   valorUnitario: number;
 
-  @ApiProperty({
-    example: 'https://example.com/foto-herramienta.jpg',
-    description: 'URL de la foto del herramienta',
-    required: false,
-  })
-  @IsOptional()
-  @IsString({ message: 'La URL de la foto debe ser una cadena de texto' })
-  fotoUrl?: string;
-
   // NUEVO: Campos para el inventario asociado
   @ApiProperty({
     example: 'Almacén Principal - Estante A',

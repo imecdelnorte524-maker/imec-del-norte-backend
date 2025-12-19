@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  Logger,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Image } from './entities/image.entity';
@@ -6,9 +10,12 @@ import { CloudinaryService } from './cloudinary.service';
 import { Tool } from '../tools/entities/tool.entity';
 import { Supply } from '../supplies/entities/supply.entity';
 import { User } from 'src/users/entities/user.entity';
+import { Equipment } from 'src/equipment/entities/equipment.entity';
 
 @Injectable()
 export class ImagesService {
+  private readonly logger = new Logger(ImagesService.name);
+
   constructor(
     @InjectRepository(Image)
     private readonly imageRepo: Repository<Image>,
@@ -21,6 +28,9 @@ export class ImagesService {
 
     @InjectRepository(User)
     private readonly userRepo: Repository<User>,
+
+    @InjectRepository(Equipment)
+    private readonly equipmentRepo: Repository<Equipment>,
 
     private readonly cloudinary: CloudinaryService,
   ) {}
@@ -37,11 +47,26 @@ export class ImagesService {
       throw new NotFoundException('Herramienta no encontrada');
     }
 
+    // BORRAR IMÁGENES ANTERIORES (usando FK tool_id)
+    const existingImages = await this.imageRepo
+      .createQueryBuilder('image')
+      .where('image.tool_id = :id', { id: toolId })
+      .getMany();
+
+    if (existingImages.length) {
+      await Promise.all(
+        existingImages.map((img) =>
+          this.cloudinary.delete(img.public_id),
+        ),
+      );
+      await this.imageRepo.remove(existingImages);
+    }
+
     const upload = await this.cloudinary.upload(file, `tools/${toolId}`);
 
     const image = this.imageRepo.create({
       url: upload.secure_url,
-      publicId: upload.public_id,
+      public_id: upload.public_id,
       folder: 'tools',
       tool,
     });
@@ -49,18 +74,44 @@ export class ImagesService {
     return this.imageRepo.save(image);
   }
 
+  async getToolImages(toolId: number) {
+    // Verificar que la herramienta exista
+    const tool = await this.toolRepo.findOne({
+      where: { herramientaId: toolId },
+    });
+
+    if (!tool) {
+      throw new NotFoundException('Herramienta no encontrada');
+    }
+
+    // Buscar imágenes por la columna FK tool_id
+    const images = await this.imageRepo
+      .createQueryBuilder('image')
+      .where('image.tool_id = :id', { id: toolId })
+      .orderBy('image.created_at', 'DESC')
+      .getMany();
+
+    return images;
+  }
+
   async deleteByTool(tool: Tool) {
-    // Buscar todas las imágenes asociadas a esta herramienta
-    const images = await this.imageRepo.find({ where: { tool } });
+    const images = await this.imageRepo
+      .createQueryBuilder('image')
+      .where('image.tool_id = :id', { id: tool.herramientaId })
+      .getMany();
+
     if (!images.length) return;
 
-    // Primero borrar en Cloudinary
     await Promise.all(
-      images.map(img => this.cloudinary.delete(img.publicId)),
+      images.map((img) => this.cloudinary.delete(img.public_id)),
     );
-
-    // Luego borrar en BD
     await this.imageRepo.remove(images);
+
+    this.logger.log(
+      `Imágenes de herramienta eliminadas. Herramienta=${tool.herramientaId}, imágenes borradas=${images
+        .map((i) => i.id)
+        .join(',')}`,
+    );
   }
 
   // =======================
@@ -75,11 +126,29 @@ export class ImagesService {
       throw new NotFoundException('Insumo no encontrado');
     }
 
-    const upload = await this.cloudinary.upload(file, `supplies/${supplyId}`);
+    // BORRAR IMÁGENES ANTERIORES (FK supply_id)
+    const existingImages = await this.imageRepo
+      .createQueryBuilder('image')
+      .where('image.supply_id = :id', { id: supplyId })
+      .getMany();
+
+    if (existingImages.length) {
+      await Promise.all(
+        existingImages.map((img) =>
+          this.cloudinary.delete(img.public_id),
+        ),
+      );
+      await this.imageRepo.remove(existingImages);
+    }
+
+    const upload = await this.cloudinary.upload(
+      file,
+      `supplies/${supplyId}`,
+    );
 
     const image = this.imageRepo.create({
       url: upload.secure_url,
-      publicId: upload.public_id,
+      public_id: upload.public_id,
       folder: 'supplies',
       supply,
     });
@@ -87,15 +156,47 @@ export class ImagesService {
     return this.imageRepo.save(image);
   }
 
-  // Usado por SuppliesService.remove(...)
+  async getSupplyImages(supplyId: number) {
+    const supply = await this.supplyRepo.findOne({
+      where: { insumoId: supplyId },
+    });
+
+    if (!supply) {
+      throw new NotFoundException('Insumo no encontrado');
+    }
+
+    const images = await this.imageRepo
+      .createQueryBuilder('image')
+      .where('image.supply_id = :id', { id: supplyId })
+      .orderBy('image.created_at', 'DESC')
+      .getMany();
+
+    return images;
+  }
+
   async deleteBySupply(supply: Supply) {
-    const images = await this.imageRepo.find({ where: { supply } });
-    if (!images.length) return;
+    const images = await this.imageRepo
+      .createQueryBuilder('image')
+      .where('image.supply_id = :id', { id: supply.insumoId })
+      .getMany();
+
+    if (!images.length) {
+      this.logger.log(
+        `Insumo ${supply.insumoId} no tiene imágenes asociadas para eliminar`,
+      );
+      return;
+    }
 
     await Promise.all(
-      images.map(img => this.cloudinary.delete(img.publicId)),
+      images.map((img) => this.cloudinary.delete(img.public_id)),
     );
     await this.imageRepo.remove(images);
+
+    this.logger.log(
+      `Imágenes de insumo eliminadas. Insumo=${supply.insumoId}, imágenes borradas=${images
+        .map((i) => i.id)
+        .join(',')}`,
+    );
   }
 
   // =======================
@@ -110,12 +211,16 @@ export class ImagesService {
       throw new NotFoundException('Usuario no encontrado');
     }
 
-    // Opcional: si quieres que solo haya UNA foto de perfil por usuario,
-    // borra primero las anteriores
-    const existingImages = await this.imageRepo.find({ where: { user } });
+    const existingImages = await this.imageRepo
+      .createQueryBuilder('image')
+      .where('image.user_id = :id', { id: userId })
+      .getMany();
+
     if (existingImages.length) {
       await Promise.all(
-        existingImages.map(img => this.cloudinary.delete(img.publicId)),
+        existingImages.map((img) =>
+          this.cloudinary.delete(img.public_id),
+        ),
       );
       await this.imageRepo.remove(existingImages);
     }
@@ -124,7 +229,7 @@ export class ImagesService {
 
     const image = this.imageRepo.create({
       url: upload.secure_url,
-      publicId: upload.public_id,
+      public_id: upload.public_id,
       folder: 'users',
       user,
     });
@@ -141,19 +246,117 @@ export class ImagesService {
       throw new NotFoundException('Usuario no encontrado');
     }
 
-    const images = await this.imageRepo.find({ where: { user } });
+    const images = await this.imageRepo
+      .createQueryBuilder('image')
+      .where('image.user_id = :userId', { userId })
+      .getMany();
 
     if (!images.length) {
-      // No lanzo error, simplemente informo que no había imágenes
+      this.logger.log(
+        `Usuario ${userId} no tiene imágenes asociadas para eliminar`,
+      );
       return { message: 'El usuario no tiene imágenes para eliminar' };
     }
 
     await Promise.all(
-      images.map(img => this.cloudinary.delete(img.publicId)),
+      images.map((img) => this.cloudinary.delete(img.public_id)),
+    );
+    const ids = images.map((img) => img.id);
+    await this.imageRepo.delete(ids);
+
+    this.logger.log(
+      `Fotos de usuario eliminadas. Usuario=${userId}, imágenes borradas=${ids.join(
+        ',',
+      )}`,
+    );
+
+    return { message: 'Fotos de usuario eliminadas correctamente' };
+  }
+
+  async getUserProfilePhoto(userId: number) {
+    const user = await this.userRepo.findOne({
+      where: { usuarioId: userId },
+    });
+
+    if (!user) {
+      throw new NotFoundException('Usuario no encontrado');
+    }
+
+    const image = await this.imageRepo
+      .createQueryBuilder('image')
+      .where('image.user_id = :userId', { userId })
+      .orderBy('image.created_at', 'DESC')
+      .getOne();
+
+    return image ?? null;
+  }
+
+  // =======================
+  //   EQUIPOS
+  // =======================
+  async uploadForEquipment(
+    equipmentId: number,
+    file: Express.Multer.File,
+  ) {
+    const equipment = await this.equipmentRepo.findOne({
+      where: { equipmentId },
+    });
+
+    if (!equipment) {
+      throw new NotFoundException('Equipo no encontrado');
+    }
+
+    const upload = await this.cloudinary.upload(
+      file,
+      `equipment/${equipmentId}`,
+    );
+
+    const image = this.imageRepo.create({
+      url: upload.secure_url,
+      public_id: upload.public_id,
+      folder: 'equipment',
+      equipment,
+    });
+
+    return this.imageRepo.save(image);
+  }
+
+  async getEquipmentImages(equipmentId: number) {
+    const equipment = await this.equipmentRepo.findOne({
+      where: { equipmentId },
+    });
+
+    if (!equipment) {
+      throw new NotFoundException('Equipo no encontrado');
+    }
+
+    const images = await this.imageRepo
+      .createQueryBuilder('image')
+      .where('image.equipment_id = :id', { id: equipmentId })
+      .orderBy('image.created_at', 'DESC')
+      .getMany();
+
+    return images;
+  }
+
+  async deleteByEquipment(equipmentId: number) {
+    const images = await this.imageRepo
+      .createQueryBuilder('image')
+      .where('image.equipment_id = :id', { id: equipmentId })
+      .getMany();
+
+    if (!images.length) return;
+
+    await Promise.all(
+      images.map((img) => this.cloudinary.delete(img.public_id)),
     );
     await this.imageRepo.remove(images);
 
-    return { message: 'Fotos de usuario eliminadas correctamente' };
+    this.logger.log(
+      `Imágenes de equipo eliminadas. Equipo=${equipmentId}, imágenes borradas=${images
+        .map((i) => i.id)
+        .join(',')}`,
+    );
   }
 
   // =======================
@@ -164,7 +367,7 @@ export class ImagesService {
 
     if (!image) throw new NotFoundException('Imagen no encontrada');
 
-    await this.cloudinary.delete(image.publicId);
+    await this.cloudinary.delete(image.public_id);
     await this.imageRepo.remove(image);
 
     return { message: 'Imagen eliminada correctamente' };

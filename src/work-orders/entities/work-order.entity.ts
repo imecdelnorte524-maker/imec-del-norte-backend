@@ -14,6 +14,7 @@ import { ToolDetail } from './tool-detail.entity';
 import { Client } from '../../client/entities/client.entity';
 import { Equipment } from '../../equipment/entities/equipment.entity';
 import { WorkOrderStatus } from '../enums/work-order-status.enum';
+import { BillingStatus } from '../enums/billing-status.enum';
 
 @Entity('ordenes_trabajo')
 export class WorkOrder {
@@ -23,20 +24,14 @@ export class WorkOrder {
   @Column({ name: 'servicio_id' })
   servicioId!: number;
 
-  // Persona de contacto (usuario cliente)
   @Column({ name: 'cliente_id' })
   clienteId!: number;
 
-  // Empresa (cliente empresa)
   @Column({ name: 'cliente_empresa_id', nullable: true })
   clienteEmpresaId?: number;
 
   @Column({ name: 'tecnico_id', nullable: true })
   tecnicoId?: number;
-
-  // Equipo asociado (hoja de vida), opcional
-  @Column({ name: 'equipo_id', nullable: true })
-  equipoId?: number;
 
   @ManyToOne(() => Service)
   @JoinColumn({ name: 'servicio_id' })
@@ -53,10 +48,6 @@ export class WorkOrder {
   @ManyToOne(() => User, { nullable: true })
   @JoinColumn({ name: 'tecnico_id' })
   tecnico?: User;
-
-  @ManyToOne(() => Equipment, { nullable: true })
-  @JoinColumn({ name: 'equipo_id' })
-  equipment?: Equipment;
 
   @CreateDateColumn({ name: 'fecha_solicitud' })
   fechaSolicitud!: Date;
@@ -75,12 +66,26 @@ export class WorkOrder {
   })
   estado!: WorkOrderStatus;
 
+  @Column({
+    name: 'estado_facturacion',
+    type: 'enum',
+    enum: BillingStatus,
+    default: BillingStatus.NOT_BILLED,
+  })
+  estadoFacturacion!: BillingStatus;
+
+  @Column({ name: 'factura_pdf_url', length: 500, nullable: true })
+  facturaPdfUrl?: string;
+
   @Column({ type: 'text', nullable: true })
   comentarios?: string;
 
-  @OneToMany(() => SupplyDetail, (supplyDetail) => supplyDetail.workOrder)
+  @OneToMany(() => SupplyDetail, detail => detail.workOrder)
   supplyDetails!: SupplyDetail[];
 
-  @OneToMany(() => ToolDetail, (toolDetail) => toolDetail.workOrder)
+  @OneToMany(() => ToolDetail, detail => detail.workOrder)
   toolDetails!: ToolDetail[];
+  
+  @OneToMany(() => Equipment, equipment => equipment.workOrder)
+  equipments?: Equipment[];
 }

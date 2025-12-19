@@ -1,19 +1,21 @@
+// src/equipment/entities/equipment.entity.ts
 import {
   Entity,
   PrimaryGeneratedColumn,
   Column,
   ManyToOne,
-  OneToMany,
   JoinColumn,
   CreateDateColumn,
   UpdateDateColumn,
+  OneToMany, // ¡AGREGAR ESTO!
 } from 'typeorm';
 import { Client } from '../../client/entities/client.entity';
 import { Area } from '../../area/entities/area.entity';
 import { SubArea } from '../../sub-area/entities/sub-area.entity';
 import { EquipmentStatus } from '../enums/equipment-status.enum';
 import { ServiceCategory } from '../../services/enums/service.enums';
-import { EquipmentPhoto } from './equipment-photo.entity';
+import { Image } from '../../images/entities/image.entity'; // ¡AGREGAR ESTO!
+import { WorkOrder } from 'src/work-orders/entities/work-order.entity';
 
 @Entity('equipos')
 export class Equipment {
@@ -96,11 +98,6 @@ export class Equipment {
   @Column({ name: 'observaciones', type: 'text', nullable: true })
   notes?: string;
 
-  @OneToMany(() => EquipmentPhoto, (photo) => photo.equipment, {
-    cascade: true,
-  })
-  photos: EquipmentPhoto[];
-
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 
@@ -108,4 +105,18 @@ export class Equipment {
     name: 'updated_at',
   })
   updatedAt: Date;
+
+  // ¡AGREGAR ESTA RELACIÓN!
+  @OneToMany(() => Image, (image) => image.equipment, {
+    cascade: true,
+    eager: true, // Esto carga automáticamente las imágenes
+  })
+  images?: Image[];
+
+  @Column({ name: 'work_order_id', nullable: true })
+  workOrderId?: number;
+
+  @ManyToOne(() => WorkOrder, { nullable: true })
+  @JoinColumn({ name: 'work_order_id' })
+  workOrder?: WorkOrder;
 }

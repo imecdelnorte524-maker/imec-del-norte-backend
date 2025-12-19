@@ -1,193 +1,118 @@
+// src/equipment/dto/equipment-response.dto.ts
 import { ApiProperty } from '@nestjs/swagger';
 
 class ClientInfoDto {
-  @ApiProperty({ example: 1, description: 'ID del cliente empresa' })
+  @ApiProperty({ example: 1 })
   idCliente: number;
 
-  @ApiProperty({ example: 'IMEC DEL NORTE', description: 'Nombre de la empresa' })
+  @ApiProperty({ example: 'IMEC DEL NORTE' })
   nombre: string;
 
-  @ApiProperty({ example: '900123456-7', description: 'NIT de la empresa' })
+  @ApiProperty({ example: '900123456-7' })
   nit: string;
 }
 
 class AreaInfoDto {
-  @ApiProperty({ example: 10, description: 'ID del área' })
+  @ApiProperty({ example: 10 })
   idArea: number;
 
-  @ApiProperty({ example: 'Producción', description: 'Nombre del área' })
+  @ApiProperty({ example: 'Producción' })
   nombreArea: string;
 }
 
 class SubAreaInfoDto {
-  @ApiProperty({ example: 5, description: 'ID de la subárea' })
+  @ApiProperty({ example: 5 })
   idSubArea: number;
 
-  @ApiProperty({ example: 'Línea 1', description: 'Nombre de la subárea' })
+  @ApiProperty({ example: 'Línea 1' })
   nombreSubArea: string;
 }
 
 class EquipmentPhotoDto {
-  @ApiProperty({ example: 1, description: 'ID de la foto' })
+  @ApiProperty({ example: 1 })
   photoId: number;
 
-  @ApiProperty({ example: 12, description: 'ID del equipo al que pertenece' })
+  @ApiProperty({ example: 12 })
   equipmentId: number;
 
-  @ApiProperty({
-    example: 'https://mi-servidor.com/fotos/equipo1.jpg',
-    description: 'URL de la foto',
-  })
+  @ApiProperty({ example: 'https://...' })
   url: string;
 
-  @ApiProperty({
-    example: 'Unidad condensadora vista frontal',
-    description: 'Descripción de la foto',
-    required: false,
-  })
+  @ApiProperty({ required: false })
   description?: string | null;
 
-  @ApiProperty({
-    example: '2025-01-10T14:30:00.000Z',
-    description: 'Fecha de creación de la foto',
-  })
-  createdAt: Date;
+  @ApiProperty()
+  createdAt: string;
 }
 
 export class EquipmentResponseDto {
-  @ApiProperty({ example: 12, description: 'ID del equipo (hoja de vida)' })
+  @ApiProperty({ example: 12 })
   equipmentId: number;
 
-  @ApiProperty({
-    type: ClientInfoDto,
-    description: 'Información del cliente (empresa) dueño del equipo',
-  })
+  @ApiProperty()
   client: ClientInfoDto;
 
-  @ApiProperty({
-    type: AreaInfoDto,
-    required: false,
-    description: 'Área a la que pertenece el equipo (opcional)',
-  })
+  @ApiProperty({ required: false })
   area?: AreaInfoDto;
 
-  @ApiProperty({
-    type: SubAreaInfoDto,
-    required: false,
-    description: 'Subárea a la que pertenece el equipo (opcional)',
-  })
+  @ApiProperty({ required: false })
   subArea?: SubAreaInfoDto;
 
   @ApiProperty({
-    example: 'Aires Acondicionados',
-    description: 'Categoría del equipo',
+    example: 15,
+    description: 'ID de la orden de servicio asociada',
+    required: false,
   })
+  orderId?: number | null;
+
+  @ApiProperty()
   category: string;
 
-  @ApiProperty({
-    example: 'Aire acondicionado sala de juntas 1',
-    description: 'Nombre del equipo',
-  })
+  @ApiProperty()
   name: string;
 
-  @ApiProperty({
-    example: 'AA-SJ-001',
-    description: 'Código interno del equipo',
-    required: false,
-  })
+  @ApiProperty({ required: false })
   code?: string | null;
 
-  @ApiProperty({
-    example: 'LG',
-    description: 'Marca del equipo',
-    required: false,
-  })
+  @ApiProperty({ required: false })
   brand?: string | null;
 
-  @ApiProperty({
-    example: 'Inverter 12000 BTU',
-    description: 'Modelo del equipo',
-    required: false,
-  })
+  @ApiProperty({ required: false })
   model?: string | null;
 
-  @ApiProperty({
-    example: 'SN123456789',
-    description: 'Número de serie',
-    required: false,
-  })
+  @ApiProperty({ required: false })
   serialNumber?: string | null;
 
-  @ApiProperty({
-    example: '12000 BTU',
-    description: 'Capacidad del equipo',
-    required: false,
-  })
+  @ApiProperty({ required: false })
   capacity?: string | null;
 
-  @ApiProperty({
-    example: 'R410A',
-    description: 'Tipo de refrigerante',
-    required: false,
-  })
+  @ApiProperty({ required: false })
   refrigerantType?: string | null;
 
-  @ApiProperty({
-    example: '220V',
-    description: 'Voltaje del equipo',
-    required: false,
-  })
+  @ApiProperty({ required: false })
   voltage?: string | null;
 
-  @ApiProperty({
-    example: 'Sala de juntas 2º piso',
-    description: 'Ubicación física detallada',
-    required: false,
-  })
+  @ApiProperty({ required: false })
   physicalLocation?: string | null;
 
-  @ApiProperty({
-    example: 'Samsung',
-    description: 'Fabricante del equipo',
-    required: false,
-  })
+  @ApiProperty({ required: false })
   manufacturer?: string | null;
 
-  @ApiProperty({
-    example: 'Activo',
-    description: 'Estado del equipo',
-  })
+  @ApiProperty()
   status: string;
 
-  @ApiProperty({
-    example: '2024-05-10T00:00:00.000Z',
-    description: 'Fecha de instalación',
-    required: false,
-  })
+  @ApiProperty({ required: false })
   installationDate?: Date | null;
 
-  @ApiProperty({
-    example: 'Equipo instalado en 2024, requiere mantenimiento anual.',
-    description: 'Observaciones / notas',
-    required: false,
-  })
+  @ApiProperty({ required: false })
   notes?: string | null;
 
-  @ApiProperty({
-    example: '2024-05-01T12:34:56.000Z',
-    description: 'Fecha de creación del registro',
-  })
+  @ApiProperty()
   createdAt: Date;
 
-  @ApiProperty({
-    example: '2024-05-20T09:30:00.000Z',
-    description: 'Fecha de última actualización',
-  })
+  @ApiProperty()
   updatedAt: Date;
 
-  @ApiProperty({
-    type: [EquipmentPhotoDto],
-    description: 'Fotos asociadas al equipo',
-  })
+  @ApiProperty({ type: [EquipmentPhotoDto] })
   photos: EquipmentPhotoDto[];
 }

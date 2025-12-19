@@ -67,12 +67,6 @@ export class ToolResponseDto {
   })
   valorUnitario: number;
 
-  @ApiProperty({
-    example: 'https://example.com/foto-herramienta.jpg',
-    description: 'URL de la foto del herramienta',
-  })
-  fotoUrl: string;
-
   // NUEVO: Información del inventario
   @ApiProperty({
     example: 'Almacén Principal - Estante A',
