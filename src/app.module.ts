@@ -22,6 +22,7 @@ import { MailModule } from './mail/mail.module';
 import { TasksModule } from './tasks/tasks.module';
 import { EquipmentModule } from './equipment/equipment.module';
 import { ImagesModule } from './images/images.module';
+import { DashboardModule } from './dashboard/dashboard.module';
 
 @Module({
   imports: [
@@ -59,6 +60,7 @@ import { ImagesModule } from './images/images.module';
     TasksModule,
     EquipmentModule,
     ImagesModule,
+    DashboardModule,
   ],
 })
 export class AppModule {}

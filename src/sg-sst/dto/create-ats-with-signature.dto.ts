@@ -18,12 +18,20 @@ export class CreateAtsWithSignatureDto {
   @IsOptional()
   area?: string;
 
-  @ApiProperty({ description: 'Descripción del trabajo a realizar', required: false, example: 'Instalación de sistema eléctrico' })
+  @ApiProperty({
+    description: 'Descripción del trabajo a realizar',
+    required: false,
+    example: 'Instalación de sistema eléctrico',
+  })
   @IsString()
   @IsOptional()
   workToPerform?: string;
 
-  @ApiProperty({ description: 'Ubicación del trabajo', required: false, example: 'Edificio Principal - Piso 3' })
+  @ApiProperty({
+    description: 'Ubicación del trabajo',
+    required: false,
+    example: 'Edificio Principal - Piso 3',
+  })
   @IsString()
   @IsOptional()
   location?: string;
@@ -38,22 +46,38 @@ export class CreateAtsWithSignatureDto {
   @IsOptional()
   endTime?: string;
 
-  @ApiProperty({ description: 'Fecha del trabajo', required: false, example: '2024-01-15' })
+  @ApiProperty({
+    description: 'Fecha del trabajo',
+    required: false,
+    example: '2024-01-15',
+  })
   @IsString()
   @IsOptional()
-  date?: string
+  date?: string;
 
-  @ApiProperty({ description: 'Observaciones adicionales', required: false, example: 'Trabajo en área confinada' })
+  @ApiProperty({
+    description: 'Observaciones adicionales',
+    required: false,
+    example: 'Trabajo en área confinada',
+  })
   @IsString()
   @IsOptional()
   observations?: string;
 
-  @ApiProperty({ description: 'Riesgos seleccionados en formato JSON', required: false, example: { fisicos: ['ruido'], quimicos: ['vapores'] } })
+  @ApiProperty({
+    description: 'Riesgos seleccionados en formato JSON',
+    required: false,
+    example: { fisicos: ['ruido'], quimicos: ['vapores'] },
+  })
   @IsObject()
   @IsOptional()
   selectedRisks?: any;
 
-  @ApiProperty({ description: 'Equipos de protección personal requeridos', required: false, example: { cascos: 1, guantes: 2 } })
+  @ApiProperty({
+    description: 'Equipos de protección personal requeridos',
+    required: false,
+    example: { cascos: 1, guantes: 2 },
+  })
   @IsObject()
   @IsOptional()
   requiredPpe?: any;
@@ -66,17 +90,17 @@ export class CreateAtsWithSignatureDto {
   @IsNumber()
   createdBy: number;
 
-  @ApiProperty({ 
-    description: 'Firma del trabajador en formato base64', 
-    example: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA...' 
+  @ApiProperty({
+    description: 'Firma del trabajador en formato base64',
+    example: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA...',
   })
   @IsString()
   signatureData: string;
 
-  @ApiProperty({ 
-    description: 'Tipo de firmante', 
+  @ApiProperty({
+    description: 'Tipo de firmante',
     enum: SignerType,
-    example: SignerType.TECHNICIAN 
+    example: SignerType.TECHNICIAN,
   })
   @IsEnum(SignerType)
   signerType: SignerType;
@@ -85,7 +109,7 @@ export class CreateAtsWithSignatureDto {
   @IsString()
   userName: string;
 
-   @ApiProperty({ description: 'Cédula del trabajador', required: false, example: '123456789' })
+  @ApiProperty({ description: 'Cédula del trabajador', required: false, example: '123456789' })
   @IsString()
   @IsOptional()
   workerIdentification?: string;
@@ -105,8 +129,19 @@ export class CreateAtsWithSignatureDto {
   @IsOptional()
   clientNit?: string;
 
-  @ApiProperty({ description: 'Sub-área de trabajo', required: false, example: 'Subestación eléctrica' })
+  @ApiProperty({
+    description: 'Sub-área de trabajo',
+    required: false,
+    example: 'Subestación eléctrica',
+  })
   @IsString()
   @IsOptional()
   subArea?: string;
+
+  @ApiProperty({
+    description: 'ID de la orden de trabajo asociada',
+    example: 5,
+  })
+  @IsNumber()
+  workOrderId: number;
 }

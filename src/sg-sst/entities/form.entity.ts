@@ -1,21 +1,33 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, OneToOne, OneToMany, ManyToOne, JoinColumn } from 'typeorm';
+// src/sg-sst/entities/form.entity.ts
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  CreateDateColumn,
+  UpdateDateColumn,
+  OneToOne,
+  OneToMany,
+  ManyToOne,
+  JoinColumn,
+} from 'typeorm';
 import { AtsReport } from './ats-report.entity';
 import { HeightWork } from './height-work.entity';
 import { PreoperationalCheck } from './preoperational-check.entity';
 import { Signature } from './signature.entity';
 import { GeneratedPdf } from './generated-pdf.entity';
-import { User } from '../../users/entities/user.entity'; // Ajusta la ruta según tu estructura
+import { User } from '../../users/entities/user.entity';
+import { WorkOrder } from '../../work-orders/entities/work-order.entity';
 
 export enum FormType {
   ATS = 'ATS',
   HEIGHT_WORK = 'HEIGHT_WORK',
-  PREOPERATIONAL = 'PREOPERATIONAL'
+  PREOPERATIONAL = 'PREOPERATIONAL',
 }
 
 export enum FormStatus {
   DRAFT = 'DRAFT',
   PENDING_SST = 'PENDING_SST',
-  COMPLETED = 'COMPLETED'
+  COMPLETED = 'COMPLETED',
 }
 
 @Entity('forms')
@@ -26,14 +38,14 @@ export class Form {
   @Column({
     type: 'enum',
     enum: FormType,
-    default: FormType.PREOPERATIONAL
+    default: FormType.PREOPERATIONAL,
   })
   formType: FormType;
 
   @Column({
     type: 'enum',
     enum: FormStatus,
-    default: FormStatus.DRAFT
+    default: FormStatus.DRAFT,
   })
   status: FormStatus;
 
@@ -58,24 +70,33 @@ export class Form {
   @UpdateDateColumn()
   updatedAt: Date;
 
+  // 🔹 Nueva columna: orden de trabajo asociada
+  @Column({ name: 'work_order_id', nullable: true })
+  workOrderId?: number;
+
   // Relación con el usuario que creó el formulario
-  @ManyToOne(() => User, user => user.forms)
+  @ManyToOne(() => User, (user) => user.forms)
   @JoinColumn({ name: 'userId', referencedColumnName: 'usuarioId' })
   user: User;
 
+  // Relación con la orden de trabajo
+  @ManyToOne(() => WorkOrder, { nullable: true })
+  @JoinColumn({ name: 'work_order_id' })
+  workOrder?: WorkOrder;
+
   // Relations
-  @OneToOne(() => AtsReport, ats => ats.form)
+  @OneToOne(() => AtsReport, (ats) => ats.form)
   atsReport: AtsReport;
 
-  @OneToOne(() => HeightWork, heightWork => heightWork.form)
+  @OneToOne(() => HeightWork, (heightWork) => heightWork.form)
   heightWork: HeightWork;
 
-  @OneToMany(() => PreoperationalCheck, check => check.form)
+  @OneToMany(() => PreoperationalCheck, (check) => check.form)
   preoperationalChecks: PreoperationalCheck[];
 
-  @OneToMany(() => Signature, signature => signature.form)
+  @OneToMany(() => Signature, (signature) => signature.form)
   signatures: Signature[];
 
-  @OneToMany(() => GeneratedPdf, pdf => pdf.form)
+  @OneToMany(() => GeneratedPdf, (pdf) => pdf.form)
   generatedPdfs: GeneratedPdf[];
 }

@@ -13,7 +13,7 @@ import { Client } from '../client/entities/client.entity';
 import { Area } from '../area/entities/area.entity';
 import { SubArea } from '../sub-area/entities/sub-area.entity';
 import { ImagesService } from '../images/images.service';
-import { WorkOrder } from 'src/work-orders/entities/work-order.entity';
+import { WorkOrder } from '../work-orders/entities/work-order.entity';
 
 @Injectable()
 export class EquipmentService {
@@ -26,6 +26,8 @@ export class EquipmentService {
     private readonly areaRepository: Repository<Area>,
     @InjectRepository(SubArea)
     private readonly subAreaRepository: Repository<SubArea>,
+    @InjectRepository(WorkOrder)
+    private readonly workOrderRepository: Repository<WorkOrder>,
     private readonly imagesService: ImagesService,
   ) {}
 
@@ -127,11 +129,35 @@ export class EquipmentService {
       }
     }
 
+    // ✅ Si se envía una orden de trabajo, validarla y asociarla lógicamente
+    if (createEquipmentDto.workOrderId) {
+      const workOrder = await this.workOrderRepository.findOne({
+        where: { ordenId: createEquipmentDto.workOrderId },
+      });
+
+      if (!workOrder) {
+        throw new NotFoundException(
+          `Orden de trabajo con ID ${createEquipmentDto.workOrderId} no encontrada`,
+        );
+      }
+
+      // Opcional: validar que la orden pertenece a la misma empresa (cliente)
+      if (
+        workOrder.clienteEmpresaId &&
+        workOrder.clienteEmpresaId !== createEquipmentDto.clientId
+      ) {
+        throw new BadRequestException(
+          'La orden de trabajo no pertenece a la misma empresa (cliente) del equipo',
+        );
+      }
+    }
+
     const generatedCode = await this.generateEquipmentCode(
       client,
       createEquipmentDto.category,
     );
 
+    // 👇 Aquí no pasamos null explícito, solo dejamos que workOrderId viaje desde el DTO
     const equipment = this.equipmentRepository.create({
       ...createEquipmentDto,
       code: generatedCode,
@@ -153,7 +179,7 @@ export class EquipmentService {
       .leftJoinAndSelect('equipment.area', 'area')
       .leftJoinAndSelect('equipment.subArea', 'subArea')
       .leftJoinAndSelect('equipment.images', 'images')
-      .leftJoinAndSelect('equipment.workOrder', 'workOrder') // ✅
+      .leftJoinAndSelect('equipment.workOrder', 'workOrder')
       .orderBy('equipment.createdAt', 'DESC');
 
     if (params?.clientId) {
@@ -188,7 +214,7 @@ export class EquipmentService {
   async findOne(id: number): Promise<Equipment> {
     const equipment = await this.equipmentRepository.findOne({
       where: { equipmentId: id },
-      relations: ['client', 'area', 'subArea', 'images'],
+      relations: ['client', 'area', 'subArea', 'images', 'workOrder'],
     });
 
     if (!equipment) {
@@ -237,6 +263,7 @@ export class EquipmentService {
       }
     }
 
+    // No permitir cambiar el código manualmente
     if ('code' in updateEquipmentDto) {
       delete (updateEquipmentDto as any).code;
     }

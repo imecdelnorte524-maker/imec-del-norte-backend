@@ -36,6 +36,7 @@ import { Roles } from '../common/decorators/roles.decorator';
 import { WorkOrder } from './entities/work-order.entity';
 import { diskStorage } from 'multer';
 import { FileInterceptor } from '@nestjs/platform-express';
+import * as path from 'path';
 
 @ApiTags('work-orders')
 @Controller('work-orders')
@@ -50,6 +51,7 @@ export class WorkOrdersController {
 
   @Post()
   @Roles('Administrador', 'Cliente')
+  @ApiOperation({ summary: 'Crear una nueva orden de trabajo' })
   async create(@Body() dto: CreateWorkOrderDto, @Req() req: any) {
     const workOrder = await this.workOrdersService.create(dto, req.user);
     const costs = await this.workOrdersService.calculateTotalCost(
@@ -67,8 +69,28 @@ export class WorkOrdersController {
 
   @Get()
   @Roles('Administrador', 'Técnico', 'Secretaria', 'Cliente', 'Supervisor')
+  @ApiOperation({
+    summary:
+      'Obtener órdenes de trabajo (filtradas por rol: técnico/cliente solo ven las suyas)',
+  })
   async findAll(@Req() req: any) {
-    const data = await this.workOrdersService.findAll();
+    const roleName = this.getRoleName(req.user);
+    let data: WorkOrder[];
+
+    // Técnicos: solo sus órdenes
+    // Clientes: solo sus órdenes
+    // Admin / Secretaria / Supervisor: todas
+    if (roleName === 'Técnico') {
+      data = await this.workOrdersService.getWorkOrdersByTechnician(
+        req.user.userId,
+      );
+    } else if (roleName === 'Cliente') {
+      data = await this.workOrdersService.getWorkOrdersByClient(
+        req.user.userId,
+      );
+    } else {
+      data = await this.workOrdersService.findAll();
+    }
 
     const ordersWithCosts = await Promise.all(
       data.map(async (order) => {
@@ -89,21 +111,18 @@ export class WorkOrdersController {
   }
 
   @Get(':id')
+  @ApiOperation({ summary: 'Obtener una orden de trabajo por ID' })
   async findOne(@Param('id', ParseIntPipe) id: number, @Req() req: any) {
     const workOrder = await this.workOrdersService.findOne(id);
     const roleName = this.getRoleName(req.user);
 
-    if (
-      roleName === 'Técnico' &&
-      workOrder.tecnicoId !== req.user.userId
-    ) {
+    // Técnico solo puede ver sus órdenes
+    if (roleName === 'Técnico' && workOrder.tecnicoId !== req.user.userId) {
       throw new ForbiddenException();
     }
 
-    if (
-      roleName === 'Cliente' &&
-      workOrder.clienteId !== req.user.userId
-    ) {
+    // Cliente solo puede ver sus órdenes
+    if (roleName === 'Cliente' && workOrder.clienteId !== req.user.userId) {
       throw new ForbiddenException();
     }
 
@@ -117,6 +136,197 @@ export class WorkOrdersController {
       },
     };
   }
+
+  @Patch(':id')
+  @Roles('Administrador', 'Técnico', 'Secretaria', 'Supervisor')
+  @ApiOperation({ summary: 'Actualizar una orden de trabajo' })
+  async update(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: UpdateWorkOrderDto,
+    @Req() req: any,
+  ) {
+    const workOrder = await this.workOrdersService.update(id, dto, req.user);
+    const costs = await this.workOrdersService.calculateTotalCost(id);
+
+    return {
+      message: 'Orden de trabajo actualizada exitosamente',
+      data: {
+        ...this.mapToResponseDto(workOrder),
+        ...costs,
+      },
+    };
+  }
+
+  @Patch(':id/cancel')
+  @Roles('Cliente')
+  @ApiOperation({ summary: 'Cancelar una orden por parte del cliente' })
+  async cancelByClient(
+    @Param('id', ParseIntPipe) id: number,
+    @Req() req: any,
+  ) {
+    const workOrder = await this.workOrdersService.cancelByClient(
+      id,
+      req.user,
+    );
+    const costs = await this.workOrdersService.calculateTotalCost(id);
+
+    return {
+      message: 'Orden de trabajo cancelada exitosamente',
+      data: {
+        ...this.mapToResponseDto(workOrder),
+        ...costs,
+      },
+    };
+  }
+
+  @Delete(':id')
+  @Roles('Administrador')
+  @ApiOperation({ summary: 'Eliminar una orden de trabajo' })
+  async remove(@Param('id', ParseIntPipe) id: number) {
+    await this.workOrdersService.remove(id);
+    return {
+      message: 'Orden de trabajo eliminada exitosamente',
+    };
+  }
+
+  // Asignar o cambiar el técnico de una orden
+  @Patch(':id/assign-technician')
+  @Roles('Administrador', 'Secretaria', 'Supervisor')
+  @ApiOperation({ summary: 'Asignar o cambiar el técnico de una orden' })
+  async assignTechnician(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: AssignTechnicianDto,
+  ) {
+    const workOrder = await this.workOrdersService.assignTechnician(
+      id,
+      dto.tecnicoId,
+    );
+    const costs = await this.workOrdersService.calculateTotalCost(id);
+
+    return {
+      message: 'Técnico asignado/reasignado correctamente',
+      data: {
+        ...this.mapToResponseDto(workOrder),
+        ...costs,
+      },
+    };
+  }
+
+  // Quitar el técnico de una orden
+  @Delete(':id/technician')
+  @Roles('Administrador', 'Secretaria', 'Supervisor')
+  @ApiOperation({ summary: 'Quitar técnico de una orden de trabajo' })
+  async unassignTechnician(@Param('id', ParseIntPipe) id: number) {
+    const workOrder = await this.workOrdersService.unassignTechnician(id);
+    const costs = await this.workOrdersService.calculateTotalCost(id);
+
+    return {
+      message: 'Técnico removido de la orden correctamente',
+      data: {
+        ...this.mapToResponseDto(workOrder),
+        ...costs,
+      },
+    };
+  }
+
+  // ---------- Insumos ----------
+
+  @Post(':id/supplies')
+  @Roles('Administrador', 'Técnico', 'Secretaria', 'Supervisor')
+  @ApiOperation({ summary: 'Agregar un insumo usado a la orden' })
+  async addSupplyDetail(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: AddSupplyDetailDto,
+  ) {
+    const detail = await this.workOrdersService.addSupplyDetail(id, dto);
+    return {
+      message: 'Detalle de insumo agregado correctamente',
+      data: detail,
+    };
+  }
+
+  @Delete(':id/supplies/:detalleInsumoId')
+  @Roles('Administrador', 'Técnico', 'Secretaria', 'Supervisor')
+  @ApiOperation({ summary: 'Eliminar un insumo usado de la orden' })
+  async removeSupplyDetail(
+    @Param('id', ParseIntPipe) id: number,
+    @Param('detalleInsumoId', ParseIntPipe) detalleInsumoId: number,
+  ) {
+    await this.workOrdersService.removeSupplyDetail(id, detalleInsumoId);
+    return {
+      message: 'Detalle de insumo eliminado correctamente',
+    };
+  }
+
+  // ---------- Herramientas ----------
+
+  @Post(':id/tools')
+  @Roles('Administrador', 'Técnico', 'Secretaria', 'Supervisor')
+  @ApiOperation({ summary: 'Agregar una herramienta usada a la orden' })
+  async addToolDetail(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: AddToolDetailDto,
+  ) {
+    const detail = await this.workOrdersService.addToolDetail(id, dto);
+    return {
+      message: 'Detalle de herramienta agregado correctamente',
+      data: detail,
+    };
+  }
+
+  @Delete(':id/tools/:detalleHerramientaId')
+  @Roles('Administrador', 'Técnico', 'Secretaria', 'Supervisor')
+  @ApiOperation({ summary: 'Eliminar una herramienta usada de la orden' })
+  async removeToolDetail(
+    @Param('id', ParseIntPipe) id: number,
+    @Param('detalleHerramientaId', ParseIntPipe)
+    detalleHerramientaId: number,
+  ) {
+    await this.workOrdersService.removeToolDetail(id, detalleHerramientaId);
+    return {
+      message: 'Detalle de herramienta eliminado correctamente',
+    };
+  }
+
+  // ---------- Facturación / Factura PDF ----------
+
+  @Post(':id/invoice')
+  @Roles('Administrador', 'Secretaria')
+  @ApiOperation({ summary: 'Subir factura PDF para una orden finalizada' })
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: diskStorage({
+        destination: './uploads/invoices',
+        filename: (req, file, cb) => {
+          const uniqueSuffix =
+            Date.now() + '-' + Math.round(Math.random() * 1e9);
+          const ext = path.extname(file.originalname) || '.pdf';
+          cb(null, `invoice-${req.params.id}-${uniqueSuffix}${ext}`);
+        },
+      }),
+    }),
+  )
+  async uploadInvoice(
+    @Param('id', ParseIntPipe) id: number,
+    @UploadedFile() file: Express.Multer.File,
+  ) {
+    if (!file) {
+      throw new BadRequestException('No se ha subido ningún archivo');
+    }
+
+    const workOrder = await this.workOrdersService.uploadInvoice(id, file);
+    const costs = await this.workOrdersService.calculateTotalCost(id);
+
+    return {
+      message: 'Factura subida correctamente',
+      data: {
+        ...this.mapToResponseDto(workOrder),
+        ...costs,
+      },
+    };
+  }
+
+  // ---------- Mapeo de entidad a DTO de respuesta ----------
 
   private mapToResponseDto(workOrder: WorkOrder): WorkOrderResponseDto {
     return {
@@ -132,12 +342,13 @@ export class WorkOrdersController {
       cliente: workOrder.cliente,
       clienteEmpresa: workOrder.clienteEmpresa,
       tecnico: workOrder.tecnico,
-      equipos: workOrder.equipments?.map((e) => ({
-        equipmentId: e.equipmentId,
-        name: e.name,
-        code: e.code,
-        category: e.category,
-      })) || [],
+      equipos:
+        workOrder.equipments?.map((e) => ({
+          equipmentId: e.equipmentId,
+          name: e.name,
+          code: e.code,
+          category: e.category,
+        })) || [],
       supplyDetails: [],
       toolDetails: [],
       costoTotalEstimado: 0,

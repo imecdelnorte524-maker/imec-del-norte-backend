@@ -56,15 +56,7 @@ export class WorkOrdersService {
   }
 
   /**
-   * Crea una orden de trabajo ajustando el cliente/empresa según el rol:
-   * - Cliente:
-   *    - No envía clienteEmpresaId.
-   *    - Se busca automáticamente la(s) empresa(s) donde idUsuarioContacto = userId.
-   *    - Si tiene una empresa, se usa esa.
-   *    - Si no tiene ninguna, se lanza Forbidden para que el frontend muestre botón "Crear empresa".
-   * - Administrador:
-   *    - Debe enviar clienteEmpresaId.
-   *    - Si no envía clienteId, se usa idUsuarioContacto del cliente empresa.
+   * Crea una orden de trabajo.
    */
   async create(
     dto: CreateWorkOrderDto,
@@ -75,21 +67,49 @@ export class WorkOrdersService {
     return this.findOne(saved.ordenId);
   }
 
+  /**
+   * Lista todas las órdenes de trabajo con prioridad:
+   * 1) Solicitada sin asignar
+   * 2) Solicitada asignada
+   * 3) En proceso
+   * 4) Finalizada
+   * 5) Cancelada
+   * Dentro de cada grupo, ordenadas por fechaSolicitud DESC.
+   */
   async findAll(): Promise<WorkOrder[]> {
-    return this.workOrdersRepository.find({
-      relations: [
-        'service',
-        'cliente',
-        'clienteEmpresa',
-        'tecnico',
-        'equipments',
-        'supplyDetails',
-        'supplyDetails.supply',
-        'toolDetails',
-        'toolDetails.tool',
-      ],
-      order: { fechaSolicitud: 'DESC' },
-    });
+    return this.workOrdersRepository
+      .createQueryBuilder('workOrder')
+      .leftJoinAndSelect('workOrder.service', 'service')
+      .leftJoinAndSelect('workOrder.cliente', 'cliente')
+      .leftJoinAndSelect('workOrder.clienteEmpresa', 'clienteEmpresa')
+      .leftJoinAndSelect('workOrder.tecnico', 'tecnico')
+      .leftJoinAndSelect('workOrder.equipments', 'equipments')
+      .leftJoinAndSelect('workOrder.supplyDetails', 'supplyDetails')
+      .leftJoinAndSelect('supplyDetails.supply', 'supply')
+      .leftJoinAndSelect('workOrder.toolDetails', 'toolDetails')
+      .leftJoinAndSelect('toolDetails.tool', 'tool')
+      .orderBy(
+        `
+        CASE
+          WHEN workOrder.estado = :unassigned THEN 1
+          WHEN workOrder.estado = :assigned THEN 2
+          WHEN workOrder.estado = :inProgress THEN 3
+          WHEN workOrder.estado = :completed THEN 4
+          WHEN workOrder.estado = :canceled THEN 5
+          ELSE 6
+        END
+      `,
+        'ASC',
+      )
+      .addOrderBy('workOrder.fechaSolicitud', 'DESC')
+      .setParameters({
+        unassigned: WorkOrderStatus.REQUESTED_UNASSIGNED,
+        assigned: WorkOrderStatus.REQUESTED_ASSIGNED,
+        inProgress: WorkOrderStatus.IN_PROGRESS,
+        completed: WorkOrderStatus.COMPLETED,
+        canceled: WorkOrderStatus.CANCELED,
+      })
+      .getMany();
   }
 
   async findOne(id: number): Promise<WorkOrder> {
@@ -296,12 +316,17 @@ export class WorkOrdersService {
     }
   }
 
+  /**
+   * Asigna o cambia el técnico de una orden.
+   * - Valida que exista un usuario con rol "Técnico".
+   * - Si la orden estaba "Solicitada sin asignar", pasa a "Solicitada asignada".
+   * - Usa UPDATE directo para evitar conflictos con la relación cargada.
+   */
   async assignTechnician(
     ordenId: number,
     tecnicoId: number,
   ): Promise<WorkOrder> {
-    const workOrder = await this.findOne(ordenId);
-
+    // Validar que el técnico exista y tenga rol "Técnico"
     const tecnico = await this.usersRepository
       .createQueryBuilder('user')
       .leftJoinAndSelect('user.role', 'role')
@@ -315,14 +340,57 @@ export class WorkOrdersService {
       );
     }
 
-    workOrder.tecnicoId = tecnicoId;
+    // Obtener la orden para conocer su estado actual
+    const workOrder = await this.findOne(ordenId);
 
-    if (workOrder.estado === WorkOrderStatus.REQUESTED_UNASSIGNED) {
-      workOrder.estado = WorkOrderStatus.REQUESTED_ASSIGNED;
+    const nuevoEstado =
+      workOrder.estado === WorkOrderStatus.REQUESTED_UNASSIGNED
+        ? WorkOrderStatus.REQUESTED_ASSIGNED
+        : workOrder.estado;
+
+    // UPDATE directo
+    await this.workOrdersRepository.update(ordenId, {
+      tecnicoId,
+      estado: nuevoEstado,
+    });
+
+    return this.findOne(ordenId);
+  }
+
+  /**
+   * Quita el técnico de una orden de trabajo.
+   * - No permite quitar técnico si la orden está En proceso, Finalizada o Cancelada.
+   * - Si la orden estaba "Solicitada asignada", se devuelve a "Solicitada sin asignar".
+   * - Usa UPDATE directo para poner tecnico_id en NULL.
+   */
+  async unassignTechnician(ordenId: number): Promise<WorkOrder> {
+    const workOrder = await this.findOne(ordenId);
+
+    if (!workOrder.tecnicoId) {
+      throw new ConflictException('La orden no tiene técnico asignado');
     }
 
-    await this.workOrdersRepository.save(workOrder);
-    return await this.findOne(ordenId);
+    if (
+      workOrder.estado === WorkOrderStatus.IN_PROGRESS ||
+      workOrder.estado === WorkOrderStatus.COMPLETED ||
+      workOrder.estado === WorkOrderStatus.CANCELED
+    ) {
+      throw new ConflictException(
+        'No se puede quitar el técnico de una orden en proceso, finalizada o cancelada',
+      );
+    }
+
+    const nuevoEstado =
+      workOrder.estado === WorkOrderStatus.REQUESTED_ASSIGNED
+        ? WorkOrderStatus.REQUESTED_UNASSIGNED
+        : workOrder.estado;
+
+    await this.workOrdersRepository.update(ordenId, {
+      tecnicoId: null as any,
+      estado: nuevoEstado,
+    });
+
+    return this.findOne(ordenId);
   }
 
   async addSupplyDetail(
@@ -531,7 +599,7 @@ export class WorkOrdersService {
       .leftJoinAndSelect('workOrder.cliente', 'cliente')
       .leftJoinAndSelect('workOrder.clienteEmpresa', 'clienteEmpresa')
       .leftJoinAndSelect('workOrder.tecnico', 'tecnico')
-      .leftJoinAndSelect('workOrder.equipment', 'equipment')
+      .leftJoinAndSelect('workOrder.equipments', 'equipments')
       .where('workOrder.estado = :estado', {
         estado: estado as WorkOrderStatus,
       })
@@ -545,36 +613,80 @@ export class WorkOrdersService {
         'ASC',
       )
       .setParameter('pendiente', WorkOrderStatus.REQUESTED_UNASSIGNED)
-      .addOrderBy('workOrder.createdAt', 'DESC')
+      .addOrderBy('workOrder.fechaSolicitud', 'DESC')
       .getMany();
   }
 
+  /**
+   * Órdenes por cliente, con misma prioridad de estados.
+   */
   async getWorkOrdersByClient(clienteId: number): Promise<WorkOrder[]> {
-    return await this.workOrdersRepository.find({
-      where: { clienteId },
-      relations: [
-        'service',
-        'cliente',
-        'tecnico',
-        'clienteEmpresa',
-        'equipment',
-      ],
-      order: { fechaSolicitud: 'DESC' },
-    });
+    return await this.workOrdersRepository
+      .createQueryBuilder('workOrder')
+      .leftJoinAndSelect('workOrder.service', 'service')
+      .leftJoinAndSelect('workOrder.cliente', 'cliente')
+      .leftJoinAndSelect('workOrder.clienteEmpresa', 'clienteEmpresa')
+      .leftJoinAndSelect('workOrder.tecnico', 'tecnico')
+      .leftJoinAndSelect('workOrder.equipments', 'equipments')
+      .where('workOrder.clienteId = :clienteId', { clienteId })
+      .orderBy(
+        `
+        CASE
+          WHEN workOrder.estado = :unassigned THEN 1
+          WHEN workOrder.estado = :assigned THEN 2
+          WHEN workOrder.estado = :inProgress THEN 3
+          WHEN workOrder.estado = :completed THEN 4
+          WHEN workOrder.estado = :canceled THEN 5
+          ELSE 6
+        END
+      `,
+        'ASC',
+      )
+      .addOrderBy('workOrder.fechaSolicitud', 'DESC')
+      .setParameters({
+        unassigned: WorkOrderStatus.REQUESTED_UNASSIGNED,
+        assigned: WorkOrderStatus.REQUESTED_ASSIGNED,
+        inProgress: WorkOrderStatus.IN_PROGRESS,
+        completed: WorkOrderStatus.COMPLETED,
+        canceled: WorkOrderStatus.CANCELED,
+      })
+      .getMany();
   }
 
+  /**
+   * Órdenes por técnico, con misma prioridad de estados.
+   */
   async getWorkOrdersByTechnician(tecnicoId: number): Promise<WorkOrder[]> {
-    return await this.workOrdersRepository.find({
-      where: { tecnicoId },
-      relations: [
-        'service',
-        'cliente',
-        'clienteEmpresa',
-        'tecnico',
-        'equipment',
-      ],
-      order: { fechaSolicitud: 'DESC' },
-    });
+    return await this.workOrdersRepository
+      .createQueryBuilder('workOrder')
+      .leftJoinAndSelect('workOrder.service', 'service')
+      .leftJoinAndSelect('workOrder.cliente', 'cliente')
+      .leftJoinAndSelect('workOrder.clienteEmpresa', 'clienteEmpresa')
+      .leftJoinAndSelect('workOrder.tecnico', 'tecnico')
+      .leftJoinAndSelect('workOrder.equipments', 'equipments')
+      .where('workOrder.tecnicoId = :tecnicoId', { tecnicoId })
+      .orderBy(
+        `
+        CASE
+          WHEN workOrder.estado = :unassigned THEN 1
+          WHEN workOrder.estado = :assigned THEN 2
+          WHEN workOrder.estado = :inProgress THEN 3
+          WHEN workOrder.estado = :completed THEN 4
+          WHEN workOrder.estado = :canceled THEN 5
+          ELSE 6
+        END
+      `,
+        'ASC',
+      )
+      .addOrderBy('workOrder.fechaSolicitud', 'DESC')
+      .setParameters({
+        unassigned: WorkOrderStatus.REQUESTED_UNASSIGNED,
+        assigned: WorkOrderStatus.REQUESTED_ASSIGNED,
+        inProgress: WorkOrderStatus.IN_PROGRESS,
+        completed: WorkOrderStatus.COMPLETED,
+        canceled: WorkOrderStatus.CANCELED,
+      })
+      .getMany();
   }
 
   async getWorkOrdersByDateRange(
@@ -590,7 +702,7 @@ export class WorkOrdersService {
         'cliente',
         'clienteEmpresa',
         'tecnico',
-        'equipment',
+        'equipments',
       ],
       order: { fechaSolicitud: 'DESC' },
     });
@@ -737,7 +849,6 @@ export class WorkOrdersService {
       throw new BadRequestException('La orden ya está facturada');
     }
 
-    // ✅ Usar el prefijo estático real
     workOrder.facturaPdfUrl = `/api/uploads/invoices/${file.filename}`;
     workOrder.estadoFacturacion = BillingStatus.BILLED;
 

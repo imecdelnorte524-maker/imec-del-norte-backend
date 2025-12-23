@@ -7,10 +7,11 @@ import { Client } from '../client/entities/client.entity';
 import { Area } from '../area/entities/area.entity';
 import { SubArea } from '../sub-area/entities/sub-area.entity';
 import { ImagesModule } from '../images/images.module';
+import { WorkOrder } from '../work-orders/entities/work-order.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Equipment, Client, Area, SubArea]),
+    TypeOrmModule.forFeature([Equipment, Client, Area, SubArea, WorkOrder]),
     ImagesModule,
   ],
   controllers: [EquipmentController],

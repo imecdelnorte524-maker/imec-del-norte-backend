@@ -58,7 +58,7 @@ export class CreateEquipmentDto {
 
   @ApiProperty({
     example: 'AA-SJ-001',
-    description: 'Código interno del equipo (opcional)',
+    description: 'Código interno del equipo (opcional, se autogenera)',
     required: false,
   })
   @IsOptional()
@@ -166,4 +166,14 @@ export class CreateEquipmentDto {
   @IsOptional()
   @IsString({ message: 'Las observaciones deben ser una cadena de texto' })
   notes?: string;
+
+  @ApiProperty({
+    example: 15,
+    description:
+      'ID de la orden de trabajo asociada (instalación/mantenimiento)',
+    required: false,
+  })
+  @IsOptional()
+  @IsNumber({}, { message: 'El ID de la orden de trabajo debe ser un número' })
+  workOrderId?: number;
 }

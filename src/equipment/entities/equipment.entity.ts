@@ -7,15 +7,15 @@ import {
   JoinColumn,
   CreateDateColumn,
   UpdateDateColumn,
-  OneToMany, // ¡AGREGAR ESTO!
+  OneToMany,
 } from 'typeorm';
 import { Client } from '../../client/entities/client.entity';
 import { Area } from '../../area/entities/area.entity';
 import { SubArea } from '../../sub-area/entities/sub-area.entity';
 import { EquipmentStatus } from '../enums/equipment-status.enum';
 import { ServiceCategory } from '../../services/enums/service.enums';
-import { Image } from '../../images/entities/image.entity'; // ¡AGREGAR ESTO!
-import { WorkOrder } from 'src/work-orders/entities/work-order.entity';
+import { Image } from '../../images/entities/image.entity';
+import { WorkOrder } from '../../work-orders/entities/work-order.entity';
 
 @Entity('equipos')
 export class Equipment {
@@ -106,10 +106,9 @@ export class Equipment {
   })
   updatedAt: Date;
 
-  // ¡AGREGAR ESTA RELACIÓN!
   @OneToMany(() => Image, (image) => image.equipment, {
     cascade: true,
-    eager: true, // Esto carga automáticamente las imágenes
+    eager: true,
   })
   images?: Image[];
 

@@ -2,15 +2,16 @@ import {
   Controller,
   Get,
   Post,
-  Put,
   Body,
   Param,
   Query,
   UsePipes,
   ValidationPipe,
   ParseIntPipe,
-  NotFoundException
+  NotFoundException,
+  Res,
 } from '@nestjs/common';
+import { Response } from 'express';
 import { SgSstService } from './sg-sst.service';
 import { CreateAtsDto } from './dto/create-ats.dto';
 import { CreateHeightWorkDto } from './dto/create-height-work.dto';
@@ -26,7 +27,7 @@ import { AuthorizeHeightWorkDto } from './dto/authorize-height-work.dto';
 @Controller('sg-sst')
 @UsePipes(new ValidationPipe({ transform: true }))
 export class SgSstController {
-  constructor(private readonly sgSstService: SgSstService) { }
+  constructor(private readonly sgSstService: SgSstService) {}
 
   // ========== ENDPOINTS PARA CREAR FORMULARIOS ==========
 
@@ -37,13 +38,13 @@ export class SgSstController {
       return {
         success: true,
         message: 'ATS creado exitosamente',
-        data: result
+        data: result,
       };
     } catch (error) {
       return {
         success: false,
         message: 'Error al crear ATS',
-        error: error.message
+        error: (error as any).message,
       };
     }
   }
@@ -51,35 +52,41 @@ export class SgSstController {
   @Post('height-work')
   async createHeightWork(@Body() createHeightWorkDto: CreateHeightWorkDto) {
     try {
-      const result = await this.sgSstService.createHeightWork(createHeightWorkDto);
+      const result =
+        await this.sgSstService.createHeightWork(createHeightWorkDto);
       return {
         success: true,
         message: 'Trabajo en alturas creado exitosamente',
-        data: result
+        data: result,
       };
     } catch (error) {
       return {
         success: false,
         message: 'Error al crear trabajo en alturas',
-        error: error.message
+        error: (error as any).message,
       };
     }
   }
 
   @Post('preoperational')
-  async createPreoperational(@Body() createPreoperationalDto: CreatePreoperationalDto) {
+  async createPreoperational(
+    @Body() createPreoperationalDto: CreatePreoperationalDto,
+  ) {
     try {
-      const result = await this.sgSstService.createPreoperational(createPreoperationalDto);
+      const result =
+        await this.sgSstService.createPreoperational(
+          createPreoperationalDto,
+        );
       return {
         success: true,
         message: 'Checklist preoperacional creado exitosamente',
-        data: result
+        data: result,
       };
     } catch (error) {
       return {
         success: false,
         message: 'Error al crear checklist preoperacional',
-        error: error.message
+        error: (error as any).message,
       };
     }
   }
@@ -89,7 +96,7 @@ export class SgSstController {
   @Post('forms/:id/sign')
   async signForm(
     @Param('id', ParseIntPipe) formId: number,
-    @Body() signFormDto: SignFormDto
+    @Body() signFormDto: SignFormDto,
   ) {
     try {
       const result = await this.sgSstService.signForm(formId, signFormDto);
@@ -98,42 +105,49 @@ export class SgSstController {
       if (signFormDto.signerType === SignerType.TECHNICIAN) {
         message = 'Firma de técnico registrada. Pendiente firma SST';
       } else if (signFormDto.signerType === SignerType.SST) {
-        message = 'Firma de SST registrada. Formulario completado y PDF generado';
+        message =
+          'Firma de SST registrada. Formulario completado y PDF generado';
       }
 
       return {
         success: true,
         message,
-        data: result
+        data: result,
       };
     } catch (error) {
       return {
         success: false,
         message: 'Error al firmar formulario',
-        error: error.message
+        error: (error as any).message,
       };
     }
   }
 
   @Post('forms/:id/authorize-height-work')
-  @ApiOperation({ summary: 'Autorizar un Trabajo en Alturas por parte del personal SST' })
+  @ApiOperation({
+    summary:
+      'Autorizar un Trabajo en Alturas por parte del personal SST',
+  })
   async authorizeHeightWork(
     @Param('id', ParseIntPipe) formId: number,
-    @Body() authorizeHeightWorkDto: AuthorizeHeightWorkDto
+    @Body() authorizeHeightWorkDto: AuthorizeHeightWorkDto,
   ) {
     try {
-      const result = await this.sgSstService.authorizeHeightWork(formId, authorizeHeightWorkDto);
+      const result = await this.sgSstService.authorizeHeightWork(
+        formId,
+        authorizeHeightWorkDto,
+      );
 
       return {
         success: true,
         message: 'Trabajo en Alturas autorizado exitosamente',
-        data: result
+        data: result,
       };
     } catch (error) {
       return {
         success: false,
         message: 'Error al autorizar trabajo en alturas',
-        error: error.message
+        error: (error as any).message,
       };
     }
   }
@@ -147,13 +161,13 @@ export class SgSstController {
       return {
         success: true,
         data: forms,
-        count: forms.length
+        count: forms.length,
       };
     } catch (error) {
       return {
         success: false,
         message: 'Error al obtener formularios',
-        error: error.message
+        error: (error as any).message,
       };
     }
   }
@@ -164,20 +178,20 @@ export class SgSstController {
       const form = await this.sgSstService.findFormById(id);
       return {
         success: true,
-        data: form
+        data: form,
       };
     } catch (error) {
       if (error instanceof NotFoundException) {
         return {
           success: false,
           message: 'Formulario no encontrado',
-          error: error.message
+          error: (error as any).message,
         };
       }
       return {
         success: false,
         message: 'Error al obtener formulario',
-        error: error.message
+        error: (error as any).message,
       };
     }
   }
@@ -189,13 +203,13 @@ export class SgSstController {
       return {
         success: true,
         data: forms,
-        count: forms.length
+        count: forms.length,
       };
     } catch (error) {
       return {
         success: false,
         message: 'Error al obtener formularios por estado',
-        error: error.message
+        error: (error as any).message,
       };
     }
   }
@@ -204,18 +218,18 @@ export class SgSstController {
   async getFormsByType(@Param('type') type: FormType) {
     try {
       const forms = await this.sgSstService.findAllForms();
-      const filteredForms = forms.filter(form => form.formType === type);
+      const filteredForms = forms.filter((form) => form.formType === type);
 
       return {
         success: true,
         data: filteredForms,
-        count: filteredForms.length
+        count: filteredForms.length,
       };
     } catch (error) {
       return {
         success: false,
         message: 'Error al obtener formularios por tipo',
-        error: error.message
+        error: (error as any).message,
       };
     }
   }
@@ -225,20 +239,22 @@ export class SgSstController {
   @Get('forms/:id/can-edit')
   async canEditForm(
     @Param('id', ParseIntPipe) formId: number,
-    @Query('userId', ParseIntPipe) userId: number
+    @Query('userId', ParseIntPipe) userId: number,
   ) {
     try {
       const canEdit = await this.sgSstService.canEditForm(formId, userId);
       return {
         success: true,
         canEdit,
-        message: canEdit ? 'El formulario puede ser editado' : 'El formulario no puede ser editado'
+        message: canEdit
+          ? 'El formulario puede ser editado'
+          : 'El formulario no puede ser editado',
       };
     } catch (error) {
       return {
         success: false,
         message: 'Error al verificar permisos de edición',
-        error: error.message
+        error: (error as any).message,
       };
     }
   }
@@ -254,15 +270,41 @@ export class SgSstController {
           fileName: pdf.fileName,
           filePath: pdf.filePath,
           fileSize: pdf.fileSize,
-          generatedAt: pdf.generatedAt
-        }
+          generatedAt: pdf.generatedAt,
+        },
       };
     } catch (error) {
       return {
         success: false,
         message: 'Error al generar PDF',
-        error: error.message
+        error: (error as any).message,
       };
+    }
+  }
+
+  // DESCARGA DIRECTA DEL PDF
+  @Get('forms/:id/download-pdf')
+  async downloadPdf(
+    @Param('id', ParseIntPipe) formId: number,
+    @Res() res: Response,
+  ) {
+    try {
+      const pdf = await this.sgSstService.generatePdf(formId);
+
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader(
+        'Content-Disposition',
+        `attachment; filename="${pdf.fileName || 'reporte_sgsst.pdf'}"`,
+      );
+      res.setHeader('Content-Length', pdf.fileSize.toString());
+
+      return res.send(pdf.pdfData);
+    } catch (error) {
+      return res.status(500).json({
+        success: false,
+        message: 'Error al generar/descargar PDF',
+        error: (error as any).message,
+      });
     }
   }
 
@@ -275,90 +317,64 @@ export class SgSstController {
 
       const stats = {
         total: forms.length,
-        draft: forms.filter(f => f.status === FormStatus.DRAFT).length,
-        pendingSst: forms.filter(f => f.status === FormStatus.PENDING_SST).length,
-        completed: forms.filter(f => f.status === FormStatus.COMPLETED).length,
+        draft: forms.filter((f) => f.status === FormStatus.DRAFT).length,
+        pendingSst: forms.filter(
+          (f) => f.status === FormStatus.PENDING_SST,
+        ).length,
+        completed: forms.filter(
+          (f) => f.status === FormStatus.COMPLETED,
+        ).length,
         byType: {
-          ats: forms.filter(f => f.formType === FormType.ATS).length,
-          heightWork: forms.filter(f => f.formType === FormType.HEIGHT_WORK).length,
-          preoperational: forms.filter(f => f.formType === FormType.PREOPERATIONAL).length,
-        }
+          ats: forms.filter((f) => f.formType === FormType.ATS).length,
+          heightWork: forms.filter(
+            (f) => f.formType === FormType.HEIGHT_WORK,
+          ).length,
+          preoperational: forms.filter(
+            (f) => f.formType === FormType.PREOPERATIONAL,
+          ).length,
+        },
       };
 
       return {
         success: true,
-        data: stats
+        data: stats,
       };
     } catch (error) {
       return {
         success: false,
         message: 'Error al obtener estadísticas',
-        error: error.message
+        error: (error as any).message,
       };
     }
   }
 
-  // En src/sg-sst/sg-sst.controller.ts - Añadir este endpoint
+  // ========== ENDPOINTS CON FIRMA INCLUIDA ==========
+
   @Post('ats-with-signature')
-  @ApiOperation({ summary: 'Crear un ATS completo incluyendo la firma del trabajador' })
+  @ApiOperation({
+    summary: 'Crear un ATS completo incluyendo la firma del trabajador',
+  })
   @ApiResponse({
     status: 201,
     description: 'ATS creado y firmado exitosamente',
-    schema: {
-      example: {
-        success: true,
-        message: 'ATS creado y firmado exitosamente',
-        data: {
-          form: {
-            id: 1,
-            formType: 'ATS',
-            status: 'PENDING_SST',
-            userId: 1,
-            createdBy: 1,
-            technicianSignatureDate: '2024-01-15T10:30:00.000Z',
-            createdAt: '2024-01-15T10:30:00.000Z',
-            updatedAt: '2024-01-15T10:30:00.000Z'
-          },
-          ats: {
-            id: 1,
-            formId: 1,
-            workerName: 'Juan Pérez García',
-            position: 'Técnico Electricista',
-            area: 'Electricidad',
-            workToPerform: 'Instalación de sistema eléctrico',
-            location: 'Edificio Principal - Piso 3',
-            startTime: '08:00',
-            endTime: '17:00',
-            date: '2024-01-15',
-            observations: 'Trabajo en área confinada',
-            selectedRisks: { fisicos: ['ruido'], quimicos: ['vapores'] },
-            requiredPpe: { cascos: 1, guantes: 2 },
-            createdAt: '2024-01-15T10:30:00.000Z'
-          },
-          signature: {
-            id: 1,
-            formId: 1,
-            signatureType: 'TECHNICIAN',
-            userId: 1,
-            userName: 'Juan Pérez García',
-            signatureData: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA...',
-            signedAt: '2024-01-15T10:30:00.000Z'
-          }
-        }
-      }
-    }
   })
   @ApiResponse({
     status: 400,
-    description: 'Error en los datos de entrada'
+    description: 'Error en los datos de entrada',
   })
-  async createAtsWithSignature(@Body() createAtsWithSignatureDto: CreateAtsWithSignatureDto) {
+  async createAtsWithSignature(
+    @Body() createAtsWithSignatureDto: CreateAtsWithSignatureDto,
+  ) {
     try {
-      const result = await this.sgSstService.createAtsWithSignature(createAtsWithSignatureDto);
+      const result =
+        await this.sgSstService.createAtsWithSignature(
+          createAtsWithSignatureDto,
+        );
 
       let message = 'ATS creado exitosamente';
       if (createAtsWithSignatureDto.signerType === SignerType.TECHNICIAN) {
-        message = 'ATS creado y firmado por el técnico. Pendiente firma SST';
+        message =
+          'ATS creado y firmado por el técnico. Pendiente firma SST';
       } else if (createAtsWithSignatureDto.signerType === SignerType.SST) {
         message = 'ATS creado y firmado por SST. Formulario completado';
       }
@@ -366,67 +382,90 @@ export class SgSstController {
       return {
         success: true,
         message,
-        data: result
+        data: result,
       };
     } catch (error) {
       return {
         success: false,
         message: 'Error al crear ATS con firma',
-        error: error.message
+        error: (error as any).message,
       };
     }
   }
 
   @Post('height-work-with-signature')
-  @ApiOperation({ summary: 'Crear un Trabajo en Alturas completo incluyendo firma' })
-  async createHeightWorkWithSignature(@Body() createHeightWorkWithSignatureDto: CreateHeightWorkWithSignatureDto) {
+  @ApiOperation({
+    summary: 'Crear un Trabajo en Alturas completo incluyendo firma',
+  })
+  async createHeightWorkWithSignature(
+    @Body()
+    createHeightWorkWithSignatureDto: CreateHeightWorkWithSignatureDto,
+  ) {
     try {
-      const result = await this.sgSstService.createHeightWorkWithSignature(createHeightWorkWithSignatureDto);
+      const result =
+        await this.sgSstService.createHeightWorkWithSignature(
+          createHeightWorkWithSignatureDto,
+        );
 
       let message = 'Trabajo en alturas creado exitosamente';
       if (createHeightWorkWithSignatureDto.signerType === SignerType.TECHNICIAN) {
-        message = 'Trabajo en alturas creado y firmado por el técnico. Pendiente firma SST';
+        message =
+          'Trabajo en alturas creado y firmado por el técnico. Pendiente firma SST';
       } else if (createHeightWorkWithSignatureDto.signerType === SignerType.SST) {
-        message = 'Trabajo en alturas creado y firmado por SST. Formulario completado';
+        message =
+          'Trabajo en alturas creado y firmado por SST. Formulario completado';
       }
 
       return {
         success: true,
         message,
-        data: result
+        data: result,
       };
     } catch (error) {
       return {
         success: false,
         message: 'Error al crear trabajo en alturas con firma',
-        error: error.message
+        error: (error as any).message,
       };
     }
   }
 
   @Post('preoperational-with-signature')
-  @ApiOperation({ summary: 'Crear un Checklist Preoperacional completo incluyendo firma' })
-  async createPreoperationalWithSignature(@Body() createPreoperationalWithSignatureDto: CreatePreoperationalWithSignatureDto) {
+  @ApiOperation({
+    summary:
+      'Crear un Checklist Preoperacional completo incluyendo firma',
+  })
+  async createPreoperationalWithSignature(
+    @Body()
+    createPreoperationalWithSignatureDto: CreatePreoperationalWithSignatureDto,
+  ) {
     try {
-      const result = await this.sgSstService.createPreoperationalWithSignature(createPreoperationalWithSignatureDto);
+      const result =
+        await this.sgSstService.createPreoperationalWithSignature(
+          createPreoperationalWithSignatureDto,
+        );
 
-      let message = 'Checklist preoperacional creado exitosamente';
+      let message =
+        'Checklist preoperacional creado exitosamente';
       if (createPreoperationalWithSignatureDto.signerType === SignerType.TECHNICIAN) {
-        message = 'Checklist preoperacional creado y firmado por el técnico. Pendiente firma SST';
+        message =
+          'Checklist preoperacional creado y firmado por el técnico. Pendiente firma SST';
       } else if (createPreoperationalWithSignatureDto.signerType === SignerType.SST) {
-        message = 'Checklist preoperacional creado y firmado por SST. Formulario completado';
+        message =
+          'Checklist preoperacional creado y firmado por SST. Formulario completado';
       }
 
       return {
         success: true,
         message,
-        data: result
+        data: result,
       };
     } catch (error) {
       return {
         success: false,
-        message: 'Error al crear checklist preoperacional con firma',
-        error: error.message
+        message:
+          'Error al crear checklist preoperacional con firma',
+        error: (error as any).message,
       };
     }
   }
