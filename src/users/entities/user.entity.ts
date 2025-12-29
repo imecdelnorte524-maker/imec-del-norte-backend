@@ -9,8 +9,9 @@ import {
 } from 'typeorm';
 import { Role } from '../../roles/entities/role.entity';
 import { TipoCedula } from '../enums/Type-cedula.enum';
-import { Form } from '../../sg-sst/entities/form.entity'; // Ajusta la ruta
+import { Form } from '../../sg-sst/entities/form.entity';
 import { Image } from 'src/images/entities/image.entity';
+import { UserPasswordHistory } from './user-password-history.entity';
 
 @Entity('usuarios')
 export class User {
@@ -74,10 +75,20 @@ export class User {
   })
   resetTokenExpiry: Date;
 
-  // Relación con los formularios creados por este usuario
   @OneToMany(() => Form, (form) => form.user)
   forms: Form[];
 
   @OneToMany(() => Image, (image) => image.user)
   images: Image[];
+
+  // Historial de contraseñas
+  @OneToMany(() => UserPasswordHistory, (history) => history.user)
+  passwordHistory: UserPasswordHistory[];
+  
+  @Column({
+    name: 'must_change_password',
+    type: 'boolean',
+    default: false,
+  })
+  mustChangePassword: boolean;
 }

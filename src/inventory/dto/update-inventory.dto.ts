@@ -1,7 +1,9 @@
+// update-inventory.dto.ts
 import { PartialType } from '@nestjs/swagger';
 import { CreateInventoryDto } from './create-inventory.dto';
 import { IsOptional, IsNumber, Min, IsString } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
+import { SupplyStatus, ToolStatus } from 'src/shared/enums';
 
 export class UpdateInventoryDto extends PartialType(CreateInventoryDto) {
   @ApiProperty({
@@ -22,4 +24,14 @@ export class UpdateInventoryDto extends PartialType(CreateInventoryDto) {
   @IsOptional()
   @IsString({ message: 'La ubicación debe ser una cadena de texto' })
   ubicacion?: string;
+
+  @ApiProperty({
+    example: 'Disponible',
+    description: 'Estado del item',
+    enum: [...Object.values(SupplyStatus), ...Object.values(ToolStatus)],
+    required: false,
+  })
+  @IsOptional()
+  @IsString({ message: 'El estado debe ser una cadena de texto' })
+  estado?: string;
 }

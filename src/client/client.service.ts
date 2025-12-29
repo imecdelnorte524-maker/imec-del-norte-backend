@@ -83,11 +83,11 @@ export class ClientService {
       }
     } else {
       // ADMIN / SECRETARIA: deben enviar idUsuarioContacto
-      if (!createClientDto.idUsuarioContacto) {
-        throw new BadRequestException(
-          'El ID de usuario contacto es requerido',
-        );
-      }
+      // if (!createClientDto.idUsuarioContacto) {
+      //   throw new BadRequestException(
+      //     'El ID de usuario contacto es requerido',
+      //   );
+      // }
 
       const uc = await this.userRepository.findOne({
         where: { usuarioId: createClientDto.idUsuarioContacto },

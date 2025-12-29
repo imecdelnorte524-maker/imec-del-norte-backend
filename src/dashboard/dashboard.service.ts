@@ -15,6 +15,12 @@ interface DashboardFilters {
   page?: number;
   limit?: number;
   tecnicoId?: number;
+  clienteId?: number; // Nuevo: para filtrar por cliente
+}
+
+interface MyServicesFilters extends Omit<DashboardFilters, 'tecnicoId' | 'clienteId'> {
+  userRole: string;
+  userId: number;
 }
 
 @Injectable()
@@ -34,7 +40,7 @@ export class DashboardService {
    * - sin_asignar (Solicitada sin asignar)
    * - asignadas (Solicitada asignada)
    * - cancelados
-   * - mis_servicios (solo para técnicos)
+   * - mis_servicios (para técnicos y clientes)
    * - facturadas / no_facturadas
    * - ingresos_totales (órdenes finalizadas)
    * - completadas_este_mes
@@ -99,13 +105,25 @@ export class DashboardService {
     const completados = countFinalizada;
     const cancelados = countCancelada;
 
-    // mis_servicios: solo tiene sentido para técnicos (se cuenta aparte)
-    const roleName = this.getRoleName(currentUser);
+    // mis_servicios: para técnicos y clientes
     let mis_servicios = 0;
-    if (roleName === 'Técnico' && currentUser?.userId) {
-      mis_servicios = await this.workOrderRepository.count({
-        where: { tecnicoId: currentUser.userId },
-      });
+    const roleName = this.getRoleName(currentUser);
+    const userId = currentUser?.userId;
+    
+    if (userId) {
+      if (roleName === 'Técnico') {
+        mis_servicios = await this.workOrderRepository.count({
+          where: { tecnicoId: userId },
+        });
+      } else if (roleName === 'Cliente') {
+        // Contar órdenes donde el cliente es el usuario (empresa o contacto)
+        mis_servicios = await this.workOrderRepository
+          .createQueryBuilder('wo')
+          .where('(wo.clienteId = :userId OR wo.clienteEmpresaId = :userId)', {
+            userId,
+          })
+          .getCount();
+      }
     }
 
     // Facturación
@@ -154,6 +172,7 @@ export class DashboardService {
   /**
    * Devuelve una lista paginada de órdenes de trabajo para el dashboard.
    * - Si se pasa tecnicoId, filtra por ese técnico (mis servicios).
+   * - Si se pasa clienteId, filtra por ese cliente (mis servicios).
    * - Aplica filtros por estado, búsqueda y rango de fechas.
    */
   async getDashboardOrders(
@@ -178,11 +197,22 @@ export class DashboardService {
       .leftJoinAndSelect('wo.equipments', 'equipments')
       .orderBy('wo.fechaSolicitud', 'DESC');
 
-    // Filtro por técnico (para "mis servicios")
+    // Filtro por técnico (para "mis servicios" de técnicos)
     if (filters.tecnicoId) {
       qb.andWhere('wo.tecnicoId = :tecnicoId', {
         tecnicoId: filters.tecnicoId,
       });
+    }
+
+    // Filtro por cliente (para "mis servicios" de clientes)
+    // El cliente puede ser tanto clienteEmpresa como clienteContacto
+    if (filters.clienteId) {
+      qb.andWhere(
+        '(wo.clienteId = :clienteId OR wo.clienteEmpresaId = :clienteId)',
+        {
+          clienteId: filters.clienteId,
+        },
+      );
     }
 
     // Filtro por estado (string que viene del frontend, como "Pendiente", "En Proceso", etc.)
@@ -242,6 +272,60 @@ export class DashboardService {
       limit,
       totalPages,
     };
+  }
+
+  /**
+   * Obtiene las órdenes de servicio del usuario actual según su rol:
+   * - Técnico: órdenes asignadas a él
+   * - Cliente: órdenes creadas por él (tanto de cliente empresa como cliente contacto)
+   */
+  async getMyServices(
+    filters: MyServicesFilters,
+  ): Promise<{
+    services: any[];
+    total: number;
+    page: number;
+    limit: number;
+    totalPages: number;
+  }> {
+    const { userRole, userId } = filters;
+
+    if (!userId) {
+      return {
+        services: [],
+        total: 0,
+        page: filters.page || 1,
+        limit: filters.limit || 20,
+        totalPages: 0,
+      };
+    }
+
+    // Configurar filtros según el rol
+    let dashboardFilters: DashboardFilters = {
+      estado: filters.estado,
+      search: filters.search,
+      startDate: filters.startDate,
+      endDate: filters.endDate,
+      page: filters.page,
+      limit: filters.limit,
+    };
+
+    if (userRole === 'Técnico') {
+      dashboardFilters.tecnicoId = userId;
+    } else if (userRole === 'Cliente') {
+      dashboardFilters.clienteId = userId;
+    } else {
+      // Si el rol no es Técnico ni Cliente, no hay servicios para mostrar
+      return {
+        services: [],
+        total: 0,
+        page: filters.page || 1,
+        limit: filters.limit || 20,
+        totalPages: 0,
+      };
+    }
+
+    return this.getDashboardOrders(dashboardFilters);
   }
 
   // ---------- Helpers internos ----------

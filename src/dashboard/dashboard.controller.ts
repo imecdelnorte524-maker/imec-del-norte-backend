@@ -25,8 +25,15 @@ import { Roles } from '../common/decorators/roles.decorator';
 export class DashboardController {
   constructor(private readonly dashboardService: DashboardService) {}
 
+  /**
+   * Helper para obtener el rol del usuario
+   */
+  private getUserRole(user: any): string {
+    return user?.role?.nombreRol || user?.role || '';
+  }
+
   @Get('metricas')
-  @Roles('Administrador', 'Técnico', 'Secretaria', 'Supervisor')
+  @Roles('Administrador', 'Técnico', 'Secretaria', 'Supervisor', 'Cliente')
   @ApiOperation({ summary: 'Obtener métricas generales del dashboard' })
   async getMetrics(@Req() req: any) {
     const metrics = await this.dashboardService.getMetrics(req.user);
@@ -100,9 +107,9 @@ export class DashboardController {
   }
 
   @Get('mis-servicios')
-  @Roles('Técnico')
+  @Roles('Técnico', 'Cliente')
   @ApiOperation({
-    summary: 'Obtener órdenes de servicio asignadas al técnico actual',
+    summary: 'Obtener órdenes de servicio del usuario actual (técnico o cliente)',
   })
   @ApiQuery({
     name: 'estado',
@@ -124,25 +131,44 @@ export class DashboardController {
     required: false,
     description: 'Fecha fin (YYYY-MM-DD)',
   })
+  @ApiQuery({
+    name: 'page',
+    required: false,
+    description: 'Página (paginación)',
+  })
+  @ApiQuery({
+    name: 'limit',
+    required: false,
+    description: 'Límite por página (paginación)',
+  })
   async getMyServices(
     @Req() req: any,
     @Query('estado') estado?: string,
     @Query('search') search?: string,
     @Query('fecha_inicio') fechaInicio?: string,
     @Query('fecha_fin') fechaFin?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
   ) {
-    const tecnicoId = req.user?.userId;
+    const pageNum = page ? parseInt(page, 10) : 1;
+    const limitNum = limit ? parseInt(limit, 10) : 20;
+    
+    const userRole = this.getUserRole(req.user);
+    const userId = req.user?.userId;
 
-    const data = await this.dashboardService.getDashboardOrders({
+    const data = await this.dashboardService.getMyServices({
       estado: estado || undefined,
       search: search || undefined,
       startDate: fechaInicio || undefined,
       endDate: fechaFin || undefined,
-      tecnicoId,
+      page: pageNum,
+      limit: limitNum,
+      userRole,
+      userId,
     });
 
     return {
-      message: 'Órdenes de servicio asignadas obtenidas exitosamente',
+      message: 'Mis órdenes de servicio obtenidas exitosamente',
       data,
     };
   }

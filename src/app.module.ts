@@ -23,10 +23,13 @@ import { TasksModule } from './tasks/tasks.module';
 import { EquipmentModule } from './equipment/equipment.module';
 import { ImagesModule } from './images/images.module';
 import { DashboardModule } from './dashboard/dashboard.module';
+import { EventEmitterModule } from '@nestjs/event-emitter';
+import { NotificationsModule } from './notifications/notifications.module';
 
 @Module({
   imports: [
     ScheduleModule.forRoot(),
+    EventEmitterModule.forRoot(),
 
     ConfigModule.forRoot({
       isGlobal: true,
@@ -61,6 +64,7 @@ import { DashboardModule } from './dashboard/dashboard.module';
     EquipmentModule,
     ImagesModule,
     DashboardModule,
+    NotificationsModule,
   ],
 })
 export class AppModule {}

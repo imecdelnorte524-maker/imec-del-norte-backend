@@ -19,9 +19,9 @@ export class CreateClientDto {
   direccion: string;
 
   @ApiProperty({ example: 'Juan Pérez', description: 'Persona de contacto' })
-  @IsNotEmpty({ message: 'El contacto es requerido' })
   @IsString({ message: 'El contacto debe ser una cadena de texto' })
-  contacto: string;
+  @IsOptional()
+  contacto?: string;
 
   @ApiProperty({ example: 'cliente@imec.com', description: 'Email del cliente' })
   @IsEmail({}, { message: 'El email debe ser válido' })

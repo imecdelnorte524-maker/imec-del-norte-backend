@@ -1,4 +1,9 @@
-import { Injectable, NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ConflictException,
+  BadRequestException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource, ILike } from 'typeorm';
 import { Inventory } from './entities/inventory.entity';
@@ -6,7 +11,7 @@ import { Tool } from '../tools/entities/tool.entity';
 import { Supply } from '../supplies/entities/supply.entity';
 import { CreateInventoryDto } from './dto/create-inventory.dto';
 import { UpdateInventoryDto } from './dto/update-inventory.dto';
-import { SupplyStatus } from 'src/shared/enums';
+import { SupplyStatus, ToolStatus } from 'src/shared/enums';
 
 @Injectable()
 export class InventoryService {
@@ -28,52 +33,60 @@ export class InventoryService {
     try {
       // Validar que solo se proporcione insumoId o herramientaId, no ambos
       if (createInventoryDto.insumoId && createInventoryDto.herramientaId) {
-        throw new BadRequestException('Solo se puede proporcionar insumoId o herramientaId, no ambos');
+        throw new BadRequestException(
+          'Solo se puede proporcionar insumoId o herramientaId, no ambos',
+        );
       }
 
       if (!createInventoryDto.insumoId && !createInventoryDto.herramientaId) {
-        throw new BadRequestException('Debe proporcionar insumoId o herramientaId');
+        throw new BadRequestException(
+          'Debe proporcionar insumoId o herramientaId',
+        );
       }
 
       // Verificar si el insumo existe
       let supply: Supply | null = null;
       let tool: Tool | null = null;
-      
+
       if (createInventoryDto.insumoId) {
-        supply = await queryRunner.manager.findOne(Supply, { 
-          where: { insumoId: createInventoryDto.insumoId } 
+        supply = await queryRunner.manager.findOne(Supply, {
+          where: { insumoId: createInventoryDto.insumoId },
         });
         if (!supply) {
-          throw new NotFoundException(`Insumo con ID ${createInventoryDto.insumoId} no encontrado`);
+          throw new NotFoundException(
+            `Insumo con ID ${createInventoryDto.insumoId} no encontrado`,
+          );
         }
       }
 
       // Verificar si el herramienta existe
       if (createInventoryDto.herramientaId) {
-        tool = await queryRunner.manager.findOne(Tool, { 
-          where: { herramientaId: createInventoryDto.herramientaId } 
+        tool = await queryRunner.manager.findOne(Tool, {
+          where: { herramientaId: createInventoryDto.herramientaId },
         });
         if (!tool) {
-          throw new NotFoundException(`Equipo con ID ${createInventoryDto.herramientaId} no encontrado`);
+          throw new NotFoundException(
+            `Equipo con ID ${createInventoryDto.herramientaId} no encontrado`,
+          );
         }
       }
 
       // Verificar si ya existe un registro de inventario para este item
       let existingItem: Inventory | null = null;
-      
+
       if (createInventoryDto.insumoId) {
         existingItem = await queryRunner.manager.findOne(Inventory, {
-          where: { insumoId: createInventoryDto.insumoId }
+          where: { insumoId: createInventoryDto.insumoId },
         });
       } else if (createInventoryDto.herramientaId) {
         existingItem = await queryRunner.manager.findOne(Inventory, {
-          where: { herramientaId: createInventoryDto.herramientaId }
+          where: { herramientaId: createInventoryDto.herramientaId },
         });
       }
 
       if (existingItem) {
         throw new ConflictException(
-          `Ya existe un registro de inventario para este ${createInventoryDto.insumoId ? 'insumo' : 'herramienta'}`
+          `Ya existe un registro de inventario para este ${createInventoryDto.insumoId ? 'insumo' : 'herramienta'}`,
         );
       }
 
@@ -87,32 +100,38 @@ export class InventoryService {
       };
 
       const inventory = queryRunner.manager.create(Inventory, inventoryData);
-      
+
       // Asignar relaciones
       if (supply) {
         inventory.supply = supply;
       }
-      
+
       if (tool) {
         inventory.tool = tool;
-        
+
         // Para equipos, la cantidad siempre debe ser 1
         if (inventoryData.cantidadActual !== 1) {
-          throw new BadRequestException('Los equipos siempre deben tener cantidad 1 en inventario');
+          throw new BadRequestException(
+            'Los equipos siempre deben tener cantidad 1 en inventario',
+          );
         }
       }
 
       const savedInventory = await queryRunner.manager.save(inventory);
-      
+
       // Si es un insumo, actualizar su estado basado en la cantidad
       if (supply && savedInventory.cantidadActual !== undefined) {
-        const estado = this.calculateSupplyStatus(savedInventory.cantidadActual, supply.stockMin);
-        await queryRunner.manager.update(Supply, supply.insumoId, { estado: estado as SupplyStatus });
+        const estado = this.calculateSupplyStatus(
+          savedInventory.cantidadActual,
+          supply.stockMin,
+        );
+        await queryRunner.manager.update(Supply, supply.insumoId, {
+          estado: estado as SupplyStatus,
+        });
       }
 
       await queryRunner.commitTransaction();
       return await this.findOne(savedInventory.inventarioId);
-
     } catch (error) {
       await queryRunner.rollbackTransaction();
       throw error;
@@ -135,13 +154,18 @@ export class InventoryService {
     });
 
     if (!inventory) {
-      throw new NotFoundException(`Registro de inventario con ID ${id} no encontrado`);
+      throw new NotFoundException(
+        `Registro de inventario con ID ${id} no encontrado`,
+      );
     }
 
     return inventory;
   }
 
-  async update(id: number, updateInventoryDto: UpdateInventoryDto): Promise<Inventory> {
+  async update(
+    id: number,
+    updateInventoryDto: UpdateInventoryDto,
+  ): Promise<Inventory> {
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
     await queryRunner.startTransaction();
@@ -150,14 +174,20 @@ export class InventoryService {
       const inventory = await this.findOne(id);
 
       // Validar que no se intente cambiar el tipo de item
-      if ((updateInventoryDto.insumoId && inventory.herramientaId) || 
-          (updateInventoryDto.herramientaId && inventory.insumoId)) {
-        throw new BadRequestException('No se puede cambiar el tipo de item del registro de inventario');
+      if (
+        (updateInventoryDto.insumoId && inventory.herramientaId) ||
+        (updateInventoryDto.herramientaId && inventory.insumoId)
+      ) {
+        throw new BadRequestException(
+          'No se puede cambiar el tipo de item del registro de inventario',
+        );
       }
 
       // También verificar que no se envíen ambos IDs
       if (updateInventoryDto.insumoId && updateInventoryDto.herramientaId) {
-        throw new BadRequestException('Solo se puede proporcionar insumoId o herramientaId, no ambos');
+        throw new BadRequestException(
+          'Solo se puede proporcionar insumoId o herramientaId, no ambos',
+        );
       }
 
       const updateData: Partial<Inventory> = {
@@ -166,10 +196,15 @@ export class InventoryService {
 
       if (updateInventoryDto.cantidadActual !== undefined) {
         updateData.cantidadActual = updateInventoryDto.cantidadActual;
-        
+
         // Para equipos, validar que la cantidad sea 1
-        if (inventory.herramientaId && updateInventoryDto.cantidadActual !== 1) {
-          throw new BadRequestException('Los equipos siempre deben tener cantidad 1 en inventario');
+        if (
+          inventory.herramientaId &&
+          updateInventoryDto.cantidadActual !== 1
+        ) {
+          throw new BadRequestException(
+            'Los equipos siempre deben tener cantidad 1 en inventario',
+          );
         }
       }
 
@@ -178,22 +213,52 @@ export class InventoryService {
       }
 
       await queryRunner.manager.update(Inventory, id, updateData);
-      
+
       // Si es un insumo, actualizar su estado basado en la nueva cantidad
-      if (inventory.insumoId && updateInventoryDto.cantidadActual !== undefined) {
+      if (
+        inventory.insumoId &&
+        updateInventoryDto.cantidadActual !== undefined
+      ) {
         const supply = await queryRunner.manager.findOne(Supply, {
-          where: { insumoId: inventory.insumoId }
+          where: { insumoId: inventory.insumoId },
         });
-        
+
         if (supply) {
-          const estado = this.calculateSupplyStatus(updateInventoryDto.cantidadActual, supply.stockMin);
-          await queryRunner.manager.update(Supply, supply.insumoId, { estado: estado as SupplyStatus  });
+          const estado = this.calculateSupplyStatus(
+            updateInventoryDto.cantidadActual,
+            supply.stockMin,
+          );
+          await queryRunner.manager.update(Supply, supply.insumoId, {
+            estado: estado as SupplyStatus,
+          });
+        }
+      }
+
+      // Si es una herramienta, actualizar su estado si se proporcionó
+      if (inventory.herramientaId && updateInventoryDto.estado !== undefined) {
+        const tool = await queryRunner.manager.findOne(Tool, {
+          where: { herramientaId: inventory.herramientaId },
+        });
+
+        if (tool) {
+          // Validar que el estado sea uno de los permitidos
+          const estadosPermitidos = Object.values(ToolStatus);
+          if (!estadosPermitidos.includes(updateInventoryDto.estado as ToolStatus)) {
+            throw new BadRequestException(
+              `Estado inválido para herramienta. Estados permitidos: ${estadosPermitidos.join(', ')}`,
+            );
+          }
+
+          await queryRunner.manager.update(
+            Tool,
+            { herramientaId: inventory.herramientaId },
+            { estado: updateInventoryDto.estado as any },
+          );
         }
       }
 
       await queryRunner.commitTransaction();
       return await this.findOne(id);
-
     } catch (error) {
       await queryRunner.rollbackTransaction();
       throw error;
@@ -215,7 +280,6 @@ export class InventoryService {
       await queryRunner.manager.remove(inventory);
 
       await queryRunner.commitTransaction();
-
     } catch (error) {
       await queryRunner.rollbackTransaction();
       throw error;
@@ -224,9 +288,9 @@ export class InventoryService {
     }
   }
 
-  async removeComplete(inventarioId: number): Promise<{ 
-    deletedInventory: any,
-    deletedItem: any 
+  async removeComplete(inventarioId: number): Promise<{
+    deletedInventory: any;
+    deletedItem: any;
   }> {
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
@@ -234,7 +298,7 @@ export class InventoryService {
 
     try {
       const inventory = await this.findOne(inventarioId);
-      
+
       // Guardar información antes de eliminar
       const deletedInfo: {
         inventory: {
@@ -244,16 +308,22 @@ export class InventoryService {
           cantidadActual: number;
           ubicacion: string | undefined;
         };
-        item: { tipo: string; id: number; nombre: string; categoria?: string; marca?: string } | null;
+        item: {
+          tipo: string;
+          id: number;
+          nombre: string;
+          categoria?: string;
+          marca?: string;
+        } | null;
       } = {
         inventory: {
           id: inventory.inventarioId,
           tipo: inventory.tipo,
           nombreItem: inventory.nombreItem,
           cantidadActual: inventory.cantidadActual,
-          ubicacion: inventory.ubicacion
+          ubicacion: inventory.ubicacion,
         },
-        item: null
+        item: null,
       };
 
       // Obtener información del item asociado
@@ -262,14 +332,14 @@ export class InventoryService {
           tipo: 'insumo',
           id: inventory.insumoId,
           nombre: inventory.supply.nombre,
-          categoria: inventory.supply.categoria
+          categoria: inventory.supply.categoria,
         };
       } else if (inventory.herramientaId && inventory.tool) {
         deletedInfo.item = {
           tipo: 'herramienta',
           id: inventory.herramientaId,
           nombre: inventory.tool.nombre,
-          marca: inventory.tool.marca
+          marca: inventory.tool.marca,
         };
       }
 
@@ -280,9 +350,8 @@ export class InventoryService {
 
       return {
         deletedInventory: deletedInfo.inventory,
-        deletedItem: deletedInfo.item
+        deletedItem: deletedInfo.item,
       };
-
     } catch (error) {
       await queryRunner.rollbackTransaction();
       throw error;
@@ -298,7 +367,9 @@ export class InventoryService {
       .leftJoinAndSelect('inventory.tool', 'tool')
       .where('supply.nombre ILIKE :keyword', { keyword: `%${keyword}%` })
       .orWhere('tool.nombre ILIKE :keyword', { keyword: `%${keyword}%` })
-      .orWhere('inventory.ubicacion ILIKE :keyword', { keyword: `%${keyword}%` })
+      .orWhere('inventory.ubicacion ILIKE :keyword', {
+        keyword: `%${keyword}%`,
+      })
       .orderBy('inventory.fecha_ultima_actualizacion', 'DESC')
       .getMany();
   }
@@ -323,7 +394,10 @@ export class InventoryService {
       .getMany();
   }
 
-  async updateStock(inventarioId: number, nuevaCantidad: number): Promise<Inventory> {
+  async updateStock(
+    inventarioId: number,
+    nuevaCantidad: number,
+  ): Promise<Inventory> {
     if (nuevaCantidad < 0) {
       throw new BadRequestException('La cantidad no puede ser negativa');
     }
@@ -334,10 +408,12 @@ export class InventoryService {
 
     try {
       const inventory = await this.findOne(inventarioId);
-      
+
       // Solo se puede actualizar stock de insumos
       if (!inventory.insumoId) {
-        throw new BadRequestException('Solo se puede actualizar el stock de insumos');
+        throw new BadRequestException(
+          'Solo se puede actualizar el stock de insumos',
+        );
       }
 
       // Actualizar inventario
@@ -347,13 +423,17 @@ export class InventoryService {
 
       // Actualizar estado del insumo
       if (inventory.supply) {
-        const estado = this.calculateSupplyStatus(nuevaCantidad, inventory.supply.stockMin);
-        await queryRunner.manager.update(Supply, inventory.supply.insumoId, { estado: estado as SupplyStatus  });
+        const estado = this.calculateSupplyStatus(
+          nuevaCantidad,
+          inventory.supply.stockMin,
+        );
+        await queryRunner.manager.update(Supply, inventory.supply.insumoId, {
+          estado: estado as SupplyStatus,
+        });
       }
 
       await queryRunner.commitTransaction();
       return await this.findOne(inventarioId);
-
     } catch (error) {
       await queryRunner.rollbackTransaction();
       throw error;
@@ -368,7 +448,7 @@ export class InventoryService {
 
     try {
       const totalItems = await queryRunner.manager.count(Inventory);
-      
+
       const suppliesCount = await queryRunner.manager
         .createQueryBuilder(Inventory, 'inventory')
         .where('inventory.insumo_id IS NOT NULL')
@@ -379,18 +459,22 @@ export class InventoryService {
         .where('inventory.herramienta_id IS NOT NULL')
         .getCount();
 
-      const lowStockCount = await this.getLowStockItems().then(items => items.length);
+      const lowStockCount = await this.getLowStockItems().then(
+        (items) => items.length,
+      );
 
       const totalValue = await queryRunner.manager
         .createQueryBuilder(Inventory, 'inventory')
         .leftJoin('inventory.supply', 'supply')
         .leftJoin('inventory.tool', 'tool')
-        .select(`
+        .select(
+          `
           SUM(
             COALESCE(supply.valor_unitario, 0) * 
             COALESCE(inventory.cantidad_actual, 0) + 
             COALESCE(tool.valor_unitario, 0)
-          )`, 'total'
+          )`,
+          'total',
         )
         .getRawOne();
 
@@ -401,20 +485,22 @@ export class InventoryService {
         lowStockCount,
         totalValue: parseFloat(totalValue?.total || '0'),
       };
-
     } finally {
       await queryRunner.release();
     }
   }
 
   // Helper method para calcular estado de insumo
-  private calculateSupplyStatus(cantidad: number, stockMin: number = 0): string {
+  private calculateSupplyStatus(
+    cantidad: number,
+    stockMin: number = 0,
+  ): SupplyStatus {
     if (cantidad === 0) {
-      return 'AGOTADO';
+      return SupplyStatus.AGOTADO; // 'Agotado'
     } else if (stockMin > 0 && cantidad <= stockMin) {
-      return 'STOCK_BAJO';
+      return SupplyStatus.STOCK_BAJO; // 'Stock Bajo'
     } else {
-      return 'DISPONIBLE';
+      return SupplyStatus.DISPONIBLE; // 'Disponible'
     }
   }
 }

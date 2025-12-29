@@ -1,4 +1,3 @@
-// src/work-orders/work-orders.controller.ts
 import {
   Controller,
   Get,
@@ -329,6 +328,22 @@ export class WorkOrdersController {
   // ---------- Mapeo de entidad a DTO de respuesta ----------
 
   private mapToResponseDto(workOrder: WorkOrder): WorkOrderResponseDto {
+    const supplyDetails =
+      workOrder.supplyDetails?.map((detail) => ({
+        detalleInsumoId: detail.detalleInsumoId,
+        cantidadUsada: Number(detail.cantidadUsada),
+        costoUnitarioAlMomento: Number(detail.costoUnitarioAlMomento || 0),
+        nombreInsumo: detail.supply?.nombre || '',
+      })) || [];
+
+    const toolDetails =
+      workOrder.toolDetails?.map((detail) => ({
+        detalleHerramientaId: detail.detalleHerramientaId,
+        tiempoUso: detail.tiempoUso || '',
+        nombreHerramienta: detail.tool?.nombre || '',
+        marca: detail.tool?.marca || '',
+      })) || [];
+
     return {
       ordenId: workOrder.ordenId,
       fechaSolicitud: workOrder.fechaSolicitud,
@@ -349,8 +364,8 @@ export class WorkOrdersController {
           code: e.code,
           category: e.category,
         })) || [],
-      supplyDetails: [],
-      toolDetails: [],
+      supplyDetails,
+      toolDetails,
       costoTotalEstimado: 0,
       costoTotalInsumos: 0,
     };

@@ -37,11 +37,13 @@ export class SuppliesService {
     await queryRunner.startTransaction();
 
     try {
+      // Validar nombre único
       const exists = await queryRunner.manager.findOne(Supply, {
         where: { nombre: dto.nombre },
       });
       if (exists) throw new ConflictException('El nombre ya existe');
 
+      // Crear insumo
       const supply = queryRunner.manager.create(Supply, {
         nombre: dto.nombre,
         categoria: dto.categoria as SupplyCategory,
@@ -51,26 +53,32 @@ export class SuppliesService {
         valorUnitario: dto.valorUnitario,
       });
 
-      const saved = await queryRunner.manager.save(supply);
+      const savedSupply = await queryRunner.manager.save(supply);
 
+      // Crear inventario asociado al insumo
       const inventory = queryRunner.manager.create(Inventory, {
-        insumoId: saved.insumoId,
+        insumoId: savedSupply.insumoId,
         cantidadActual: dto.cantidadInicial ?? 0,
         ubicacion: dto.ubicacion,
         fechaUltimaActualizacion: new Date(),
-        supply: saved,
+        supply: savedSupply, // relación desde inventario hacia insumo
       });
 
-      await queryRunner.manager.save(inventory);
+      const savedInventory = await queryRunner.manager.save(inventory);
 
-      saved.estado = this.calculateSupplyStatus(
-        inventory.cantidadActual,
-        saved.stockMin,
+      // IMPORTANTE: asociar inventario al insumo para rellenar columna inventario_id en 'insumos'
+      savedSupply.inventory = savedInventory;
+
+      // Calcular y actualizar estado del insumo según stock
+      savedSupply.estado = this.calculateSupplyStatus(
+        savedInventory.cantidadActual,
+        savedSupply.stockMin,
       );
-      await queryRunner.manager.save(saved);
+
+      await queryRunner.manager.save(savedSupply);
 
       await queryRunner.commitTransaction();
-      return this.findOne(saved.insumoId);
+      return this.findOne(savedSupply.insumoId);
     } catch (e) {
       await queryRunner.rollbackTransaction();
       throw e;

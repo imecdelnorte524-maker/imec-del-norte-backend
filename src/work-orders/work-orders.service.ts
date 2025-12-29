@@ -24,6 +24,7 @@ import { AddToolDetailDto } from './dto/add-tool-detail.dto';
 import { ToolStatus, SupplyStatus } from 'src/shared/enums';
 import { WorkOrderStatus } from './enums/work-order-status.enum';
 import { BillingStatus } from './enums/billing-status.enum';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 
 @Injectable()
 export class WorkOrdersService {
@@ -49,6 +50,7 @@ export class WorkOrdersService {
     @InjectRepository(Equipment)
     private equipmentRepository: Repository<Equipment>,
     private dataSource: DataSource,
+    private eventEmitter: EventEmitter2,
   ) {}
 
   private getRoleName(currentUser: any): string {
@@ -58,24 +60,170 @@ export class WorkOrdersService {
   /**
    * Crea una orden de trabajo.
    */
-  async create(
-    dto: CreateWorkOrderDto,
-    currentUser: any,
-  ): Promise<WorkOrder> {
+  /**
+   * Crea una orden de trabajo.
+   */
+  /**
+   * Crea una orden de trabajo.
+   */
+  async create(dto: CreateWorkOrderDto, currentUser: any): Promise<WorkOrder> {
+    const roleName = this.getRoleName(currentUser);
+
+    // Si es un cliente, asignar automáticamente su userId como clienteId
+    if (roleName === 'Cliente') {
+      dto.clienteId = currentUser.userId;
+
+      // Buscar la empresa (Client) donde este usuario es el contacto
+      const clienteEmpresa = await this.clientsRepository.findOne({
+        where: { idUsuarioContacto: currentUser.userId },
+      });
+
+      if (clienteEmpresa) {
+        // Asignar el idCliente de la empresa como clienteEmpresaId
+        dto.clienteEmpresaId = clienteEmpresa.idCliente;
+      }
+    }
+
+    // Si es Administrador o Secretaria
+    else if (roleName === 'Administrador' || roleName === 'Secretaria') {
+      // CASO 1: Si envía clienteEmpresaId pero NO clienteId
+      if (dto.clienteEmpresaId && !dto.clienteId) {
+        // Buscar la empresa para obtener el idUsuarioContacto
+        const empresa = await this.clientsRepository.findOne({
+          where: { idCliente: dto.clienteEmpresaId },
+        });
+
+        if (!empresa) {
+          throw new NotFoundException(
+            `Empresa con ID ${dto.clienteEmpresaId} no encontrada`,
+          );
+        }
+
+        if (!empresa.idUsuarioContacto) {
+          throw new BadRequestException(
+            `La empresa ${empresa.nombre} no tiene un usuario contacto asignado`,
+          );
+        }
+
+        // Asignar automáticamente el usuario contacto como clienteId
+        dto.clienteId = empresa.idUsuarioContacto;
+      }
+
+      // CASO 2: Si envía clienteId pero NO clienteEmpresaId
+      else if (dto.clienteId && !dto.clienteEmpresaId) {
+        // Validar que el clienteId sea un usuario con rol "Cliente"
+        const usuarioCliente = await this.usersRepository
+          .createQueryBuilder('user')
+          .leftJoinAndSelect('user.role', 'role')
+          .where('user.usuarioId = :id', { id: dto.clienteId })
+          .andWhere('role.nombreRol = :rol', { rol: 'Cliente' })
+          .getOne();
+
+        if (!usuarioCliente) {
+          throw new BadRequestException(
+            `El usuario con ID ${dto.clienteId} no existe o no tiene rol Cliente`,
+          );
+        }
+
+        // Buscar si este usuario es contacto de alguna empresa
+        const empresaContacto = await this.clientsRepository.findOne({
+          where: { idUsuarioContacto: dto.clienteId },
+        });
+
+        if (empresaContacto) {
+          dto.clienteEmpresaId = empresaContacto.idCliente;
+        }
+      }
+
+      // CASO 3: Si envía AMBOS clienteId y clienteEmpresaId
+      else if (dto.clienteId && dto.clienteEmpresaId) {
+        // Validar que el clienteId sea un usuario con rol "Cliente"
+        const usuarioCliente = await this.usersRepository
+          .createQueryBuilder('user')
+          .leftJoinAndSelect('user.role', 'role')
+          .where('user.usuarioId = :id', { id: dto.clienteId })
+          .andWhere('role.nombreRol = :rol', { rol: 'Cliente' })
+          .getOne();
+
+        if (!usuarioCliente) {
+          throw new BadRequestException(
+            `El usuario con ID ${dto.clienteId} no existe o no tiene rol Cliente`,
+          );
+        }
+
+        // Validar que la empresa exista
+        const empresa = await this.clientsRepository.findOne({
+          where: { idCliente: dto.clienteEmpresaId },
+        });
+
+        if (!empresa) {
+          throw new NotFoundException(
+            `Empresa con ID ${dto.clienteEmpresaId} no encontrada`,
+          );
+        }
+
+        // Validar que el usuario sea contacto de esa empresa
+        if (empresa.idUsuarioContacto !== dto.clienteId) {
+          throw new BadRequestException(
+            `El usuario ${dto.clienteId} no es contacto de la empresa ${empresa.nombre}`,
+          );
+        }
+      }
+
+      // CASO 4: No envía NINGUNO
+      else {
+        throw new BadRequestException(
+          'Debe especificar al menos clienteId o clienteEmpresaId',
+        );
+      }
+    }
+
+    // Validar que clienteId no sea nulo
+    if (!dto.clienteId) {
+      throw new BadRequestException('El campo cliente_id es requerido');
+    }
+
+    // Verificar que el usuario (cliente) exista
+    const usuarioCliente = await this.usersRepository.findOne({
+      where: { usuarioId: dto.clienteId },
+    });
+
+    if (!usuarioCliente) {
+      throw new NotFoundException(
+        `Usuario con ID ${dto.clienteId} no encontrado`,
+      );
+    }
+
+    // Verificar que el servicio exista
+    if (dto.servicioId) {
+      const servicio = await this.servicesRepository.findOne({
+        where: { servicioId: dto.servicioId },
+      });
+
+      if (!servicio) {
+        throw new NotFoundException(
+          `Servicio con ID ${dto.servicioId} no encontrado`,
+        );
+      }
+    }
+
+    // Establecer valores por defecto
+    dto.estado = dto.estado || WorkOrderStatus.REQUESTED_UNASSIGNED;
+    dto.estadoFacturacion = dto.estadoFacturacion || BillingStatus.NOT_BILLED;
+
     const workOrder = this.workOrdersRepository.create(dto);
     const saved = await this.workOrdersRepository.save(workOrder);
+
+    this.eventEmitter.emit('work-order.created', {
+      workOrderId: saved.ordenId,
+      clienteId: saved.clienteId,
+      tecnicoId: saved.tecnicoId,
+      servicioId: saved.servicioId,
+    });
+
     return this.findOne(saved.ordenId);
   }
 
-  /**
-   * Lista todas las órdenes de trabajo con prioridad:
-   * 1) Solicitada sin asignar
-   * 2) Solicitada asignada
-   * 3) En proceso
-   * 4) Finalizada
-   * 5) Cancelada
-   * Dentro de cada grupo, ordenadas por fechaSolicitud DESC.
-   */
   async findAll(): Promise<WorkOrder[]> {
     return this.workOrdersRepository
       .createQueryBuilder('workOrder')
@@ -354,7 +502,17 @@ export class WorkOrdersService {
       estado: nuevoEstado,
     });
 
-    return this.findOne(ordenId);
+    const updated = await this.findOne(ordenId);
+
+    // Emitir evento para notificación del técnico
+    this.eventEmitter.emit('work-order.assigned', {
+      workOrderId: updated.ordenId,
+      tecnicoId: updated.tecnicoId,
+      clienteId: updated.clienteId,
+      servicioId: updated.servicioId,
+    });
+
+    return updated;
   }
 
   /**
@@ -401,6 +559,15 @@ export class WorkOrdersService {
     await queryRunner.connect();
     await queryRunner.startTransaction();
 
+    // variables para el evento, se disparan después del commit
+    let shouldEmitStockBelowMin = false;
+    let belowMinEventPayload: {
+      insumoId: number;
+      nombre: string;
+      cantidadActual: number;
+      stockMin: number;
+    } | null = null;
+
     try {
       await this.findOne(ordenId);
 
@@ -441,6 +608,9 @@ export class WorkOrdersService {
       supply.inventory.fechaUltimaActualizacion = new Date();
       await queryRunner.manager.save(supply.inventory);
 
+      // Guardar estado anterior para comparar
+      const estadoAnterior = supply.estado;
+
       // Actualizar estado del insumo
       const nuevoStock = supply.inventory.cantidadActual;
       const estado = this.calculateSupplyStatus(nuevoStock, supply.stockMin);
@@ -450,7 +620,27 @@ export class WorkOrdersService {
         { estado },
       );
 
+      // Si el estado cambió a STOCK_BAJO o AGOTADO, marcar para notificar
+      if (
+        estado !== estadoAnterior &&
+        (estado === SupplyStatus.STOCK_BAJO || estado === SupplyStatus.AGOTADO)
+      ) {
+        shouldEmitStockBelowMin = true;
+        belowMinEventPayload = {
+          insumoId: supply.insumoId,
+          nombre: supply.nombre,
+          cantidadActual: Number(nuevoStock),
+          stockMin: supply.stockMin,
+        };
+      }
+
       await queryRunner.commitTransaction();
+
+      // Emitir evento después del commit
+      if (shouldEmitStockBelowMin && belowMinEventPayload) {
+        this.eventEmitter.emit('stock.below-min', belowMinEventPayload);
+      }
+
       return savedDetail;
     } catch (error) {
       await queryRunner.rollbackTransaction();

@@ -1,3 +1,4 @@
+// src/users/users.service.ts
 import {
   Injectable,
   NotFoundException,
@@ -7,7 +8,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import * as bcrypt from 'bcrypt';
+  import * as bcrypt from 'bcrypt';
 import { User } from './entities/user.entity';
 import { Role } from '../roles/entities/role.entity';
 import { CreateUserDto } from './dto/create-user.dto';
@@ -25,7 +26,6 @@ export class UsersService {
     public rolesRepository: Repository<Role>,
     private readonly mailService: MailService,
   ) {
-    // Verificar y corregir la secuencia al inicializar el servicio
     this.initializeSequence().catch((error) => {
       this.logger.warn(
         `No se pudo inicializar la secuencia: ${error.message}`,
@@ -33,9 +33,6 @@ export class UsersService {
     });
   }
 
-  /**
-   * Inicializa y corrige la secuencia de usuario_id si es necesario
-   */
   private async initializeSequence(): Promise<void> {
     try {
       const result = await this.usersRepository.query(`
@@ -57,21 +54,16 @@ export class UsersService {
     }
   }
 
-  /**
-   * Corrige la secuencia si está desincronizada
-   */
   async fixSequenceIfNeeded(): Promise<{
     corrected: boolean;
     message: string;
   }> {
     try {
-      // Obtener el máximo ID actual en la tabla
       const maxIdResult = await this.usersRepository.query(`
         SELECT MAX(usuario_id) as max_id FROM usuarios
       `);
       const maxId = maxIdResult[0]?.max_id || 0;
 
-      // Obtener el último valor de la secuencia
       const sequenceResult = await this.usersRepository.query(`
         SELECT last_value FROM usuarios_usuario_id_seq
       `);
@@ -81,7 +73,6 @@ export class UsersService {
         `🔍 Verificando secuencia: Max ID=${maxId}, Secuencia=${lastSequenceValue}`,
       );
 
-      // Si la secuencia está detrás del máximo ID, corregirla
       if (lastSequenceValue <= maxId) {
         await this.usersRepository.query(
           `
@@ -103,18 +94,11 @@ export class UsersService {
     }
   }
 
-  /**
-   * Crea un nuevo usuario con contraseña hasheada
-   * y envía correo con usuario + contraseña (en texto plano)
-   */
   async create(createUserDto: CreateUserDto): Promise<User> {
-    // Verificar secuencia antes de crear
     await this.fixSequenceIfNeeded();
 
-    // Guardamos la contraseña en texto plano para usarla en el correo
     const plainPassword = createUserDto.password;
 
-    // Hash de la contraseña
     const passwordHash = await bcrypt.hash(createUserDto.password, 10);
 
     const user = await this.createWithPasswordHash({
@@ -122,12 +106,11 @@ export class UsersService {
       passwordHash,
     });
 
-    // Enviar correo con usuario y contraseña (ustedes ya conocen la contraseña)
     try {
       await this.mailService.sendCredentialsEmail({
         to: user.email,
         username: user.username,
-        plainPassword, // la contraseña que ustedes ya saben
+        plainPassword,
       });
       this.logger.log(
         `Correo de credenciales enviado a nuevo usuario: ${user.usuarioId} - ${user.email}`,
@@ -141,16 +124,11 @@ export class UsersService {
     return user;
   }
 
-  /**
-   * Crea usuario con hash de contraseña proporcionado
-   */
   async createWithPasswordHash(
     userData: CreateUserDto & { passwordHash: string },
   ): Promise<User> {
-    // Verificar secuencia antes de insertar
     await this.fixSequenceIfNeeded();
 
-    // Verificar si el rol existe
     const role = await this.rolesRepository.findOne({
       where: { rolId: userData.rolId },
     });
@@ -159,13 +137,11 @@ export class UsersService {
       throw new BadRequestException('El rol especificado no existe');
     }
 
-    // Verificar si el email ya existe
     const existingUserByEmail = await this.findByEmail(userData.email);
     if (existingUserByEmail) {
       throw new ConflictException('El correo electrónico ya está registrado');
     }
 
-    // Verificar si el username ya existe
     const existingUserByUsername = await this.findByUsername(
       userData.username,
     );
@@ -173,7 +149,6 @@ export class UsersService {
       throw new ConflictException('El nombre de usuario ya está registrado');
     }
 
-    // Crear y guardar el usuario
     const user = this.usersRepository.create({
       nombre: userData.nombre,
       apellido: userData.apellido,
@@ -187,6 +162,8 @@ export class UsersService {
       activo: userData.activo ?? true,
       resetToken: userData.resetToken,
       resetTokenExpiry: userData.resetTokenExpiry,
+      // NUEVO: usuario recién creado debe cambiar contraseña al iniciar
+      mustChangePassword: true,
     });
 
     let savedUser: User;
@@ -197,21 +174,18 @@ export class UsersService {
         `👤 Usuario creado exitosamente: ${savedUser.usuarioId} - ${savedUser.email}`,
       );
     } catch (error) {
-      // Si hay error de duplicado, verificar y corregir secuencia
       if (error.code === '23505' && error.constraint === 'usuarios_pkey') {
         this.logger.warn(
           '⚠️ Error de duplicado en PK, corrigiendo secuencia...',
         );
         await this.fixSequenceIfNeeded();
 
-        // Reintentar la inserción
         savedUser = await this.usersRepository.save(user);
       } else {
         throw error;
       }
     }
 
-    // Recargar el usuario con la relación del rol
     const userWithRole = await this.usersRepository.findOne({
       where: { usuarioId: savedUser.usuarioId },
       relations: ['role'],
@@ -224,9 +198,6 @@ export class UsersService {
     return userWithRole;
   }
 
-  /**
-   * Obtiene todos los usuarios
-   */
   async findAll(): Promise<User[]> {
     return await this.usersRepository.find({
       relations: ['role'],
@@ -234,9 +205,6 @@ export class UsersService {
     });
   }
 
-  /**
-   * Obtiene un usuario por ID
-   */
   async findOne(id: number): Promise<User> {
     const user = await this.usersRepository.findOne({
       where: { usuarioId: id },
@@ -250,9 +218,6 @@ export class UsersService {
     return user;
   }
 
-  /**
-   * Busca usuario por email
-   */
   async findByEmail(email: string): Promise<User | null> {
     return await this.usersRepository.findOne({
       where: { email },
@@ -260,9 +225,6 @@ export class UsersService {
     });
   }
 
-  /**
-   * Busca usuario por username
-   */
   async findByUsername(username: string): Promise<User | null> {
     return await this.usersRepository.findOne({
       where: { username },
@@ -270,13 +232,9 @@ export class UsersService {
     });
   }
 
-  /**
-   * Actualiza un usuario existente
-   */
   async update(id: number, updateUserDto: UpdateUserDto): Promise<User> {
     const user = await this.findOne(id);
 
-    // Verificar si se está actualizando el email y si ya existe
     if (updateUserDto.email && updateUserDto.email !== user.email) {
       const existingUserByEmail = await this.findByEmail(updateUserDto.email);
       if (existingUserByEmail) {
@@ -284,7 +242,6 @@ export class UsersService {
       }
     }
 
-    // Verificar si se está actualizando el username y si ya existe
     if (updateUserDto.username && updateUserDto.username !== user.username) {
       const existingUserByUsername = await this.findByUsername(
         updateUserDto.username,
@@ -296,7 +253,6 @@ export class UsersService {
       }
     }
 
-    // Verificar si se está actualizando el rol
     if (updateUserDto.rolId) {
       const role = await this.rolesRepository.findOne({
         where: { rolId: updateUserDto.rolId },
@@ -307,7 +263,6 @@ export class UsersService {
       }
     }
 
-    // Hash de la contraseña si se está actualizando
     if (updateUserDto.password) {
       const passwordHash = await bcrypt.hash(updateUserDto.password, 10);
       await this.usersRepository.update(id, { ...updateUserDto, passwordHash });
@@ -315,7 +270,6 @@ export class UsersService {
       await this.usersRepository.update(id, updateUserDto);
     }
 
-    // Recargar con relaciones después de actualizar
     const updatedUser = await this.usersRepository.findOne({
       where: { usuarioId: id },
       relations: ['role'],
@@ -330,24 +284,17 @@ export class UsersService {
     return updatedUser;
   }
 
-  /**
-   * Elimina un usuario permanentemente
-   */
   async remove(id: number): Promise<void> {
     const user = await this.findOne(id);
     await this.usersRepository.remove(user);
     this.logger.log(`👤 Usuario eliminado: ${id}`);
   }
 
-  /**
-   * Desactiva un usuario
-   */
   async deactivate(id: number): Promise<User> {
     const user = await this.findOne(id);
     user.activo = false;
     await this.usersRepository.save(user);
 
-    // Recargar con relaciones después de desactivar
     const deactivatedUser = await this.usersRepository.findOne({
       where: { usuarioId: id },
       relations: ['role'],
@@ -363,15 +310,11 @@ export class UsersService {
     return deactivatedUser;
   }
 
-  /**
-   * Activa un usuario
-   */
   async activate(id: number): Promise<User> {
     const user = await this.findOne(id);
     user.activo = true;
     await this.usersRepository.save(user);
 
-    // Recargar con relaciones después de activar
     const activatedUser = await this.usersRepository.findOne({
       where: { usuarioId: id },
       relations: ['role'],
@@ -387,9 +330,6 @@ export class UsersService {
     return activatedUser;
   }
 
-  /**
-   * Obtiene usuarios por rol
-   */
   async getUsersByRole(roleName: string): Promise<User[]> {
     return await this.usersRepository
       .createQueryBuilder('user')
@@ -399,34 +339,28 @@ export class UsersService {
       .getMany();
   }
 
-  /**
-   * Obtiene todos los técnicos
-   */
   async getTechnicians(): Promise<User[]> {
     return await this.getUsersByRole('Técnico');
   }
 
-  /**
-   * Obtiene todos los clientes
-   */
   async getClients(): Promise<User[]> {
     return await this.getUsersByRole('Cliente');
   }
 
   /**
-   * Actualiza la contraseña de un usuario
+   * Actualiza la contraseña de un usuario.
+   * Aquí marcamos que ya NO está obligado a cambiarla al iniciar.
+   * (Útil para cambio desde perfil y reset por token).
    */
   async updatePassword(userId: number, newPassword: string): Promise<void> {
     const user = await this.findOne(userId);
     const passwordHash = await bcrypt.hash(newPassword, 10);
     user.passwordHash = passwordHash;
+    user.mustChangePassword = false; // NUEVO: ya no está obligado a cambiarla
     await this.usersRepository.save(user);
     this.logger.log(`🔐 Contraseña actualizada para usuario: ${userId}`);
   }
 
-  /**
-   * Establece token de reset de contraseña
-   */
   async setResetToken(
     userId: number,
     resetToken: string,
@@ -439,9 +373,6 @@ export class UsersService {
     this.logger.log(`🔑 Token de reset establecido para usuario: ${userId}`);
   }
 
-  /**
-   * Limpia token de reset de contraseña
-   */
   async clearResetToken(userId: number): Promise<void> {
     await this.usersRepository.update(userId, {
       resetToken: undefined as any,
@@ -450,9 +381,6 @@ export class UsersService {
     this.logger.log(`🔑 Token de reset limpiado para usuario: ${userId}`);
   }
 
-  /**
-   * Busca usuario por token de reset
-   */
   async findByResetToken(resetToken: string): Promise<User | null> {
     return await this.usersRepository.findOne({
       where: { resetToken },
@@ -460,36 +388,24 @@ export class UsersService {
     });
   }
 
-  /**
-   * Obtiene todos los roles
-   */
   async findAllRoles(): Promise<Role[]> {
     return await this.rolesRepository.find({
       order: { rolId: 'ASC' },
     });
   }
 
-  /**
-   * Obtiene roles activos
-   */
   async findActiveRoles(): Promise<Role[]> {
     return await this.rolesRepository.find({
       order: { rolId: 'ASC' },
     });
   }
 
-  /**
-   * Busca rol por ID
-   */
   async findRoleById(rolId: number): Promise<Role | null> {
     return await this.rolesRepository.findOne({
       where: { rolId },
     });
   }
 
-  /**
-   * Método de diagnóstico - Verifica estado de la secuencia
-   */
   async diagnoseSequence(): Promise<any> {
     try {
       const [maxIdResult, sequenceResult] = await Promise.all([
