@@ -1,4 +1,3 @@
-// src/users/users.service.ts
 import {
   Injectable,
   NotFoundException,
@@ -8,12 +7,13 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-  import * as bcrypt from 'bcrypt';
+import * as bcrypt from 'bcrypt';
 import { User } from './entities/user.entity';
 import { Role } from '../roles/entities/role.entity';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { MailService } from 'src/mail/mail.service';
+import { Genero } from './enums/genero.enum';
 
 @Injectable()
 export class UsersService {
@@ -98,7 +98,6 @@ export class UsersService {
     await this.fixSequenceIfNeeded();
 
     const plainPassword = createUserDto.password;
-
     const passwordHash = await bcrypt.hash(createUserDto.password, 10);
 
     const user = await this.createWithPasswordHash({
@@ -149,6 +148,25 @@ export class UsersService {
       throw new ConflictException('El nombre de usuario ya está registrado');
     }
 
+    // Convertir fecha de nacimiento de string a Date si existe
+    let fechaNacimientoDate: Date | undefined;
+    if (userData.fechaNacimiento) {
+      try {
+        fechaNacimientoDate = new Date(userData.fechaNacimiento);
+        // Validar que sea una fecha válida
+        if (isNaN(fechaNacimientoDate.getTime())) {
+          throw new BadRequestException('Fecha de nacimiento inválida');
+        }
+      } catch (error) {
+        throw new BadRequestException('Fecha de nacimiento inválida');
+      }
+    }
+
+    // Validar que el género sea válido si se proporciona
+    if (userData.genero && !Object.values(Genero).includes(userData.genero as Genero)) {
+      throw new BadRequestException('Género inválido');
+    }
+
     const user = this.usersRepository.create({
       nombre: userData.nombre,
       apellido: userData.apellido,
@@ -160,10 +178,20 @@ export class UsersService {
       telefono: userData.telefono,
       rolId: userData.rolId,
       activo: userData.activo ?? true,
+      fechaNacimiento: fechaNacimientoDate,
+      genero: userData.genero as Genero,
       resetToken: userData.resetToken,
-      resetTokenExpiry: userData.resetTokenExpiry,
-      // NUEVO: usuario recién creado debe cambiar contraseña al iniciar
+      resetTokenExpiry: userData.resetTokenExpiry ? new Date(userData.resetTokenExpiry) : undefined,
       mustChangePassword: true,
+
+      // campos adicionales opcionales
+      ubicacionResidencia: (userData as any).ubicacionResidencia ?? null,
+      arl: (userData as any).arl ?? null,
+      eps: (userData as any).eps ?? null,
+      afp: (userData as any).afp ?? null,
+      contactoEmergenciaNombre: (userData as any).contactoEmergenciaNombre ?? null,
+      contactoEmergenciaTelefono: (userData as any).contactoEmergenciaTelefono ?? null,
+      contactoEmergenciaParentesco: (userData as any).contactoEmergenciaParentesco ?? null,
     });
 
     let savedUser: User;
@@ -253,7 +281,7 @@ export class UsersService {
       }
     }
 
-    if (updateUserDto.rolId) {
+    if (updateUserDto.rolId !== undefined) {
       const role = await this.rolesRepository.findOne({
         where: { rolId: updateUserDto.rolId },
       });
@@ -263,12 +291,69 @@ export class UsersService {
       }
     }
 
+    // Procesar fecha de nacimiento si se proporciona
+    let fechaNacimientoDate: Date | undefined;
+    if (updateUserDto.fechaNacimiento !== undefined) {
+      if (updateUserDto.fechaNacimiento) {
+        try {
+          fechaNacimientoDate = new Date(updateUserDto.fechaNacimiento);
+          if (isNaN(fechaNacimientoDate.getTime())) {
+            throw new BadRequestException('Fecha de nacimiento inválida');
+          }
+        } catch (error) {
+          throw new BadRequestException('Fecha de nacimiento inválida');
+        }
+      } else {
+        fechaNacimientoDate = undefined; // Para eliminar la fecha
+      }
+    }
+
+    // Validar género si se proporciona
+    if (updateUserDto.genero !== undefined && updateUserDto.genero) {
+      if (!Object.values(Genero).includes(updateUserDto.genero as Genero)) {
+        throw new BadRequestException('Género inválido');
+      }
+    }
+
+    // Preparar datos para actualizar
+    const updateData: any = { ...updateUserDto };
+
+    // Convertir fecha de nacimiento
+    if (updateUserDto.fechaNacimiento !== undefined) {
+      updateData.fechaNacimiento = fechaNacimientoDate;
+    }
+
+    // Convertir fecha de expiración del token si existe
+    if (updateUserDto.resetTokenExpiry) {
+      updateData.resetTokenExpiry = new Date(updateUserDto.resetTokenExpiry);
+    }
+
     if (updateUserDto.password) {
       const passwordHash = await bcrypt.hash(updateUserDto.password, 10);
-      await this.usersRepository.update(id, { ...updateUserDto, passwordHash });
-    } else {
-      await this.usersRepository.update(id, updateUserDto);
+      updateData.passwordHash = passwordHash;
+      delete updateData.password;
     }
+
+    // Procesar campos de perfil: si están explícitamente presentes,
+    // permitir guardar null (para limpiar) o el valor entregado.
+    const profileFields = [
+      'ubicacionResidencia',
+      'arl',
+      'eps',
+      'afp',
+      'contactoEmergenciaNombre',
+      'contactoEmergenciaTelefono',
+      'contactoEmergenciaParentesco',
+    ];
+
+    for (const field of profileFields) {
+      if ((updateUserDto as any)[field] !== undefined) {
+        // Si viene vacío ('') o null, guardamos null para limpiar el campo
+        updateData[field] = (updateUserDto as any)[field] ?? null;
+      }
+    }
+
+    await this.usersRepository.update(id, updateData);
 
     const updatedUser = await this.usersRepository.findOne({
       where: { usuarioId: id },
@@ -347,16 +432,11 @@ export class UsersService {
     return await this.getUsersByRole('Cliente');
   }
 
-  /**
-   * Actualiza la contraseña de un usuario.
-   * Aquí marcamos que ya NO está obligado a cambiarla al iniciar.
-   * (Útil para cambio desde perfil y reset por token).
-   */
   async updatePassword(userId: number, newPassword: string): Promise<void> {
     const user = await this.findOne(userId);
     const passwordHash = await bcrypt.hash(newPassword, 10);
     user.passwordHash = passwordHash;
-    user.mustChangePassword = false; // NUEVO: ya no está obligado a cambiarla
+    user.mustChangePassword = false;
     await this.usersRepository.save(user);
     this.logger.log(`🔐 Contraseña actualizada para usuario: ${userId}`);
   }
@@ -375,8 +455,8 @@ export class UsersService {
 
   async clearResetToken(userId: number): Promise<void> {
     await this.usersRepository.update(userId, {
-      resetToken: undefined as any,
-      resetTokenExpiry: undefined as any,
+      resetToken: undefined,
+      resetTokenExpiry: undefined,
     });
     this.logger.log(`🔑 Token de reset limpiado para usuario: ${userId}`);
   }

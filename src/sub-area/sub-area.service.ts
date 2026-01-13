@@ -1,7 +1,12 @@
-// src/sub-area/sub-area.service.ts
-import { Injectable, NotFoundException, ConflictException, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ConflictException,
+  Logger,
+  BadRequestException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, IsNull } from 'typeorm';
 import { SubArea } from './entities/sub-area.entity';
 import { Area } from '../area/entities/area.entity';
 import { CreateSubAreaDto } from './dto/create-sub-area.dto';
@@ -23,30 +28,65 @@ export class SubAreaService {
       where: { idArea: createSubAreaDto.areaId },
       relations: ['cliente', 'cliente.usuarioContacto'],
     });
-    
+
     if (!area) {
-      throw new NotFoundException(`Área con ID ${createSubAreaDto.areaId} no encontrada`);
+      throw new NotFoundException(
+        `Área con ID ${createSubAreaDto.areaId} no encontrada`,
+      );
+    }
+
+    let parentSubArea: SubArea | null = null;
+
+    if (createSubAreaDto.parentSubAreaId) {
+      parentSubArea = await this.subAreaRepository.findOne({
+        where: { idSubArea: createSubAreaDto.parentSubAreaId },
+      });
+
+      if (!parentSubArea) {
+        throw new NotFoundException(
+          `Subárea padre con ID ${createSubAreaDto.parentSubAreaId} no encontrada`,
+        );
+      }
+
+      if (parentSubArea.areaId !== createSubAreaDto.areaId) {
+        throw new BadRequestException(
+          'La subárea padre debe pertenecer a la misma área',
+        );
+      }
+    }
+
+    const whereClause: any = {
+      nombreSubArea: createSubAreaDto.nombreSubArea,
+      areaId: createSubAreaDto.areaId,
+    };
+
+    if (createSubAreaDto.parentSubAreaId) {
+      whereClause.parentSubAreaId = createSubAreaDto.parentSubAreaId;
+    } else {
+      whereClause.parentSubAreaId = null;
     }
 
     const existingSubArea = await this.subAreaRepository.findOne({
-      where: {
-        nombreSubArea: createSubAreaDto.nombreSubArea,
-        areaId: createSubAreaDto.areaId,
-      },
+      where: whereClause,
     });
-    
+
     if (existingSubArea) {
-      throw new ConflictException('Ya existe una subárea con este nombre para esta área');
+      throw new ConflictException(
+        'Ya existe una subárea con este nombre para esta área y subárea padre',
+      );
     }
 
     const subArea = this.subAreaRepository.create({
       ...createSubAreaDto,
       area: area,
+      parentSubArea: parentSubArea || undefined,
     });
 
     const savedSubArea = await this.subAreaRepository.save(subArea);
-    
-    this.logger.log(`Subárea creada: ${savedSubArea.idSubArea} - ${savedSubArea.nombreSubArea}`);
+
+    this.logger.log(
+      `Subárea creada: ${savedSubArea.idSubArea} - ${savedSubArea.nombreSubArea}`,
+    );
     return savedSubArea;
   }
 
@@ -62,11 +102,11 @@ export class SubAreaService {
       where: { idSubArea: id },
       relations: ['area', 'area.cliente', 'area.cliente.usuarioContacto'],
     });
-    
+
     if (!subArea) {
       throw new NotFoundException(`Subárea con ID ${id} no encontrada`);
     }
-    
+
     return subArea;
   }
 
@@ -91,33 +131,89 @@ export class SubAreaService {
 
   async update(id: number, updateSubAreaDto: UpdateSubAreaDto): Promise<SubArea> {
     const subArea = await this.findOne(id);
-    
+
     if (updateSubAreaDto.areaId && updateSubAreaDto.areaId !== subArea.areaId) {
       const area = await this.areaRepository.findOne({
         where: { idArea: updateSubAreaDto.areaId },
-        relations: ['cliente', 'cliente.usuarioContacto'],
+        relations: ['area', 'area.cliente', 'area.cliente.usuarioContacto'],
       });
-      
+
       if (!area) {
-        throw new NotFoundException(`Área con ID ${updateSubAreaDto.areaId} no encontrada`);
+        throw new NotFoundException(
+          `Área con ID ${updateSubAreaDto.areaId} no encontrada`,
+        );
       }
       subArea.area = area;
+      subArea.areaId = updateSubAreaDto.areaId;
     }
-    
-    if (updateSubAreaDto.nombreSubArea && updateSubAreaDto.nombreSubArea !== subArea.nombreSubArea) {
-      const areaId = updateSubAreaDto.areaId || subArea.areaId;
-      const existingSubArea = await this.subAreaRepository.findOne({
-        where: {
-          nombreSubArea: updateSubAreaDto.nombreSubArea,
-          areaId: areaId,
-        },
-      });
-      
-      if (existingSubArea && existingSubArea.idSubArea !== id) {
-        throw new ConflictException('Ya existe una subárea con este nombre para esta área');
+
+    if (
+      updateSubAreaDto.parentSubAreaId !== undefined &&
+      updateSubAreaDto.parentSubAreaId !== subArea.parentSubAreaId
+    ) {
+      if (updateSubAreaDto.parentSubAreaId === id) {
+        throw new BadRequestException(
+          'Una subárea no puede ser padre de sí misma',
+        );
+      }
+
+      if (updateSubAreaDto.parentSubAreaId) {
+        const parentSubArea = await this.subAreaRepository.findOne({
+          where: { idSubArea: updateSubAreaDto.parentSubAreaId },
+        });
+
+        if (!parentSubArea) {
+          throw new NotFoundException(
+            `Subárea padre con ID ${updateSubAreaDto.parentSubAreaId} no encontrada`,
+          );
+        }
+
+        const areaIdForParent =
+          updateSubAreaDto.areaId || subArea.areaId;
+
+        if (parentSubArea.areaId !== areaIdForParent) {
+          throw new BadRequestException(
+            'La subárea padre debe pertenecer a la misma área',
+          );
+        }
+
+        subArea.parentSubArea = parentSubArea;
+        subArea.parentSubAreaId = parentSubArea.idSubArea;
       }
     }
-    
+
+    if (
+      updateSubAreaDto.nombreSubArea &&
+      updateSubAreaDto.nombreSubArea !== subArea.nombreSubArea
+    ) {
+      const areaId = updateSubAreaDto.areaId || subArea.areaId;
+      const parentSubAreaIdForCheck =
+        updateSubAreaDto.parentSubAreaId !== undefined
+          ? updateSubAreaDto.parentSubAreaId
+          : subArea.parentSubAreaId ?? null;
+
+      const whereCondition: any = {
+        nombreSubArea: updateSubAreaDto.nombreSubArea,
+        areaId: areaId,
+      };
+
+      if (parentSubAreaIdForCheck === null) {
+        whereCondition.parentSubAreaId = IsNull();
+      } else {
+        whereCondition.parentSubAreaId = parentSubAreaIdForCheck;
+      }
+
+      const existingSubArea = await this.subAreaRepository.findOne({
+        where: whereCondition,
+      });
+
+      if (existingSubArea && existingSubArea.idSubArea !== id) {
+        throw new ConflictException(
+          'Ya existe una subárea con este nombre para esta área y subárea padre',
+        );
+      }
+    }
+
     Object.assign(subArea, updateSubAreaDto);
     return await this.subAreaRepository.save(subArea);
   }
@@ -133,11 +229,13 @@ export class SubAreaService {
       where: { idSubArea: subAreaId },
       relations: ['area', 'area.cliente', 'area.cliente.usuarioContacto'],
     });
-    
+
     if (!subArea) {
-      throw new NotFoundException(`Subárea con ID ${subAreaId} no encontrada`);
+      throw new NotFoundException(
+        `Subárea con ID ${subAreaId} no encontrada`,
+      );
     }
-    
+
     return {
       subArea: {
         idSubArea: subArea.idSubArea,
@@ -157,6 +255,63 @@ export class SubAreaService {
         nombre: subArea.area.cliente.usuarioContacto.nombre,
         email: subArea.area.cliente.usuarioContacto.email,
       },
+    };
+  }
+
+  // ✅ NUEVOS MÉTODOS
+
+  async findByParentSubAreaId(parentSubAreaId: number): Promise<SubArea[]> {
+    return await this.subAreaRepository.find({
+      where: { parentSubAreaId },
+      relations: ['area', 'area.cliente'],
+      order: { createdAt: 'ASC' }, // orden por creación para los índices
+    });
+  }
+
+  async buildAreaTree(areaId: number): Promise<any> {
+    const area = await this.areaRepository.findOne({
+      where: { idArea: areaId },
+      relations: ['cliente'],
+    });
+    if (!area) {
+      throw new NotFoundException(`Área con ID ${areaId} no encontrada`);
+    }
+
+    const rootSubAreas = await this.subAreaRepository.find({
+      where: { areaId, parentSubAreaId: IsNull() },
+      relations: ['children'],
+      order: { createdAt: 'ASC' },
+    });
+
+    // Función recursiva para poblar hijos
+    const populateChildren = async (subArea: SubArea): Promise<any> => {
+      const children = await this.subAreaRepository.find({
+        where: { parentSubAreaId: subArea.idSubArea },
+        relations: ['children'],
+        order: { createdAt: 'ASC' },
+      });
+      const populatedChildren = await Promise.all(
+        children.map(populateChildren),
+      );
+      return {
+        id: subArea.idSubArea,
+        nombre: subArea.nombreSubArea,
+        children: populatedChildren,
+      };
+    };
+
+    const tree = await Promise.all(rootSubAreas.map(populateChildren));
+
+    return {
+      area: {
+        idArea: area.idArea,
+        nombreArea: area.nombreArea,
+      },
+      cliente: {
+        idCliente: area.cliente.idCliente,
+        nombre: area.cliente.nombre,
+      },
+      subAreas: tree,
     };
   }
 }

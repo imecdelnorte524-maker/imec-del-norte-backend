@@ -1,3 +1,4 @@
+// src/work-orders/dto/work-order-response.dto.ts
 import { ApiProperty } from '@nestjs/swagger';
 import { WorkOrderStatus } from '../enums/work-order-status.enum';
 import {
@@ -7,7 +8,7 @@ import {
 } from '../../services/enums/service.enums';
 import { BillingStatus } from '../enums/billing-status.enum';
 
-class ServiceInfo {
+export class ServiceInfo {
   @ApiProperty({ example: 1 })
   servicioId: number;
 
@@ -17,31 +18,35 @@ class ServiceInfo {
   @ApiProperty({ example: 150000 })
   precioBase: number;
 
-  @ApiProperty({ enum: ServiceCategory, required: false })
-  categoriaServicio?: ServiceCategory;
+  @ApiProperty({ enum: ServiceCategory, required: false, nullable: true })
+  categoriaServicio?: ServiceCategory | null;
 
-  @ApiProperty({ enum: WorkNature, required: false })
-  tipoTrabajo?: WorkNature;
+  @ApiProperty({ enum: WorkNature, required: false, nullable: true })
+  tipoTrabajo?: WorkNature | null;
 
-  @ApiProperty({ enum: MaintenanceType, required: false })
-  tipoMantenimiento?: MaintenanceType;
+  @ApiProperty({ enum: MaintenanceType, required: false, nullable: true })
+  tipoMantenimiento?: MaintenanceType | null;
 }
 
-class UserInfo {
+export class UserInfo {
   @ApiProperty({ example: 1 })
   usuarioId: number;
 
   @ApiProperty({ example: 'Juan' })
   nombre: string;
 
-  @ApiProperty({ example: 'Pérez' })
-  apellido: string;
+  // Aceptamos nullable para coincidir con la entidad User
+  @ApiProperty({ example: 'Pérez', required: false, nullable: true })
+  apellido?: string | null;
 
-  @ApiProperty({ example: 'juan.perez@correo.com' })
-  email: string;
+  @ApiProperty({ example: 'juan.perez@correo.com', required: false, nullable: true })
+  email?: string | null;
+
+  @ApiProperty({ example: '3001234567', required: false, nullable: true })
+  telefono?: string | null;
 }
 
-class ClientCompanyInfo {
+export class ClientCompanyInfo {
   @ApiProperty({ example: 5 })
   idCliente: number;
 
@@ -51,17 +56,17 @@ class ClientCompanyInfo {
   @ApiProperty({ example: '900123456-7' })
   nit: string;
 
-  @ApiProperty({ example: 'empresa@correo.com' })
-  email: string;
+  @ApiProperty({ example: 'empresa@correo.com', required: false, nullable: true })
+  email?: string | null;
 
-  @ApiProperty({ example: '3001234567' })
-  telefono: string;
+  @ApiProperty({ example: '3001234567', required: false, nullable: true })
+  telefono?: string | null;
 
-  @ApiProperty({ example: 'Bogotá, Colombia' })
-  localizacion: string;
+  @ApiProperty({ example: 'Bogotá, Colombia', required: false, nullable: true })
+  localizacion?: string | null;
 }
 
-class EquipmentInfo {
+export class EquipmentInfo {
   @ApiProperty({ example: 10 })
   equipmentId: number;
 
@@ -75,7 +80,7 @@ class EquipmentInfo {
   category: ServiceCategory;
 }
 
-class SupplyDetailInfo {
+export class SupplyDetailInfo {
   @ApiProperty({ example: 1 })
   detalleInsumoId: number;
 
@@ -89,7 +94,7 @@ class SupplyDetailInfo {
   nombreInsumo: string;
 }
 
-class ToolDetailInfo {
+export class ToolDetailInfo {
   @ApiProperty({ example: 1 })
   detalleHerramientaId: number;
 
@@ -110,23 +115,26 @@ export class WorkOrderResponseDto {
   @ApiProperty({ type: ServiceInfo })
   service: ServiceInfo;
 
-  @ApiProperty({ type: ClientCompanyInfo, required: false })
-  clienteEmpresa?: ClientCompanyInfo;
+  // clienteEmpresa puede ser null si no aplica
+  @ApiProperty({ type: ClientCompanyInfo, required: false, nullable: true })
+  clienteEmpresa?: ClientCompanyInfo | null;
 
-  @ApiProperty({ type: UserInfo })
-  cliente: UserInfo;
+  // cliente ahora puede ser null (ajusta si lo quieres obligatorio)
+  @ApiProperty({ type: UserInfo, required: false, nullable: true })
+  cliente?: UserInfo | null;
 
-  @ApiProperty({ type: UserInfo, required: false })
-  tecnico?: UserInfo;
+  @ApiProperty({ type: UserInfo, required: false, nullable: true })
+  tecnico?: UserInfo | null;
 
   @ApiProperty({
     type: [EquipmentInfo],
     description: 'Equipos asociados a la orden',
+    required: false,
   })
   equipos: EquipmentInfo[];
 
-  @ApiProperty()
-  fechaSolicitud: Date;
+  @ApiProperty({ required: false })
+  fechaSolicitud?: Date;
 
   @ApiProperty({ required: false })
   fechaInicio?: Date;
@@ -137,13 +145,13 @@ export class WorkOrderResponseDto {
   @ApiProperty({ enum: WorkOrderStatus })
   estado: WorkOrderStatus;
 
-  @ApiProperty({ required: false })
-  comentarios?: string;
+  @ApiProperty({ required: false, nullable: true })
+  comentarios?: string | null;
 
-  @ApiProperty({ type: [SupplyDetailInfo] })
+  @ApiProperty({ type: [SupplyDetailInfo], required: false })
   supplyDetails: SupplyDetailInfo[];
 
-  @ApiProperty({ type: [ToolDetailInfo] })
+  @ApiProperty({ type: [ToolDetailInfo], required: false })
   toolDetails: ToolDetailInfo[];
 
   @ApiProperty()
@@ -155,6 +163,6 @@ export class WorkOrderResponseDto {
   @ApiProperty({ enum: BillingStatus })
   estadoFacturacion: BillingStatus;
 
-  @ApiProperty({ required: false })
-  facturaPdfUrl?: string;
+  @ApiProperty({ required: false, nullable: true })
+  facturaPdfUrl?: string | null;
 }

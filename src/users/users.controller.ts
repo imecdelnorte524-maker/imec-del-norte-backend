@@ -11,6 +11,9 @@ import {
   ParseIntPipe,
   UseInterceptors,
   UploadedFile,
+  Req,
+  ForbiddenException,
+  Logger,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -32,16 +35,47 @@ import { User } from './entities/user.entity';
 import { UploadImageSwaggerDto } from 'src/images/dto/upload-image.dto';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ImagesService } from 'src/images/images.service';
+import { Request } from 'express';
 
 @ApiTags('users')
 @Controller('users')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @ApiBearerAuth()
 export class UsersController {
+  private readonly logger = new Logger(UsersController.name);
+
   constructor(
     private readonly usersService: UsersService,
     private readonly imagesService: ImagesService,
   ) {}
+
+  // Utilidad para obtener el id del usuario autenticado
+  private async getRequesterIdFromReq(req: Request): Promise<number | null> {
+    const requester = (req as any).user ?? {};
+    let raw = requester.usuarioId ?? requester.id ?? requester.sub ?? null;
+    if (raw !== null && raw !== undefined) {
+      if (typeof raw === 'number') return raw;
+      if (typeof raw === 'string') {
+        const parsed = parseInt(raw, 10);
+        if (!isNaN(parsed)) return parsed;
+      }
+    }
+    if (requester.username) {
+      try {
+        const found = await this.usersService.findByUsername(
+          requester.username,
+        );
+        return found?.usuarioId ?? null;
+      } catch {}
+    }
+    if (requester.email) {
+      try {
+        const found = await this.usersService.findByEmail(requester.email);
+        return found?.usuarioId ?? null;
+      } catch {}
+    }
+    return null;
+  }
 
   @Post()
   @Roles('Administrador')
@@ -120,6 +154,27 @@ export class UsersController {
     };
   }
 
+  @Get('me')
+  @ApiOperation({
+    summary: 'Obtener perfil del usuario autenticado',
+    description: 'Devuelve la información del usuario autenticado (me)',
+  })
+  @ApiResponse({ status: 200, description: 'Usuario obtenido exitosamente' })
+  async getMe(@Req() req: Request) {
+    const requesterId = await this.getRequesterIdFromReq(req);
+    if (!requesterId) {
+      throw new ForbiddenException(
+        'No se pudo identificar el usuario autenticado',
+      );
+    }
+
+    const user = await this.usersService.findOne(requesterId);
+    return {
+      message: 'Usuario obtenido exitosamente',
+      data: this.mapToResponseDto(user),
+    };
+  }
+
   @Get(':id')
   @Roles('Administrador', 'Secretaria')
   @ApiOperation({
@@ -137,10 +192,10 @@ export class UsersController {
   }
 
   @Patch(':id')
-  @Roles('Administrador')
   @ApiOperation({
     summary: 'Actualizar usuario',
-    description: 'Actualiza un usuario existente (Solo Administrador)',
+    description:
+      'Actualiza un usuario existente. Administradores pueden actualizar cualquier usuario. Un usuario autenticado puede actualizar su propio perfil.',
   })
   @ApiResponse({ status: 200, description: 'Usuario actualizado exitosamente' })
   @ApiResponse({ status: 404, description: 'Usuario no encontrado' })
@@ -148,7 +203,45 @@ export class UsersController {
   async update(
     @Param('id', ParseIntPipe) id: number,
     @Body() updateUserDto: UpdateUserDto,
+    @Req() req: Request,
   ) {
+    const requesterId = await this.getRequesterIdFromReq(req);
+
+    // Determinar si requester es Admin (si viene en token)
+    const requester = (req as any).user ?? {};
+    let isAdmin = false;
+    if (requester?.role?.nombreRol) {
+      isAdmin =
+        String(requester.role.nombreRol).toLowerCase() === 'administrador';
+    } else if (requesterId) {
+      try {
+        const requesterUser = await this.usersService.findOne(requesterId);
+        isAdmin =
+          requesterUser.role?.nombreRol?.toLowerCase() === 'administrador';
+      } catch {
+        isAdmin = false;
+      }
+    }
+
+    // Si no es admin y no es el dueño del recurso -> forbidden
+    if (!isAdmin) {
+      if (!requesterId || Number(requesterId) !== Number(id)) {
+        throw new ForbiddenException(
+          'No autorizado para actualizar este usuario',
+        );
+      }
+    }
+
+    // Si no es admin y intenta cambiar rol -> forbidden
+    if (!isAdmin && (updateUserDto as any).rolId !== undefined) {
+      throw new ForbiddenException('No autorizado para modificar el rol');
+    }
+
+    // Si no es admin y intenta cambiar estado -> forbidden
+    if (!isAdmin && (updateUserDto as any).activo !== undefined) {
+      throw new ForbiddenException('No autorizado para modificar el estado');
+    }
+
     const user = await this.usersService.update(id, updateUserDto);
     return {
       message: 'Usuario actualizado exitosamente',
@@ -269,6 +362,40 @@ export class UsersController {
   }
 
   private mapToResponseDto(user: User): UserResponseDto {
+    const safeFormatDate = (
+      dateValue: any,
+      format: 'iso' | 'date-only' = 'iso',
+    ): string | undefined => {
+      if (!dateValue) return undefined;
+      let date: Date;
+      if (dateValue instanceof Date) {
+        date = dateValue;
+      } else if (typeof dateValue === 'string') {
+        date = new Date(dateValue);
+        if (isNaN(date.getTime())) {
+          return undefined;
+        }
+      } else {
+        date = new Date(dateValue);
+        if (isNaN(date.getTime())) {
+          return undefined;
+        }
+      }
+      if (format === 'date-only') {
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+      } else {
+        return date.toISOString();
+      }
+    };
+
+    const fechaCreacionString =
+      user.fechaCreacion instanceof Date
+        ? user.fechaCreacion.toISOString()
+        : new Date(user.fechaCreacion).toISOString();
+
     return {
       usuarioId: user.usuarioId,
       nombre: user.nombre,
@@ -279,13 +406,25 @@ export class UsersController {
       username: user.username,
       telefono: user.telefono,
       activo: user.activo,
-      fechaCreacion: user.fechaCreacion,
+      fechaCreacion: fechaCreacionString,
+      fechaNacimiento: safeFormatDate(user.fechaNacimiento, 'date-only'),
+      genero: user.genero,
       resetToken: user.resetToken,
-      resetTokenExpiry: user.resetTokenExpiry,
+      resetTokenExpiry: safeFormatDate(user.resetTokenExpiry, 'iso'),
       role: {
         rolId: user.role.rolId,
         nombreRol: user.role.nombreRol,
       },
-    };
+      // nuevos campos
+      ubicacionResidencia: (user as any).ubicacionResidencia ?? null,
+      arl: (user as any).arl ?? null,
+      eps: (user as any).eps ?? null,
+      afp: (user as any).afp ?? null,
+      contactoEmergenciaNombre: (user as any).contactoEmergenciaNombre ?? null,
+      contactoEmergenciaTelefono:
+        (user as any).contactoEmergenciaTelefono ?? null,
+      contactoEmergenciaParentesco:
+        (user as any).contactoEmergenciaParentesco ?? null,
+    } as UserResponseDto;
   }
 }

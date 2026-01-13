@@ -1,4 +1,3 @@
-// src/sub-area/sub-area.controller.ts
 import {
   Controller,
   Get,
@@ -11,7 +10,13 @@ import {
   ParseIntPipe,
   Query,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiBearerAuth,
+  ApiQuery,
+} from '@nestjs/swagger';
 import { SubAreaService } from './sub-area.service';
 import { CreateSubAreaDto } from './dto/create-sub-area.dto';
 import { UpdateSubAreaDto } from './dto/update-sub-area.dto';
@@ -28,10 +33,16 @@ export class SubAreaController {
 
   @Post()
   @Roles('Administrador', 'Secretaria')
-  @ApiOperation({ summary: 'Crear subárea', description: 'Crea una nueva subárea' })
+  @ApiOperation({
+    summary: 'Crear subárea',
+    description: 'Crea una nueva subárea',
+  })
   @ApiResponse({ status: 201, description: 'Subárea creada exitosamente' })
   @ApiResponse({ status: 404, description: 'Área no encontrada' })
-  @ApiResponse({ status: 409, description: 'Ya existe una subárea con este nombre para esta área' })
+  @ApiResponse({
+    status: 409,
+    description: 'Ya existe una subárea con este nombre para esta área',
+  })
   async create(@Body() createSubAreaDto: CreateSubAreaDto) {
     const subArea = await this.subAreaService.create(createSubAreaDto);
     return {
@@ -42,16 +53,30 @@ export class SubAreaController {
 
   @Get()
   @Roles('Administrador', 'Secretaria', 'Técnico')
-  @ApiOperation({ summary: 'Obtener todas las subáreas', description: 'Obtiene la lista de todas las subáreas' })
-  @ApiQuery({ name: 'areaId', required: false, description: 'Filtrar por ID de área' })
-  @ApiQuery({ name: 'clienteId', required: false, description: 'Filtrar por ID de cliente' })
-  @ApiResponse({ status: 200, description: 'Lista de subáreas obtenida exitosamente' })
+  @ApiOperation({
+    summary: 'Obtener todas las subáreas',
+    description: 'Obtiene la lista de todas las subáreas',
+  })
+  @ApiQuery({
+    name: 'areaId',
+    required: false,
+    description: 'Filtrar por ID de área',
+  })
+  @ApiQuery({
+    name: 'clienteId',
+    required: false,
+    description: 'Filtrar por ID de cliente',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Lista de subáreas obtenida exitosamente',
+  })
   async findAll(
     @Query('areaId') areaId?: string,
     @Query('clienteId') clienteId?: string,
   ) {
     let subAreas;
-    
+
     if (areaId) {
       subAreas = await this.subAreaService.findByAreaId(parseInt(areaId));
     } else if (clienteId) {
@@ -59,7 +84,7 @@ export class SubAreaController {
     } else {
       subAreas = await this.subAreaService.findAll();
     }
-    
+
     return {
       message: 'Subáreas obtenidas exitosamente',
       data: subAreas,
@@ -68,7 +93,10 @@ export class SubAreaController {
 
   @Get(':id')
   @Roles('Administrador', 'Secretaria', 'Técnico')
-  @ApiOperation({ summary: 'Obtener subárea por ID', description: 'Obtiene una subárea específica por su ID' })
+  @ApiOperation({
+    summary: 'Obtener subárea por ID',
+    description: 'Obtiene una subárea específica por su ID',
+  })
   @ApiResponse({ status: 200, description: 'Subárea obtenida exitosamente' })
   @ApiResponse({ status: 404, description: 'Subárea no encontrada' })
   async findOne(@Param('id', ParseIntPipe) id: number) {
@@ -81,9 +109,9 @@ export class SubAreaController {
 
   @Get(':id/hierarchy')
   @Roles('Administrador', 'Secretaria', 'Técnico')
-  @ApiOperation({ 
-    summary: 'Obtjer jerarquía completa', 
-    description: 'Obtiene la subárea con su área y cliente correspondientes' 
+  @ApiOperation({
+    summary: 'Obtjer jerarquía completa',
+    description: 'Obtiene la subárea con su área y cliente correspondientes',
   })
   @ApiResponse({ status: 200, description: 'Jerarquía obtenida exitosamente' })
   @ApiResponse({ status: 404, description: 'Subárea no encontrada' })
@@ -97,10 +125,16 @@ export class SubAreaController {
 
   @Patch(':id')
   @Roles('Administrador', 'Secretaria')
-  @ApiOperation({ summary: 'Actualizar subárea', description: 'Actualiza una subárea existente' })
+  @ApiOperation({
+    summary: 'Actualizar subárea',
+    description: 'Actualiza una subárea existente',
+  })
   @ApiResponse({ status: 200, description: 'Subárea actualizada exitosamente' })
   @ApiResponse({ status: 404, description: 'Subárea no encontrada' })
-  @ApiResponse({ status: 409, description: 'Ya existe una subárea con este nombre para esta área' })
+  @ApiResponse({
+    status: 409,
+    description: 'Ya existe una subárea con este nombre para esta área',
+  })
   async update(
     @Param('id', ParseIntPipe) id: number,
     @Body() updateSubAreaDto: UpdateSubAreaDto,
@@ -114,13 +148,50 @@ export class SubAreaController {
 
   @Delete(':id')
   @Roles('Administrador')
-  @ApiOperation({ summary: 'Eliminar subárea', description: 'Elimina una subárea permanentemente' })
+  @ApiOperation({
+    summary: 'Eliminar subárea',
+    description: 'Elimina una subárea permanentemente',
+  })
   @ApiResponse({ status: 200, description: 'Subárea eliminada exitosamente' })
   @ApiResponse({ status: 404, description: 'Subárea no encontrada' })
   async remove(@Param('id', ParseIntPipe) id: number) {
     await this.subAreaService.remove(id);
     return {
       message: 'Subárea eliminada exitosamente',
+    };
+  }
+
+  @Get('by-parent/:id')
+  @Roles('Administrador', 'Secretaria', 'Técnico')
+  @ApiOperation({
+    summary: 'Obtener subáreas hijas de una subárea padre',
+    description:
+      'Devuelve la lista de subáreas que tienen como padre a la subárea indicada',
+  })
+  @ApiResponse({ status: 200, description: 'Subáreas obtenidas exitosamente' })
+  @ApiResponse({ status: 404, description: 'Subárea padre no encontrada' })
+  async findByParentSubAreaId(@Param('id', ParseIntPipe) id: number) {
+    const subAreas = await this.subAreaService.findByParentSubAreaId(id);
+    return {
+      message: 'Subáreas hijas obtenidas exitosamente',
+      data: subAreas,
+    };
+  }
+
+  @Get('tree/:areaId')
+  @Roles('Administrador', 'Secretaria', 'Técnico')
+  @ApiOperation({
+    summary: 'Obtener árbol de subáreas de un área',
+    description:
+      'Devuelve el árbol completo de subáreas (jerarquía) de un área',
+  })
+  @ApiResponse({ status: 200, description: 'Árbol obtenido exitosamente' })
+  @ApiResponse({ status: 404, description: 'Área no encontrada' })
+  async getAreaTree(@Param('areaId', ParseIntPipe) areaId: number) {
+    const tree = await this.subAreaService.buildAreaTree(areaId);
+    return {
+      message: 'Árbol de subáreas obtenido exitosamente',
+      data: tree,
     };
   }
 }

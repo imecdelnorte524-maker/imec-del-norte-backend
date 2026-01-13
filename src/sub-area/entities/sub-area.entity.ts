@@ -1,5 +1,11 @@
-// src/sub-area/entities/sub-area.entity.ts
-import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, JoinColumn } from 'typeorm';
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  ManyToOne,
+  JoinColumn,
+  OneToMany,
+} from 'typeorm';
 import { Area } from '../../area/entities/area.entity';
 import { IsNotEmpty } from 'class-validator';
 
@@ -19,9 +25,31 @@ export class SubArea {
   @JoinColumn({ name: 'area_id' })
   area: Area;
 
-  @Column({ name: 'created_at', type: 'timestamp', default: () => 'CURRENT_TIMESTAMP' })
+  @Column({ name: 'parent_sub_area_id', nullable: true })
+  parentSubAreaId?: number;
+
+  @ManyToOne(() => SubArea, (subArea) => subArea.children, {
+    nullable: true,
+    onDelete: 'CASCADE',
+  })
+  @JoinColumn({ name: 'parent_sub_area_id' })
+  parentSubArea?: SubArea;
+
+  @OneToMany(() => SubArea, (subArea) => subArea.parentSubArea)
+  children?: SubArea[];
+
+  @Column({
+    name: 'created_at',
+    type: 'timestamp',
+    default: () => 'CURRENT_TIMESTAMP',
+  })
   createdAt: Date;
 
-  @Column({ name: 'updated_at', type: 'timestamp', default: () => 'CURRENT_TIMESTAMP', onUpdate: 'CURRENT_TIMESTAMP' })
+  @Column({
+    name: 'updated_at',
+    type: 'timestamp',
+    default: () => 'CURRENT_TIMESTAMP',
+    onUpdate: 'CURRENT_TIMESTAMP',
+  })
   updatedAt: Date;
 }

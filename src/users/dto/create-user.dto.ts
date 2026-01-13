@@ -1,6 +1,20 @@
-import { IsEmail, IsNotEmpty, MinLength, IsString, IsOptional, IsNumber, IsBoolean, Length, IsEnum, IsDate } from 'class-validator';
+// src/users/dto/create-user.dto.ts
+import {
+  IsEmail,
+  IsNotEmpty,
+  MinLength,
+  IsString,
+  IsOptional,
+  IsNumber,
+  IsBoolean,
+  Length,
+  IsEnum,
+  MaxLength,
+  Matches,
+} from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { TipoCedula } from '../enums/Type-cedula.enum';
+import { Genero } from '../enums/genero.enum';
 
 export class CreateUserDto {
   @ApiProperty({
@@ -52,6 +66,10 @@ export class CreateUserDto {
   })
   @IsOptional()
   @IsString({ message: 'El teléfono debe ser una cadena de texto' })
+  @MaxLength(30, { message: 'El teléfono no puede superar 30 caracteres' })
+  @Matches(/^[0-9+\-\s()]*$/, {
+    message: 'El teléfono solo puede contener dígitos, espacios y los caracteres + - ( )',
+  })
   telefono?: string;
 
   @ApiProperty({
@@ -73,13 +91,23 @@ export class CreateUserDto {
   activo?: boolean;
 
   @ApiProperty({
-    example: '$2b$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi',
-    description: 'Hash de la contraseña (solo para uso interno)',
+    example: '1990-05-15',
+    description: 'Fecha de nacimiento del usuario',
     required: false,
   })
   @IsOptional()
-  @IsString({ message: 'El hash de la contraseña debe ser una cadena de texto' })
-  passwordHash?: string;
+  @IsString({ message: 'La fecha de nacimiento debe ser una cadena de texto' })
+  fechaNacimiento?: string;
+
+  @ApiProperty({
+    example: 'MASCULINO',
+    description: 'Género del usuario',
+    enum: Genero,
+    required: false,
+  })
+  @IsOptional()
+  @IsEnum(Genero, { message: 'El género debe ser MASCULINO, FEMENINO o NO_BINARIO' })
+  genero?: Genero;
 
   @ApiProperty({
     example: '1544247765',
@@ -88,15 +116,15 @@ export class CreateUserDto {
   })
   @IsOptional()
   @IsString({ message: 'La Cédula debe ser una cadena de texto' })
-  @Length(6, 10, { message: 'La cédula debe tener entre 8 y 10 caracteres' }) 
-  cedula?: string; 
+  @Length(6, 10, { message: 'La cédula debe tener entre 6 y 10 caracteres' })
+  cedula?: string;
 
   @ApiProperty({
     example: 'CC',
-    description: 'Tipo de cédula (CC: Cedula de Ciudadania, PPT: Permiso por Protección Temporal)',
+    description: 'Tipo de cédula',
     enum: TipoCedula,
     required: false,
-    default: TipoCedula.CC
+    default: TipoCedula.CC,
   })
   @IsOptional()
   @IsEnum(TipoCedula, { message: 'El tipo de cédula debe ser CC o PPT' })
@@ -117,6 +145,80 @@ export class CreateUserDto {
     required: false,
   })
   @IsOptional()
-  @IsDate({ message: 'La fecha de expiración debe ser una fecha válida' })
-  resetTokenExpiry?: Date;
+  @IsString({ message: 'La fecha de expiración debe ser una cadena de texto' })
+  resetTokenExpiry?: string;
+
+  // ---- Nuevos campos de perfil ----
+  @ApiProperty({
+    example: 'Bogotá, Chapinero',
+    description: 'Ubicación de residencia del usuario',
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(255, { message: 'Ubicación demasiado larga' })
+  ubicacionResidencia?: string;
+
+  @ApiProperty({
+    example: 'ARL Sura',
+    description: 'ARL del usuario',
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(150)
+  arl?: string;
+
+  @ApiProperty({
+    example: 'EPS Salud Total',
+    description: 'EPS del usuario',
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(150)
+  eps?: string;
+
+  @ApiProperty({
+    example: 'AFP Colfondos',
+    description: 'AFP del usuario',
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(150)
+  afp?: string;
+
+  @ApiProperty({
+    example: 'María Pérez',
+    description: 'Nombre del contacto de emergencia',
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(150)
+  contactoEmergenciaNombre?: string;
+
+  @ApiProperty({
+    example: '+573001112233',
+    description: 'Teléfono del contacto de emergencia',
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(30)
+  @Matches(/^[0-9+\-\s()]*$/, {
+    message: 'El teléfono de contacto debe contener solo dígitos, espacios y los caracteres + - ( )',
+  })
+  contactoEmergenciaTelefono?: string;
+
+  @ApiProperty({
+    example: 'Madre',
+    description: 'Parentesco del contacto de emergencia',
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  contactoEmergenciaParentesco?: string;
 }

@@ -20,7 +20,7 @@ import { ClientService } from './client.service';
 import { CreateClientDto } from './dto/create-client.dto';
 import { UpdateClientDto } from './dto/update-client.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { RolesGuard } from '../auth/guards/roles.guard';
+import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 
 @ApiTags('clients')
@@ -67,7 +67,6 @@ export class ClientController {
     };
   }
 
-  // Clientes del usuario autenticado (cliente)
   @Get('my')
   @Roles('Cliente')
   @ApiOperation({

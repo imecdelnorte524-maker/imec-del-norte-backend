@@ -10,6 +10,7 @@ import { Tool } from '../../tools/entities/tool.entity';
 import { Supply } from '../../supplies/entities/supply.entity';
 import { User } from 'src/users/entities/user.entity';
 import { Equipment } from 'src/equipment/entities/equipment.entity';
+import { Client } from 'src/client/entities/client.entity';
 
 @Entity('images')
 export class Image {
@@ -27,6 +28,9 @@ export class Image {
 
   @CreateDateColumn()
   created_at: Date;
+
+  @Column({ name: 'is_logo', type: 'boolean', default: false })
+  isLogo: boolean;
 
   // Herramienta
   @ManyToOne(() => Tool, (tool) => tool.images, {
@@ -59,4 +63,12 @@ export class Image {
   })
   @JoinColumn({ name: 'equipment_id' })
   equipment?: Equipment;
+
+  // Cliente
+  @ManyToOne(() => Client, (client) => client.images, {
+    nullable: true,
+    onDelete: 'CASCADE',
+  })
+  @JoinColumn({ name: 'client_id' })
+  client?: Client;
 }

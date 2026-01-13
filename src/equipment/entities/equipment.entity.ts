@@ -1,4 +1,3 @@
-// src/equipment/entities/equipment.entity.ts
 import {
   Entity,
   PrimaryGeneratedColumn,
@@ -16,6 +15,10 @@ import { EquipmentStatus } from '../enums/equipment-status.enum';
 import { ServiceCategory } from '../../services/enums/service.enums';
 import { Image } from '../../images/entities/image.entity';
 import { WorkOrder } from '../../work-orders/entities/work-order.entity';
+import { AirConditionerType } from '../../air-conditioner-types/entities/air-conditioner-type.entity';
+import { EquipmentMotor } from './motor.entity';
+import { EquipmentEvaporator } from './evaporator.entity';
+import { EquipmentCondenser } from './condenser.entity';
 
 @Entity('equipos')
 export class Equipment {
@@ -49,6 +52,14 @@ export class Equipment {
     enum: ServiceCategory,
   })
   category: ServiceCategory;
+
+  // ✅ Nuevo campo
+  @Column({ name: 'air_conditioner_type_id', nullable: true })
+  airConditionerTypeId?: number;
+
+  @ManyToOne(() => AirConditionerType, { nullable: true, eager: true })
+  @JoinColumn({ name: 'air_conditioner_type_id' })
+  airConditionerType?: AirConditionerType;
 
   @Column({ name: 'nombre_equipo', length: 255 })
   name: string;
@@ -118,4 +129,23 @@ export class Equipment {
   @ManyToOne(() => WorkOrder, { nullable: true })
   @JoinColumn({ name: 'work_order_id' })
   workOrder?: WorkOrder;
+
+  // ✅ Nuevas relaciones 1:1
+  @OneToMany(() => EquipmentMotor, (motor) => motor.equipment, {
+    cascade: true,
+    eager: true,
+  })
+  motors?: EquipmentMotor[];
+
+  @OneToMany(() => EquipmentEvaporator, (evaporator) => evaporator.equipment, {
+    cascade: true,
+    eager: true,
+  })
+  evaporators?: EquipmentEvaporator[];
+
+  @OneToMany(() => EquipmentCondenser, (condenser) => condenser.equipment, {
+    cascade: true,
+    eager: true,
+  })
+  condensers?: EquipmentCondenser[];
 }

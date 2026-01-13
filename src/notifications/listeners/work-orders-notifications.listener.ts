@@ -30,11 +30,11 @@ export class WorkOrdersNotificationsListener {
 
   @OnEvent('work-order.created')
   async handleWorkOrderCreated(payload: WorkOrderCreatedEvent) {
-    // Notificar a todos los Administradores activos
+    // Notificar a todos los Administradores y secretarias activos
     const admins = await this.usersRepo
       .createQueryBuilder('user')
       .leftJoinAndSelect('user.role', 'role')
-      .where('role.nombreRol = :rol', { rol: 'Administrador' })
+      .where('role.nombreRol IN (:rol)', { rol: ['Administrador', 'Secretaria'] })
       .andWhere('user.activo = true')
       .getMany();
 

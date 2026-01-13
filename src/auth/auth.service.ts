@@ -29,7 +29,7 @@ export class AuthService {
   async validateUser(username: string, password: string): Promise<any> {
     const user = await this.usersService.findByUsername(username);
 
-    if (user) {
+    if (user && user.passwordHash) {
       const isPasswordValid = await bcrypt.compare(password, user.passwordHash);
 
       if (isPasswordValid && user.activo) {
@@ -229,6 +229,10 @@ export class AuthService {
     }
 
     // Validar contraseña actual
+    if (!user.passwordHash) {
+      throw new BadRequestException('Usuario no tiene contraseña configurada');
+    }
+
     const isCurrentValid = await bcrypt.compare(
       currentPassword,
       user.passwordHash,

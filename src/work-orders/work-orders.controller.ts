@@ -76,9 +76,6 @@ export class WorkOrdersController {
     const roleName = this.getRoleName(req.user);
     let data: WorkOrder[];
 
-    // Técnicos: solo sus órdenes
-    // Clientes: solo sus órdenes
-    // Admin / Secretaria / Supervisor: todas
     if (roleName === 'Técnico') {
       data = await this.workOrdersService.getWorkOrdersByTechnician(
         req.user.userId,
@@ -115,12 +112,10 @@ export class WorkOrdersController {
     const workOrder = await this.workOrdersService.findOne(id);
     const roleName = this.getRoleName(req.user);
 
-    // Técnico solo puede ver sus órdenes
     if (roleName === 'Técnico' && workOrder.tecnicoId !== req.user.userId) {
       throw new ForbiddenException();
     }
 
-    // Cliente solo puede ver sus órdenes
     if (roleName === 'Cliente' && workOrder.clienteId !== req.user.userId) {
       throw new ForbiddenException();
     }
@@ -188,7 +183,6 @@ export class WorkOrdersController {
     };
   }
 
-  // Asignar o cambiar el técnico de una orden
   @Patch(':id/assign-technician')
   @Roles('Administrador', 'Secretaria', 'Supervisor')
   @ApiOperation({ summary: 'Asignar o cambiar el técnico de una orden' })
@@ -211,7 +205,6 @@ export class WorkOrdersController {
     };
   }
 
-  // Quitar el técnico de una orden
   @Delete(':id/technician')
   @Roles('Administrador', 'Secretaria', 'Supervisor')
   @ApiOperation({ summary: 'Quitar técnico de una orden de trabajo' })
@@ -227,8 +220,6 @@ export class WorkOrdersController {
       },
     };
   }
-
-  // ---------- Insumos ----------
 
   @Post(':id/supplies')
   @Roles('Administrador', 'Técnico', 'Secretaria', 'Supervisor')
@@ -257,8 +248,6 @@ export class WorkOrdersController {
     };
   }
 
-  // ---------- Herramientas ----------
-
   @Post(':id/tools')
   @Roles('Administrador', 'Técnico', 'Secretaria', 'Supervisor')
   @ApiOperation({ summary: 'Agregar una herramienta usada a la orden' })
@@ -286,8 +275,6 @@ export class WorkOrdersController {
       message: 'Detalle de herramienta eliminado correctamente',
     };
   }
-
-  // ---------- Facturación / Factura PDF ----------
 
   @Post(':id/invoice')
   @Roles('Administrador', 'Secretaria')
@@ -325,8 +312,6 @@ export class WorkOrdersController {
     };
   }
 
-  // ---------- Mapeo de entidad a DTO de respuesta ----------
-
   private mapToResponseDto(workOrder: WorkOrder): WorkOrderResponseDto {
     const supplyDetails =
       workOrder.supplyDetails?.map((detail) => ({
@@ -354,9 +339,9 @@ export class WorkOrdersController {
       estadoFacturacion: workOrder.estadoFacturacion,
       facturaPdfUrl: workOrder.facturaPdfUrl,
       service: workOrder.service,
-      cliente: workOrder.cliente,
+      cliente: workOrder.cliente ? { ...workOrder.cliente, apellido: workOrder.cliente.apellido || '' } : null,
       clienteEmpresa: workOrder.clienteEmpresa,
-      tecnico: workOrder.tecnico,
+      tecnico: workOrder.tecnico ? { ...workOrder.tecnico, apellido: workOrder.tecnico.apellido || '' } : null,
       equipos:
         workOrder.equipments?.map((e) => ({
           equipmentId: e.equipmentId,

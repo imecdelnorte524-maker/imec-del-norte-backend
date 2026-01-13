@@ -124,6 +124,79 @@ export class ImagesController {
     return this.imagesService.deleteByEquipment(id);
   }
 
+  // ---------- CLIENTES ----------
+  @Post('client/:id/logo')
+  @ApiOperation({ summary: 'Subir o reemplazar logo de un cliente' })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({ type: UploadImageSwaggerDto })
+  @ApiResponse({ status: 201, description: 'Logo subido correctamente' })
+  @ApiResponse({ status: 404, description: 'Cliente no encontrado' })
+  @UseInterceptors(FileInterceptor('file'))
+  uploadClientLogo(
+    @Param('id', ParseIntPipe) id: number,
+    @UploadedFile() file: Express.Multer.File,
+  ) {
+    return this.imagesService.uploadClientLogo(id, file);
+  }
+
+  @Post('client/:id')
+  @ApiOperation({ summary: 'Subir imagen a la galería de un cliente' })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({ type: UploadImageSwaggerDto })
+  @ApiResponse({ status: 201, description: 'Imagen subida correctamente' })
+  @ApiResponse({ status: 404, description: 'Cliente no encontrado' })
+  @UseInterceptors(FileInterceptor('file'))
+  uploadClientImage(
+    @Param('id', ParseIntPipe) id: number,
+    @UploadedFile() file: Express.Multer.File,
+  ) {
+    return this.imagesService.uploadClientImage(id, file);
+  }
+
+  @Get('client/:id')
+  @ApiOperation({
+    summary: 'Obtener imágenes de un cliente (galería, sin logo)',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Imágenes obtenidas correctamente',
+  })
+  @ApiResponse({ status: 404, description: 'Cliente no encontrado' })
+  async getClientImages(@Param('id', ParseIntPipe) id: number) {
+    const images = await this.imagesService.getClientImages(id);
+    return {
+      message: 'Imágenes de cliente obtenidas',
+      data: images,
+    };
+  }
+
+  @Get('client/:id/logo')
+  @ApiOperation({ summary: 'Obtener logo de un cliente' })
+  @ApiResponse({
+    status: 200,
+    description: 'Logo obtenido correctamente',
+  })
+  @ApiResponse({ status: 404, description: 'Cliente no encontrado' })
+  async getClientLogo(@Param('id', ParseIntPipe) id: number) {
+    const image = await this.imagesService.getClientLogo(id);
+    return {
+      message: 'Logo de cliente obtenido',
+      data: image,
+    };
+  }
+
+  @Delete('client/:id')
+  @ApiOperation({
+    summary: 'Eliminar todas las imágenes de un cliente',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Imágenes eliminadas correctamente',
+  })
+  deleteClientImages(@Param('id', ParseIntPipe) id: number) {
+    return this.imagesService.deleteByClient(id);
+  }
+
   // ---------- ELIMINAR GENÉRICO POR ID ----------
   @Delete(':id')
   @ApiOperation({

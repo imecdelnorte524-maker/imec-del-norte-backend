@@ -25,9 +25,6 @@ import { Roles } from '../common/decorators/roles.decorator';
 export class DashboardController {
   constructor(private readonly dashboardService: DashboardService) {}
 
-  /**
-   * Helper para obtener el rol del usuario
-   */
   private getUserRole(user: any): string {
     return user?.role?.nombreRol || user?.role || '';
   }

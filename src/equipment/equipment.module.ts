@@ -8,10 +8,24 @@ import { Area } from '../area/entities/area.entity';
 import { SubArea } from '../sub-area/entities/sub-area.entity';
 import { ImagesModule } from '../images/images.module';
 import { WorkOrder } from '../work-orders/entities/work-order.entity';
+import { AirConditionerType } from '../air-conditioner-types/entities/air-conditioner-type.entity';
+import { EquipmentMotor } from './entities/motor.entity';
+import { EquipmentEvaporator } from './entities/evaporator.entity';
+import { EquipmentCondenser } from './entities/condenser.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Equipment, Client, Area, SubArea, WorkOrder]),
+    TypeOrmModule.forFeature([
+      Equipment,
+      Client,
+      Area,
+      SubArea,
+      WorkOrder,
+      AirConditionerType,
+      EquipmentMotor,
+      EquipmentEvaporator,
+      EquipmentCondenser,
+    ]),
     ImagesModule,
   ],
   controllers: [EquipmentController],

@@ -1,5 +1,5 @@
-// src/equipment/dto/equipment-response.dto.ts
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { EquipmentStatus } from '../enums/equipment-status.enum';
 
 class ClientInfoDto {
   @ApiProperty({ example: 1 })
@@ -45,6 +45,94 @@ class EquipmentPhotoDto {
   createdAt: string;
 }
 
+// --- Componentes ---
+
+class MotorResponseDto {
+  @ApiPropertyOptional({ example: '10A' })
+  amperaje?: string;
+
+  @ApiPropertyOptional({ example: '220V' })
+  voltaje?: string;
+
+  @ApiPropertyOptional({ example: '1500' })
+  rpm?: string;
+
+  @ApiPropertyOptional({ example: 'SN123456' })
+  serialMotor?: string;
+
+  @ApiPropertyOptional({ example: 'MTR-001' })
+  modeloMotor?: string;
+
+  @ApiPropertyOptional({ example: '12mm' })
+  diametroEje?: string;
+
+  @ApiPropertyOptional({ example: 'Redondo' })
+  tipoEje?: string;
+}
+
+class EvaporatorResponseDto {
+  @ApiPropertyOptional({ example: 'Samsung' })
+  marca?: string;
+
+  @ApiPropertyOptional({ example: 'AEV12' })
+  modelo?: string;
+
+  @ApiPropertyOptional({ example: 'EV123456' })
+  serial?: string;
+
+  @ApiPropertyOptional({ example: '12000 BTU' })
+  capacidad?: string;
+
+  @ApiPropertyOptional({ example: '8A' })
+  amperaje?: string;
+
+  @ApiPropertyOptional({ example: 'R410A' })
+  tipoRefrigerante?: string;
+
+  @ApiPropertyOptional({ example: '220V' })
+  voltaje?: string;
+
+  @ApiPropertyOptional({ example: '1' })
+  numeroFases?: string;
+}
+
+class CondenserResponseDto {
+  @ApiPropertyOptional({ example: 'Samsung' })
+  marca?: string;
+
+  @ApiPropertyOptional({ example: 'CNV12' })
+  modelo?: string;
+
+  @ApiPropertyOptional({ example: 'CN123456' })
+  serial?: string;
+
+  @ApiPropertyOptional({ example: '12000 BTU' })
+  capacidad?: string;
+
+  @ApiPropertyOptional({ example: '8A' })
+  amperaje?: string;
+
+  @ApiPropertyOptional({ example: '220V' })
+  voltaje?: string;
+
+  @ApiPropertyOptional({ example: 'R410A' })
+  tipoRefrigerante?: string;
+
+  @ApiPropertyOptional({ example: '1' })
+  numeroFases?: string;
+
+  @ApiPropertyOptional({ example: '150 PSI' })
+  presionAlta?: string;
+
+  @ApiPropertyOptional({ example: '50 PSI' })
+  presionBaja?: string;
+
+  @ApiPropertyOptional({ example: '2.5' })
+  hp?: string;
+}
+
+// --- DTO principal ---
+
 export class EquipmentResponseDto {
   @ApiProperty({ example: 12 })
   equipmentId: number;
@@ -52,59 +140,64 @@ export class EquipmentResponseDto {
   @ApiProperty()
   client: ClientInfoDto;
 
-  @ApiProperty({ required: false })
+  @ApiPropertyOptional()
   area?: AreaInfoDto;
 
-  @ApiProperty({ required: false })
+  @ApiPropertyOptional()
   subArea?: SubAreaInfoDto;
 
-  @ApiProperty({
+  @ApiPropertyOptional({
     example: 15,
     description: 'ID de la orden de servicio asociada',
-    required: false,
   })
   orderId?: number | null;
 
   @ApiProperty()
   category: string;
 
+  @ApiPropertyOptional({
+    example: 1,
+    description: 'ID del tipo de aire acondicionado',
+  })
+  airConditionerTypeId?: number;
+
   @ApiProperty()
   name: string;
 
-  @ApiProperty({ required: false })
+  @ApiPropertyOptional()
   code?: string | null;
 
-  @ApiProperty({ required: false })
+  @ApiPropertyOptional()
   brand?: string | null;
 
-  @ApiProperty({ required: false })
+  @ApiPropertyOptional()
   model?: string | null;
 
-  @ApiProperty({ required: false })
+  @ApiPropertyOptional()
   serialNumber?: string | null;
 
-  @ApiProperty({ required: false })
+  @ApiPropertyOptional()
   capacity?: string | null;
 
-  @ApiProperty({ required: false })
+  @ApiPropertyOptional()
   refrigerantType?: string | null;
 
-  @ApiProperty({ required: false })
+  @ApiPropertyOptional()
   voltage?: string | null;
 
-  @ApiProperty({ required: false })
+  @ApiPropertyOptional()
   physicalLocation?: string | null;
 
-  @ApiProperty({ required: false })
+  @ApiPropertyOptional()
   manufacturer?: string | null;
 
   @ApiProperty()
   status: string;
 
-  @ApiProperty({ required: false })
+  @ApiPropertyOptional()
   installationDate?: Date | null;
 
-  @ApiProperty({ required: false })
+  @ApiPropertyOptional()
   notes?: string | null;
 
   @ApiProperty()
@@ -115,4 +208,14 @@ export class EquipmentResponseDto {
 
   @ApiProperty({ type: [EquipmentPhotoDto] })
   photos: EquipmentPhotoDto[];
+
+  // Componentes
+  @ApiPropertyOptional({ type: MotorResponseDto })
+  motor?: MotorResponseDto | null;
+
+  @ApiPropertyOptional({ type: EvaporatorResponseDto })
+  evaporator?: EvaporatorResponseDto | null;
+
+  @ApiPropertyOptional({ type: CondenserResponseDto })
+  condenser?: CondenserResponseDto | null;
 }

@@ -25,6 +25,8 @@ import { ImagesModule } from './images/images.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { NotificationsModule } from './notifications/notifications.module';
+import { AirConditionerTypesModule } from './air-conditioner-types/air-conditioner-type.module';
+import { ModulesModule } from './modules/modules.module';
 
 @Module({
   imports: [
@@ -65,6 +67,8 @@ import { NotificationsModule } from './notifications/notifications.module';
     ImagesModule,
     DashboardModule,
     NotificationsModule,
+    AirConditionerTypesModule,
+    ModulesModule,
   ],
 })
 export class AppModule {}

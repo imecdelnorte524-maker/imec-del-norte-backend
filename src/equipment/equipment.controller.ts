@@ -39,7 +39,7 @@ export class EquipmentController {
   @ApiOperation({
     summary: 'Crear equipo (hoja de vida)',
     description:
-      'Crea un nuevo equipo asociado a un cliente (empresa) y opcionalmente a un área/subárea',
+      'Crea un nuevo equipo asociado a un cliente (empresa) y a un área/subárea',
   })
   @ApiResponse({ status: 201, description: 'Equipo creado exitosamente' })
   async create(@Body() createEquipmentDto: CreateEquipmentDto) {
@@ -152,6 +152,10 @@ export class EquipmentController {
   }
 
   private mapToResponseDto(equipment: Equipment): EquipmentResponseDto {
+    const motor = equipment.motors?.[0] ?? null;
+    const evaporator = equipment.evaporators?.[0] ?? null;
+    const condenser = equipment.condensers?.[0] ?? null;
+
     return {
       equipmentId: equipment.equipmentId,
       client: {
@@ -171,11 +175,9 @@ export class EquipmentController {
             nombreSubArea: equipment.subArea.nombreSubArea,
           }
         : undefined,
-
-      // ✅ CLAVE
       orderId: equipment.workOrderId ?? null,
-
       category: equipment.category,
+      airConditionerTypeId: equipment.airConditionerTypeId,
       name: equipment.name,
       code: equipment.code,
       brand: equipment.brand,
@@ -199,6 +201,44 @@ export class EquipmentController {
           description: null,
           createdAt: img.created_at.toISOString(),
         })) ?? [],
+      motor: motor
+        ? {
+            amperaje: motor.amperaje,
+            voltaje: motor.voltaje,
+            rpm: motor.rpm,
+            serialMotor: motor.serialMotor,
+            modeloMotor: motor.modeloMotor,
+            diametroEje: motor.diametroEje,
+            tipoEje: motor.tipoEje,
+          }
+        : null,
+      evaporator: evaporator
+        ? {
+            marca: evaporator.marca,
+            modelo: evaporator.modelo,
+            serial: evaporator.serial,
+            capacidad: evaporator.capacidad,
+            amperaje: evaporator.amperaje,
+            tipoRefrigerante: evaporator.tipoRefrigerante,
+            voltaje: evaporator.voltaje,
+            numeroFases: evaporator.numeroFases,
+          }
+        : null,
+      condenser: condenser
+        ? {
+            marca: condenser.marca,
+            modelo: condenser.modelo,
+            serial: condenser.serial,
+            capacidad: condenser.capacidad,
+            amperaje: condenser.amperaje,
+            voltaje: condenser.voltaje,
+            tipoRefrigerante: condenser.tipoRefrigerante,
+            numeroFases: condenser.numeroFases,
+            presionAlta: condenser.presionAlta,
+            presionBaja: condenser.presionBaja,
+            hp: condenser.hp,
+          }
+        : null,
     };
   }
 }

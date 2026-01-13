@@ -11,6 +11,7 @@ import { Tool } from '../tools/entities/tool.entity';
 import { Supply } from '../supplies/entities/supply.entity';
 import { User } from 'src/users/entities/user.entity';
 import { Equipment } from 'src/equipment/entities/equipment.entity';
+import { Client } from 'src/client/entities/client.entity';
 
 @Injectable()
 export class ImagesService {
@@ -31,6 +32,9 @@ export class ImagesService {
 
     @InjectRepository(Equipment)
     private readonly equipmentRepo: Repository<Equipment>,
+
+    @InjectRepository(Client)
+    private readonly clientRepo: Repository<Client>,
 
     private readonly cloudinary: CloudinaryService,
   ) {}
@@ -354,6 +358,135 @@ export class ImagesService {
 
     this.logger.log(
       `Imágenes de equipo eliminadas. Equipo=${equipmentId}, imágenes borradas=${images
+        .map((i) => i.id)
+        .join(',')}`,
+    );
+  }
+
+  // =======================
+  //   CLIENTES
+  // =======================
+  async uploadClientLogo(clientId: number, file: Express.Multer.File) {
+    const client = await this.clientRepo.findOne({
+      where: { idCliente: clientId },
+    });
+
+    if (!client) {
+      throw new NotFoundException('Cliente no encontrado');
+    }
+
+    // Borrar logos anteriores de este cliente
+    const existingLogos = await this.imageRepo
+      .createQueryBuilder('image')
+      .where('image.client_id = :id', { id: clientId })
+      .andWhere('image.is_logo = :isLogo', { isLogo: true })
+      .getMany();
+
+    if (existingLogos.length) {
+      await Promise.all(
+        existingLogos.map((img) =>
+          this.cloudinary.delete(img.public_id),
+        ),
+      );
+      await this.imageRepo.remove(existingLogos);
+    }
+
+    const upload = await this.cloudinary.upload(
+      file,
+      `clients/${clientId}/logo`,
+    );
+
+    const image = this.imageRepo.create({
+      url: upload.secure_url,
+      public_id: upload.public_id,
+      folder: 'clients',
+      isLogo: true,
+      client,
+    });
+
+    return this.imageRepo.save(image);
+  }
+
+  async uploadClientImage(clientId: number, file: Express.Multer.File) {
+    const client = await this.clientRepo.findOne({
+      where: { idCliente: clientId },
+    });
+
+    if (!client) {
+      throw new NotFoundException('Cliente no encontrado');
+    }
+
+    const upload = await this.cloudinary.upload(
+      file,
+      `clients/${clientId}`,
+    );
+
+    const image = this.imageRepo.create({
+      url: upload.secure_url,
+      public_id: upload.public_id,
+      folder: 'clients',
+      isLogo: false,
+      client,
+    });
+
+    return this.imageRepo.save(image);
+  }
+
+  async getClientImages(clientId: number) {
+    const client = await this.clientRepo.findOne({
+      where: { idCliente: clientId },
+    });
+
+    if (!client) {
+      throw new NotFoundException('Cliente no encontrado');
+    }
+
+    const images = await this.imageRepo
+      .createQueryBuilder('image')
+      .where('image.client_id = :id', { id: clientId })
+      .andWhere('(image.is_logo = :isLogoFalse OR image.is_logo IS NULL)', {
+        isLogoFalse: false,
+      })
+      .orderBy('image.created_at', 'DESC')
+      .getMany();
+
+    return images;
+  }
+
+  async getClientLogo(clientId: number) {
+    const client = await this.clientRepo.findOne({
+      where: { idCliente: clientId },
+    });
+
+    if (!client) {
+      throw new NotFoundException('Cliente no encontrado');
+    }
+
+    const logo = await this.imageRepo
+      .createQueryBuilder('image')
+      .where('image.client_id = :id', { id: clientId })
+      .andWhere('image.is_logo = :isLogo', { isLogo: true })
+      .orderBy('image.created_at', 'DESC')
+      .getOne();
+
+    return logo ?? null;
+  }
+
+  async deleteByClient(clientId: number) {
+    const images = await this.imageRepo
+      .createQueryBuilder('image')
+      .where('image.client_id = :id', { id: clientId })
+      .getMany();
+
+    if (!images.length) return;
+
+    await Promise.all(
+      images.map((img) => this.cloudinary.delete(img.public_id)),
+    );
+    await this.imageRepo.remove(images);
+
+    this.logger.log(
+      `Imágenes de cliente eliminadas. Cliente=${clientId}, imágenes borradas=${images
         .map((i) => i.id)
         .join(',')}`,
     );
