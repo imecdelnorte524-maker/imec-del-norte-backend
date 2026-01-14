@@ -1,3 +1,4 @@
+// src/tools/dto/update-tools.dto.ts
 import { PartialType } from '@nestjs/swagger';
 import { CreateToolDto } from './create-tools.dto';
 import { IsOptional, IsEnum, IsNumber, IsString } from 'class-validator';
@@ -7,16 +8,16 @@ import { ToolType, ToolStatus } from '../../shared/enums/inventory.enum';
 export class UpdateToolDto extends PartialType(CreateToolDto) {
   @ApiProperty({
     example: 'Multímetro Digital Actualizado',
-    description: 'Nombre del herramienta',
+    description: 'Nombre de la herramienta',
     required: false,
   })
   @IsOptional()
-  @IsString({ message: 'El nombre del herramienta debe ser una cadena de texto' })
+  @IsString({ message: 'El nombre de la herramienta debe ser una cadena de texto' })
   nombre?: string;
 
   @ApiProperty({
     example: 'Fluke Professional',
-    description: 'Marca del herramienta',
+    description: 'Marca de la herramienta',
     required: false,
   })
   @IsOptional()
@@ -25,7 +26,7 @@ export class UpdateToolDto extends PartialType(CreateToolDto) {
 
   @ApiProperty({
     example: 'FLK123456-UPD',
-    description: 'Número de serie del herramienta',
+    description: 'Número de serie de la herramienta',
     required: false,
   })
   @IsOptional()
@@ -34,7 +35,7 @@ export class UpdateToolDto extends PartialType(CreateToolDto) {
 
   @ApiProperty({
     example: '87V Pro',
-    description: 'Modelo del herramienta',
+    description: 'Modelo de la herramienta',
     required: false,
   })
   @IsOptional()
@@ -43,7 +44,7 @@ export class UpdateToolDto extends PartialType(CreateToolDto) {
 
   @ApiProperty({
     example: 'True RMS, 6000 counts, con Bluetooth',
-    description: 'Características técnicas del herramienta',
+    description: 'Características técnicas de la herramienta',
     required: false,
   })
   @IsOptional()
@@ -52,7 +53,7 @@ export class UpdateToolDto extends PartialType(CreateToolDto) {
 
   @ApiProperty({
     example: 'Equipo en excelente estado, recién calibrado',
-    description: 'Observaciones del herramienta',
+    description: 'Observaciones de la herramienta',
     required: false,
   })
   @IsOptional()
@@ -71,7 +72,7 @@ export class UpdateToolDto extends PartialType(CreateToolDto) {
 
   @ApiProperty({
     example: 'En Mantenimiento',
-    description: 'Estado del herramienta',
+    description: 'Estado de la herramienta',
     required: false,
     enum: ToolStatus,
   })
@@ -81,10 +82,19 @@ export class UpdateToolDto extends PartialType(CreateToolDto) {
 
   @ApiProperty({
     example: 1300000.00,
-    description: 'Valor unitario del herramienta',
+    description: 'Valor unitario de la herramienta',
     required: false,
   })
   @IsOptional()
   @IsNumber({}, { message: 'El valor unitario debe ser un número' })
   valorUnitario?: number;
+
+  @ApiProperty({
+    example: 2,
+    description: 'ID de la bodega',
+    required: false,
+  })
+  @IsOptional()
+  @IsNumber({}, { message: 'El ID de la bodega debe ser un número' })
+  bodegaId?: number;
 }

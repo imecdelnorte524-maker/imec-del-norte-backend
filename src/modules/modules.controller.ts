@@ -38,7 +38,7 @@ export class ModulesController {
   @Roles('Administrador')
   @ApiOperation({
     summary: 'Crear un nuevo módulo',
-    description: 'Permite crear un nuevo módulo y asociarle roles (Solo Dev)',
+    description: 'Permite crear un nuevo módulo y asociarle roles (Solo Adminisrtrador)',
   })
   @ApiResponse({
     status: HttpStatus.CREATED,
@@ -86,7 +86,7 @@ export class ModulesController {
   @ApiOperation({
     summary: 'Obtener módulo por ID',
     description:
-      'Retorna un módulo específico por su ID con sus roles asociados (Solo Dev)',
+      'Retorna un módulo específico por su ID con sus roles asociados (Solo Adminisrtrador)',
   })
   @ApiResponse({
     status: HttpStatus.OK,
@@ -110,7 +110,7 @@ export class ModulesController {
   @ApiOperation({
     summary: 'Actualizar un módulo',
     description:
-      'Actualiza la información de un módulo existente y sus roles asociados (Solo Dev)',
+      'Actualiza la información de un módulo existente y sus roles asociados (Solo Adminisrtrador)',
   })
   @ApiResponse({
     status: HttpStatus.OK,
@@ -141,10 +141,10 @@ export class ModulesController {
   }
 
   @Delete(':id')
-  @Roles('DEV')
+  @Roles('Administrador')
   @ApiOperation({
     summary: 'Eliminar un módulo',
-    description: 'Elimina un módulo permanentemente (Solo Dev)',
+    description: 'Elimina un módulo permanentemente (Solo Administrador)',
   })
   @ApiResponse({
     status: HttpStatus.OK,

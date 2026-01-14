@@ -8,7 +8,7 @@ import { DatabaseModule } from './database/database.module';
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
 import { ServicesModule } from './services/services.module';
-import { ToolModule } from './tools/tool.module';
+import { ToolsModule } from './tools/tool.module';
 import { SuppliesModule } from './supplies/supplies.module';
 import { InventoryModule } from './inventory/inventory.module';
 import { WorkOrdersModule } from './work-orders/work-orders.module';
@@ -27,6 +27,8 @@ import { EventEmitterModule } from '@nestjs/event-emitter';
 import { NotificationsModule } from './notifications/notifications.module';
 import { AirConditionerTypesModule } from './air-conditioner-types/air-conditioner-type.module';
 import { ModulesModule } from './modules/modules.module';
+import { WarehousesModule } from './warehouses/warehouses.module';
+import { UnitMeasureModule } from './unit-measure/unit-measure.module';
 
 @Module({
   imports: [
@@ -53,7 +55,7 @@ import { ModulesModule } from './modules/modules.module';
     UsersModule,
     RolesModule,
     ServicesModule,
-    ToolModule,
+    ToolsModule,
     SuppliesModule,
     InventoryModule,
     WorkOrdersModule,
@@ -69,6 +71,8 @@ import { ModulesModule } from './modules/modules.module';
     NotificationsModule,
     AirConditionerTypesModule,
     ModulesModule,
+    WarehousesModule,
+    UnitMeasureModule,
   ],
 })
 export class AppModule {}

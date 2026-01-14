@@ -1,4 +1,13 @@
+// src/supplies/dto/supply-response.dto.ts
 import { ApiProperty } from '@nestjs/swagger';
+
+class BodegaInfo {
+  @ApiProperty({ example: 1, description: 'ID de la bodega' })
+  bodegaId: number;
+
+  @ApiProperty({ example: 'Bodega Central', description: 'Nombre de la bodega' })
+  nombre: string;
+}
 
 export class SupplyResponseDto {
   @ApiProperty({
@@ -25,7 +34,6 @@ export class SupplyResponseDto {
   })
   unidadMedida: string;
 
-  // NUEVO: Stock desde inventario
   @ApiProperty({
     example: 50,
     description: 'Cantidad en inventario',
@@ -56,12 +64,12 @@ export class SupplyResponseDto {
   })
   valorUnitario: number;
 
-  // NUEVO: Información del inventario
   @ApiProperty({
-    example: 'Almacén Principal - Estante A',
-    description: 'Ubicación en inventario',
+    type: BodegaInfo,
+    description: 'Información de la bodega',
+    required: false,
   })
-  ubicacion: string;
+  bodega?: BodegaInfo;
 
   @ApiProperty({
     example: 50,
@@ -74,4 +82,11 @@ export class SupplyResponseDto {
     description: 'ID del registro en inventario',
   })
   inventarioId?: number;
+
+  @ApiProperty({
+    example: ['https://cloudinary.com/insumo1.jpg', 'https://cloudinary.com/insumo2.jpg'],
+    description: 'URLs de las imágenes del carrusel',
+    required: false,
+  })
+  imagenes?: string[];
 }

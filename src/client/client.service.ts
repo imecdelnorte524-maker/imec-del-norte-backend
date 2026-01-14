@@ -137,7 +137,7 @@ export class ClientService {
   async findOne(id: number): Promise<Client> {
     const client = await this.clientRepository.findOne({
       where: { idCliente: id },
-      relations: ['usuarioContacto', 'areas', 'areas.subAreas', 'images'],
+      relations: ['usuarioContacto', 'areas', 'areas.subAreas', 'images', 'bodegas'],
     });
 
     if (!client) {
@@ -150,7 +150,7 @@ export class ClientService {
   async findByNit(nit: string): Promise<Client | null> {
     return await this.clientRepository.findOne({
       where: { nit },
-      relations: ['usuarioContacto', 'areas', 'areas.subAreas', 'images'],
+      relations: ['usuarioContacto', 'areas', 'areas.subAreas', 'images', 'bodegas'],
     });
   }
 

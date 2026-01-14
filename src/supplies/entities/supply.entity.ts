@@ -1,27 +1,28 @@
+// src/supplies/entities/supply.entity.ts
 import {
   Entity,
   PrimaryGeneratedColumn,
   Column,
   CreateDateColumn,
+  UpdateDateColumn,
+  DeleteDateColumn,
   OneToOne,
-  JoinColumn,
   OneToMany,
+  ManyToOne,
+  JoinColumn,
 } from 'typeorm';
 import { Inventory } from '../../inventory/entities/inventory.entity';
 import { SupplyDetail } from '../../work-orders/entities/supply-detail.entity';
-import {
-  SupplyStatus,
-  SupplyCategory,
-  UnitOfMeasure,
-} from '../../shared/enums/inventory.enum';
-import { Image } from 'src/images/entities/image.entity';
+import { SupplyStatus, SupplyCategory } from '../../shared/enums/inventory.enum';
+import { Image } from '../../images/entities/image.entity';
+import { UnitMeasure } from '../../unit-measure/entities/unit-measure.entity';
 
 @Entity('insumos')
 export class Supply {
   @PrimaryGeneratedColumn({ name: 'insumo_id' })
   insumoId: number;
 
-  @Column({ length: 100 })
+  @Column({ length: 100, unique: true })
   nombre: string;
 
   @Column({
@@ -31,13 +32,13 @@ export class Supply {
   })
   categoria: SupplyCategory;
 
-  @Column({
-    name: 'unidad_medida',
-    type: 'enum',
-    enum: UnitOfMeasure,
-    default: UnitOfMeasure.UNIDAD,
+  // CAMBIO: Ahora es una relación con la entidad UnitMeasure
+  @ManyToOne(() => UnitMeasure, (unit) => unit.supplies, {
+    eager: true,
+    nullable: false,
   })
-  unidadMedida: UnitOfMeasure;
+  @JoinColumn({ name: 'unidad_medida_id' })
+  unidadMedida: UnitMeasure;
 
   @Column({
     type: 'enum',
@@ -49,6 +50,12 @@ export class Supply {
   @CreateDateColumn({ name: 'fecha_registro' })
   fechaRegistro: Date;
 
+  @UpdateDateColumn({ name: 'fecha_actualizacion' })
+  fechaActualizacion: Date;
+
+  @DeleteDateColumn({ name: 'fecha_eliminacion' })
+  fechaEliminacion: Date;
+
   @Column({ name: 'stock_min', default: 0 })
   stockMin: number;
 
@@ -58,7 +65,6 @@ export class Supply {
   @OneToMany(() => Image, (image) => image.supply)
   images: Image[];
 
-  // RELACIÓN UNO A UNO CON INVENTARIO (CASCADA BIDIRECCIONAL)
   @OneToOne(() => Inventory, (inventory) => inventory.supply, {
     cascade: ['insert', 'update'],
     onDelete: 'CASCADE',
@@ -66,7 +72,6 @@ export class Supply {
   @JoinColumn({ name: 'inventario_id' })
   inventory: Inventory;
 
-  // Mantener relación con work orders si es necesario
   @OneToOne(() => SupplyDetail, (supplyDetail) => supplyDetail.supply, {
     nullable: true,
   })

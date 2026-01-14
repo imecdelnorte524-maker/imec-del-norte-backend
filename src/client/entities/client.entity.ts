@@ -12,6 +12,7 @@ import { User } from '../../users/entities/user.entity';
 import { IsEmail, IsNotEmpty, IsOptional } from 'class-validator';
 import { AtsReport } from 'src/sg-sst/entities/ats-report.entity';
 import { Image } from '../../images/entities/image.entity';
+import { Warehouse } from 'src/warehouses/entities/warehouse.entity';
 
 @Entity('clientes')
 export class Client {
@@ -109,4 +110,7 @@ export class Client {
     onUpdate: 'CURRENT_TIMESTAMP',
   })
   updatedAt: Date;
+
+  @OneToMany(() => Warehouse, (warehouse) => warehouse.cliente)
+  bodegas: Warehouse[];
 }

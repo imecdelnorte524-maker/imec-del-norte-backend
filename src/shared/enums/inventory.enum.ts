@@ -1,4 +1,4 @@
-// Estados de Equipos
+// src/shared/enums/inventory.enum.ts
 export enum ToolStatus {
   DISPONIBLE = 'Disponible',
   EN_USO = 'En Uso',
@@ -7,7 +7,6 @@ export enum ToolStatus {
   RETIRADO = 'Retirado'
 }
 
-// Estados de Insumos
 export enum SupplyStatus {
   DISPONIBLE = 'Disponible',
   AGOTADO = 'Agotado',
@@ -15,7 +14,6 @@ export enum SupplyStatus {
   INACTIVO = 'Inactivo'
 }
 
-// Tipos de Equipos
 export enum ToolType {
   HERRAMIENTA = 'Herramienta',
   INSTRUMENTO = 'Instrumento',
@@ -24,7 +22,6 @@ export enum ToolType {
   ELECTRONICO = 'Electrónico'
 }
 
-// Categorías de Insumos
 export enum SupplyCategory {
   GENERAL = 'General',
   ELECTRICO = 'Eléctrico',
@@ -35,20 +32,18 @@ export enum SupplyCategory {
   HERRRAJES = 'Herrajes'
 }
 
-// Unidades de Medida
-export enum UnitOfMeasure {
-  UNIDAD = 'Unidad',
-  METRO = 'Metro',
-  KILOGRAMO = 'Kilogramo',
-  LITRO = 'Litro',
-  CAJA = 'Caja',
-  PAQUETE = 'Paquete',
-  ROLLO = 'Rollo',
-  PULGADA = 'Pulgada'
-}
-
-// Tipos de Items en Inventario
 export enum InventoryItemType {
   INSUMO = 'insumo',
   EQUIPO = 'herramienta'
+}
+
+export enum ToolEliminationReason {
+  DAÑADO = 'Dañado',
+  ROBADO = 'Robado',
+  OBSOLETO = 'Obsoleto',
+  DONADO = 'Donado',
+  VENDIDO = 'Vendido',
+  PERDIDO = 'Perdido',
+  RETIRADO = 'Retirado',
+  OTRO = 'Otro'
 }

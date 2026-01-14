@@ -4,11 +4,12 @@ import {
   Delete,
   Get,
   Param,
+  UploadedFiles,
   UploadedFile,
   UseInterceptors,
   ParseIntPipe,
 } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
+import { FilesInterceptor, FileInterceptor } from '@nestjs/platform-express';
 import {
   ApiTags,
   ApiConsumes,
@@ -26,17 +27,30 @@ export class ImagesController {
 
   // ---------- HERRAMIENTAS ----------
   @Post('tool/:id')
-  @ApiOperation({ summary: 'Subir o reemplazar imagen de una herramienta' })
+  @ApiOperation({ summary: 'Subir o reemplazar imágenes de una herramienta' })
   @ApiConsumes('multipart/form-data')
-  @ApiBody({ type: UploadImageSwaggerDto })
-  @ApiResponse({ status: 201, description: 'Imagen subida correctamente' })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        files: {
+          type: 'array',
+          items: {
+            type: 'string',
+            format: 'binary',
+          },
+        },
+      },
+    },
+  })
+  @ApiResponse({ status: 201, description: 'Imágenes subidas correctamente' })
   @ApiResponse({ status: 404, description: 'Herramienta no encontrada' })
-  @UseInterceptors(FileInterceptor('file'))
-  uploadToolImage(
+  @UseInterceptors(FilesInterceptor('files', 10))
+  uploadToolImages(
     @Param('id', ParseIntPipe) id: number,
-    @UploadedFile() file: Express.Multer.File,
+    @UploadedFiles() files: Express.Multer.File[],
   ) {
-    return this.imagesService.uploadForTool(id, file);
+    return this.imagesService.uploadForTool(id, files);
   }
 
   @Get('tool/:id')
@@ -56,17 +70,30 @@ export class ImagesController {
 
   // ---------- INSUMOS ----------
   @Post('supply/:id')
-  @ApiOperation({ summary: 'Subir o reemplazar imagen de un insumo' })
+  @ApiOperation({ summary: 'Subir o reemplazar imágenes de un insumo' })
   @ApiConsumes('multipart/form-data')
-  @ApiBody({ type: UploadImageSwaggerDto })
-  @ApiResponse({ status: 201, description: 'Imagen subida correctamente' })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        files: {
+          type: 'array',
+          items: {
+            type: 'string',
+            format: 'binary',
+          },
+        },
+      },
+    },
+  })
+  @ApiResponse({ status: 201, description: 'Imágenes subidas correctamente' })
   @ApiResponse({ status: 404, description: 'Insumo no encontrado' })
-  @UseInterceptors(FileInterceptor('file'))
-  uploadSupplyImage(
+  @UseInterceptors(FilesInterceptor('files', 10))
+  uploadSupplyImages(
     @Param('id', ParseIntPipe) id: number,
-    @UploadedFile() file: Express.Multer.File,
+    @UploadedFiles() files: Express.Multer.File[],
   ) {
-    return this.imagesService.uploadForSupply(id, file);
+    return this.imagesService.uploadForSupply(id, files);
   }
 
   @Get('supply/:id')
@@ -140,17 +167,30 @@ export class ImagesController {
   }
 
   @Post('client/:id')
-  @ApiOperation({ summary: 'Subir imagen a la galería de un cliente' })
+  @ApiOperation({ summary: 'Subir imágenes a la galería de un cliente' })
   @ApiConsumes('multipart/form-data')
-  @ApiBody({ type: UploadImageSwaggerDto })
-  @ApiResponse({ status: 201, description: 'Imagen subida correctamente' })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        files: {
+          type: 'array',
+          items: {
+            type: 'string',
+            format: 'binary',
+          },
+        },
+      },
+    },
+  })
+  @ApiResponse({ status: 201, description: 'Imágenes subidas correctamente' })
   @ApiResponse({ status: 404, description: 'Cliente no encontrado' })
-  @UseInterceptors(FileInterceptor('file'))
-  uploadClientImage(
+  @UseInterceptors(FilesInterceptor('files', 10))
+  uploadClientImages(
     @Param('id', ParseIntPipe) id: number,
-    @UploadedFile() file: Express.Multer.File,
+    @UploadedFiles() files: Express.Multer.File[],
   ) {
-    return this.imagesService.uploadClientImage(id, file);
+    return this.imagesService.uploadClientImages(id, files);
   }
 
   @Get('client/:id')

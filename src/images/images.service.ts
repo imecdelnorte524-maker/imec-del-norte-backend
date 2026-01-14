@@ -40,15 +40,20 @@ export class ImagesService {
   ) {}
 
   // =======================
-  //   HERRAMIENTAS
+  //   HERRAMIENTAS - MÚLTIPLES IMÁGENES
   // =======================
-  async uploadForTool(toolId: number, file: Express.Multer.File) {
+  async uploadForTool(toolId: number, files: Express.Multer.File[]) {
     const tool = await this.toolRepo.findOne({
       where: { herramientaId: toolId },
     });
 
     if (!tool) {
       throw new NotFoundException('Herramienta no encontrada');
+    }
+
+    // Verificar si hay archivos
+    if (!files || files.length === 0) {
+      throw new NotFoundException('No se han subido archivos');
     }
 
     // BORRAR IMÁGENES ANTERIORES (usando FK tool_id)
@@ -66,16 +71,30 @@ export class ImagesService {
       await this.imageRepo.remove(existingImages);
     }
 
-    const upload = await this.cloudinary.upload(file, `tools/${toolId}`);
+    // Subir todas las imágenes
+    const uploadPromises = files.map((file, index) =>
+      this.cloudinary.upload(file, `tools/${toolId}/${Date.now()}_${index}`)
+    );
 
-    const image = this.imageRepo.create({
-      url: upload.secure_url,
-      public_id: upload.public_id,
-      folder: 'tools',
-      tool,
-    });
+    const uploadResults = await Promise.all(uploadPromises);
 
-    return this.imageRepo.save(image);
+    // Crear entidades para cada imagen
+    const imageEntities = uploadResults.map(upload => 
+      this.imageRepo.create({
+        url: upload.secure_url,
+        public_id: upload.public_id,
+        folder: 'tools',
+        tool,
+      })
+    );
+
+    // Guardar todas las imágenes en la base de datos
+    const savedImages = await this.imageRepo.save(imageEntities);
+
+    return {
+      message: `${files.length} imagen(es) subida(s) correctamente para la herramienta`,
+      data: savedImages,
+    };
   }
 
   async getToolImages(toolId: number) {
@@ -119,15 +138,20 @@ export class ImagesService {
   }
 
   // =======================
-  //   INSUMOS
+  //   INSUMOS - MÚLTIPLES IMÁGENES
   // =======================
-  async uploadForSupply(supplyId: number, file: Express.Multer.File) {
+  async uploadForSupply(supplyId: number, files: Express.Multer.File[]) {
     const supply = await this.supplyRepo.findOne({
       where: { insumoId: supplyId },
     });
 
     if (!supply) {
       throw new NotFoundException('Insumo no encontrado');
+    }
+
+    // Verificar si hay archivos
+    if (!files || files.length === 0) {
+      throw new NotFoundException('No se han subido archivos');
     }
 
     // BORRAR IMÁGENES ANTERIORES (FK supply_id)
@@ -145,19 +169,30 @@ export class ImagesService {
       await this.imageRepo.remove(existingImages);
     }
 
-    const upload = await this.cloudinary.upload(
-      file,
-      `supplies/${supplyId}`,
+    // Subir todas las imágenes
+    const uploadPromises = files.map((file, index) =>
+      this.cloudinary.upload(file, `supplies/${supplyId}/${Date.now()}_${index}`)
     );
 
-    const image = this.imageRepo.create({
-      url: upload.secure_url,
-      public_id: upload.public_id,
-      folder: 'supplies',
-      supply,
-    });
+    const uploadResults = await Promise.all(uploadPromises);
 
-    return this.imageRepo.save(image);
+    // Crear entidades para cada imagen
+    const imageEntities = uploadResults.map(upload => 
+      this.imageRepo.create({
+        url: upload.secure_url,
+        public_id: upload.public_id,
+        folder: 'supplies',
+        supply,
+      })
+    );
+
+    // Guardar todas las imágenes en la base de datos
+    const savedImages = await this.imageRepo.save(imageEntities);
+
+    return {
+      message: `${files.length} imagen(es) subida(s) correctamente para el insumo`,
+      data: savedImages,
+    };
   }
 
   async getSupplyImages(supplyId: number) {
@@ -407,7 +442,7 @@ export class ImagesService {
     return this.imageRepo.save(image);
   }
 
-  async uploadClientImage(clientId: number, file: Express.Multer.File) {
+  async uploadClientImages(clientId: number, files: Express.Multer.File[]) {
     const client = await this.clientRepo.findOne({
       where: { idCliente: clientId },
     });
@@ -416,20 +451,36 @@ export class ImagesService {
       throw new NotFoundException('Cliente no encontrado');
     }
 
-    const upload = await this.cloudinary.upload(
-      file,
-      `clients/${clientId}`,
+    // Verificar si hay archivos
+    if (!files || files.length === 0) {
+      throw new NotFoundException('No se han subido archivos');
+    }
+
+    // Subir todas las imágenes
+    const uploadPromises = files.map((file, index) =>
+      this.cloudinary.upload(file, `clients/${clientId}/gallery/${Date.now()}_${index}`)
     );
 
-    const image = this.imageRepo.create({
-      url: upload.secure_url,
-      public_id: upload.public_id,
-      folder: 'clients',
-      isLogo: false,
-      client,
-    });
+    const uploadResults = await Promise.all(uploadPromises);
 
-    return this.imageRepo.save(image);
+    // Crear entidades para cada imagen
+    const imageEntities = uploadResults.map(upload => 
+      this.imageRepo.create({
+        url: upload.secure_url,
+        public_id: upload.public_id,
+        folder: 'clients',
+        isLogo: false,
+        client,
+      })
+    );
+
+    // Guardar todas las imágenes en la base de datos
+    const savedImages = await this.imageRepo.save(imageEntities);
+
+    return {
+      message: `${files.length} imagen(es) subida(s) correctamente a la galería del cliente`,
+      data: savedImages,
+    };
   }
 
   async getClientImages(clientId: number) {

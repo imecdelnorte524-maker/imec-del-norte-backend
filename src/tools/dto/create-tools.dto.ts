@@ -1,20 +1,20 @@
+// src/tools/dto/create-tools.dto.ts
 import { IsNotEmpty, IsString, IsNumber, IsOptional, Min, IsEnum } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
-import { Transform } from 'class-transformer';
 import { ToolType, ToolStatus } from '../../shared/enums/inventory.enum';
 
 export class CreateToolDto {
   @ApiProperty({
     example: 'Multímetro Digital',
-    description: 'Nombre del herramienta',
+    description: 'Nombre de la herramienta',
   })
-  @IsNotEmpty({ message: 'El nombre del herramienta es requerido' })
-  @IsString({ message: 'El nombre del herramienta debe ser una cadena de texto' })
+  @IsNotEmpty({ message: 'El nombre de la herramienta es requerido' })
+  @IsString({ message: 'El nombre de la herramienta debe ser una cadena de texto' })
   nombre: string;
 
   @ApiProperty({
     example: 'Fluke',
-    description: 'Marca del herramienta',
+    description: 'Marca de la herramienta',
     required: false,
   })
   @IsOptional()
@@ -23,7 +23,7 @@ export class CreateToolDto {
 
   @ApiProperty({
     example: 'FLK123456',
-    description: 'Número de serie del herramienta',
+    description: 'Número de serie de la herramienta',
     required: false,
   })
   @IsOptional()
@@ -32,7 +32,7 @@ export class CreateToolDto {
 
   @ApiProperty({
     example: '87V',
-    description: 'Modelo del herramienta',
+    description: 'Modelo de la herramienta',
     required: false,
   })
   @IsOptional()
@@ -41,7 +41,7 @@ export class CreateToolDto {
 
   @ApiProperty({
     example: 'True RMS, 6000 counts',
-    description: 'Características técnicas del herramienta',
+    description: 'Características técnicas de la herramienta',
     required: false,
   })
   @IsOptional()
@@ -50,7 +50,7 @@ export class CreateToolDto {
 
   @ApiProperty({
     example: 'Equipo en buen estado, calibrado recientemente',
-    description: 'Observaciones del herramienta',
+    description: 'Observaciones de la herramienta',
     required: false,
   })
   @IsOptional()
@@ -68,54 +68,28 @@ export class CreateToolDto {
 
   @ApiProperty({
     example: 'Disponible',
-    description: 'Estado del herramienta',
+    description: 'Estado de la herramienta',
     enum: ToolStatus,
   })
-  @IsNotEmpty({ message: 'El estado del herramienta es requerido' })
+  @IsNotEmpty({ message: 'El estado de la herramienta es requerido' })
   @IsEnum(ToolStatus, { message: 'El estado debe ser un valor válido' })
   estado: ToolStatus;
 
   @ApiProperty({
     example: 1200000.00,
-    description: 'Valor unitario del herramienta',
+    description: 'Valor unitario de la herramienta',
   })
   @IsNotEmpty({ message: 'El valor unitario es requerido' })
   @IsNumber({}, { message: 'El valor unitario debe ser un número' })
   @Min(0, { message: 'El valor unitario no puede ser negativo' })
   valorUnitario: number;
 
-  // NUEVO: Campos para el inventario asociado
   @ApiProperty({
-    example: 'Almacén Principal - Estante A',
-    description: 'Ubicación del herramienta en inventario',
+    example: 1,
+    description: 'ID de la bodega donde se almacena',
     required: false,
   })
   @IsOptional()
-  @IsString({ message: 'La ubicación debe ser una cadena de texto' })
-  ubicacion?: string;
-  
-  @ApiProperty({
-    example: '1',
-    description: 'ID del inventario asociado al herramienta (se genera automáticamente)',
-    required: false,
-  })
-  @Transform(({ value }) => {
-    // Convertir cadena vacía, null o undefined a undefined
-    if (value === '' || value === null || value === undefined) {
-      return undefined;
-    }
-    // Si es un string numérico, convertirlo a número
-    if (typeof value === 'string' && value.trim() !== '' && !isNaN(Number(value))) {
-      return Number(value);
-    }
-    // Si ya es un número, devolverlo tal cual
-    if (typeof value === 'number') {
-      return value;
-    }
-    // Para cualquier otro caso, devolver undefined
-    return undefined;
-  })
-  @IsOptional()
-  @IsNumber({}, { message: 'El inventarioId debe ser un número' })
-  inventarioId?: number;
+  @IsNumber({}, { message: 'El ID de la bodega debe ser un número' })
+  bodegaId?: number;
 }

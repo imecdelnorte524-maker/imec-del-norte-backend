@@ -1,11 +1,9 @@
-// update-inventory.dto.ts
-import { PartialType } from '@nestjs/swagger';
-import { CreateInventoryDto } from './create-inventory.dto';
+// src/inventory/dto/update-inventory.dto.ts
 import { IsOptional, IsNumber, Min, IsString } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
-import { SupplyStatus, ToolStatus } from 'src/shared/enums';
+import { Type } from 'class-transformer';
 
-export class UpdateInventoryDto extends PartialType(CreateInventoryDto) {
+export class UpdateInventoryDto {
   @ApiProperty({
     example: 15.5,
     description: 'Cantidad actual en inventario',
@@ -14,11 +12,23 @@ export class UpdateInventoryDto extends PartialType(CreateInventoryDto) {
   @IsOptional()
   @IsNumber({}, { message: 'La cantidad actual debe ser un número' })
   @Min(0, { message: 'La cantidad actual no puede ser negativa' })
+  @Type(() => Number)
   cantidadActual?: number;
 
   @ApiProperty({
-    example: 'Almacén Principal - Estante B',
-    description: 'Ubicación del item en el inventario',
+    example: 2,
+    description: 'ID de la bodega (null para desasignar)',
+    required: false,
+    nullable: true,
+  })
+  @IsOptional()
+  @IsNumber({}, { message: 'El ID de la bodega debe ser un número' })
+  @Type(() => Number)
+  bodegaId?: number | null;
+
+  @ApiProperty({
+    example: 'Almacén Principal - Estante A',
+    description: 'Ubicación dentro de la bodega',
     required: false,
   })
   @IsOptional()
@@ -26,9 +36,8 @@ export class UpdateInventoryDto extends PartialType(CreateInventoryDto) {
   ubicacion?: string;
 
   @ApiProperty({
-    example: 'Disponible',
-    description: 'Estado del item',
-    enum: [...Object.values(SupplyStatus), ...Object.values(ToolStatus)],
+    example: 'Stock Bajo',
+    description: 'Estado del inventario',
     required: false,
   })
   @IsOptional()
