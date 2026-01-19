@@ -131,6 +131,38 @@ class CondenserResponseDto {
   hp?: string;
 }
 
+class CompressorResponseDto {
+  @ApiPropertyOptional({ example: 'Samsung' })
+  marca?: string;
+
+  @ApiPropertyOptional({ example: 'AEV12' })
+  modelo?: string;
+
+  @ApiPropertyOptional({ example: 'EV123456' })
+  serial?: string;
+
+  @ApiPropertyOptional({ example: '12000 BTU' })
+  capacidad?: string;
+
+  @ApiPropertyOptional({ example: '8A' })
+  amperaje?: string;
+
+  @ApiPropertyOptional({ example: 'R410A' })
+  tipoRefrigerante?: string;
+
+  @ApiPropertyOptional({ example: '220V' })
+  voltaje?: string;
+
+  @ApiPropertyOptional({ example: '1' })
+  numeroFases?: string;
+
+  @ApiPropertyOptional({ example: '15W' })
+  tipoAceite?: string;
+
+  @ApiPropertyOptional({ example: '15W' })
+  cantidadAceite?: string;
+}
+
 // --- DTO principal ---
 
 export class EquipmentResponseDto {
@@ -150,7 +182,7 @@ export class EquipmentResponseDto {
     example: 15,
     description: 'ID de la orden de servicio asociada',
   })
-  orderId?: number | null;
+  workOrderId?: number | null;
 
   @ApiProperty()
   category: string;
@@ -160,6 +192,14 @@ export class EquipmentResponseDto {
     description: 'ID del tipo de aire acondicionado',
   })
   airConditionerTypeId?: number;
+
+  @ApiPropertyOptional()
+  airConditionerType?: {
+    id: number;
+    name: string;
+    hasEvaporator: boolean;
+    hasCondenser: boolean;
+  };
 
   @ApiProperty()
   name: string;
@@ -218,4 +258,7 @@ export class EquipmentResponseDto {
 
   @ApiPropertyOptional({ type: CondenserResponseDto })
   condenser?: CondenserResponseDto | null;
+
+  @ApiPropertyOptional({ type: CompressorResponseDto })
+  compressor?: CompressorResponseDto | null;
 }

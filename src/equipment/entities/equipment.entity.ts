@@ -19,6 +19,7 @@ import { AirConditionerType } from '../../air-conditioner-types/entities/air-con
 import { EquipmentMotor } from './motor.entity';
 import { EquipmentEvaporator } from './evaporator.entity';
 import { EquipmentCondenser } from './condenser.entity';
+import { EquipmentCompressor } from './compressor.entity';
 
 @Entity('equipos')
 export class Equipment {
@@ -53,7 +54,6 @@ export class Equipment {
   })
   category: ServiceCategory;
 
-  // ✅ Nuevo campo
   @Column({ name: 'air_conditioner_type_id', nullable: true })
   airConditionerTypeId?: number;
 
@@ -67,29 +67,8 @@ export class Equipment {
   @Column({ name: 'codigo_equipo', length: 100, nullable: true })
   code?: string;
 
-  @Column({ name: 'marca', length: 150, nullable: true })
-  brand?: string;
-
-  @Column({ name: 'modelo', length: 150, nullable: true })
-  model?: string;
-
-  @Column({ name: 'numero_serie', length: 150, nullable: true })
-  serialNumber?: string;
-
-  @Column({ name: 'capacidad', length: 150, nullable: true })
-  capacity?: string;
-
-  @Column({ name: 'tipo_refrigerante', length: 100, nullable: true })
-  refrigerantType?: string;
-
-  @Column({ name: 'voltaje', length: 50, nullable: true })
-  voltage?: string;
-
   @Column({ name: 'ubicacion_fisica', length: 500, nullable: true })
   physicalLocation?: string;
-
-  @Column({ name: 'fabricante', length: 150, nullable: true })
-  manufacturer?: string;
 
   @Column({
     name: 'estado_equipo',
@@ -130,7 +109,6 @@ export class Equipment {
   @JoinColumn({ name: 'work_order_id' })
   workOrder?: WorkOrder;
 
-  // ✅ Nuevas relaciones 1:1
   @OneToMany(() => EquipmentMotor, (motor) => motor.equipment, {
     cascade: true,
     eager: true,
@@ -148,4 +126,10 @@ export class Equipment {
     eager: true,
   })
   condensers?: EquipmentCondenser[];
+
+  @OneToMany(() => EquipmentCompressor, (compressor) => compressor.equipment, {
+    cascade: true,
+    eager: true,
+  })
+  compressors?: EquipmentCompressor[];
 }

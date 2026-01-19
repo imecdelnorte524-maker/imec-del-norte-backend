@@ -102,7 +102,7 @@ export class MailService {
 
                 <p style="margin:0; font-size:12px; color:#777777;">
                   Saludos,<br />
-                  El herramienta de Soporte
+                  El Equipo de Soporte
                 </p>
               </td>
             </tr>
@@ -130,7 +130,7 @@ export class MailService {
 
     const loginUrl =
       this.configService.get<string>('APP_LOGIN_URL') ||
-      'https://imec-del-norte.onrender.com/';
+      'https://x/';
 
     const html = this.buildCredentialsEmailHtml({
       username,

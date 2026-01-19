@@ -12,6 +12,7 @@ import { AirConditionerType } from '../air-conditioner-types/entities/air-condit
 import { EquipmentMotor } from './entities/motor.entity';
 import { EquipmentEvaporator } from './entities/evaporator.entity';
 import { EquipmentCondenser } from './entities/condenser.entity';
+import { EquipmentCompressor } from './entities/compressor.entity';
 
 @Module({
   imports: [
@@ -25,6 +26,7 @@ import { EquipmentCondenser } from './entities/condenser.entity';
       EquipmentMotor,
       EquipmentEvaporator,
       EquipmentCondenser,
+      EquipmentCompressor,
     ]),
     ImagesModule,
   ],

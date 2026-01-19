@@ -39,17 +39,13 @@ async function bootstrap() {
 
   [uploadsToUse, invoicesPath].forEach((path) => {
     if (!existsSync(path)) {
-      console.log(`   🔨 Creando carpeta: ${path}`);
       try {
         mkdirSync(path, { recursive: true });
-        console.log(`   ✅ Carpeta creada: ${path}`);
       } catch (error) {
         console.error(`   ❌ Error creando carpeta ${path}:`, error.message);
       }
     }
   });
-
-  console.log(`\n📁 Usando ruta para archivos estáticos: ${uploadsToUse}`);
 
   // Configurar static assets
   app.useStaticAssets(uploadsToUse, {
@@ -60,14 +56,12 @@ async function bootstrap() {
   });
 
   // Listar archivos existentes
-  console.log('\n📋 Archivos existentes en uploads:');
-  try {
+ try {
     const fs = require('fs');
 
     if (existsSync(invoicesPath)) {
       const invocesFiles = fs.readdirSync(invoicesPath);
-      console.log(`   📁 invoces (${invocesFiles.length} archivos):`);
-      invocesFiles.forEach((file) => {
+    invocesFiles.forEach((file) => {
         const filePath = join(invoicesPath, file);
         const stats = fs.statSync(filePath);
         console.log(`      - ${file} (${Math.round(stats.size / 1024)} KB)`);
