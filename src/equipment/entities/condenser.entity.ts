@@ -4,8 +4,11 @@ import {
   Column,
   ManyToOne,
   JoinColumn,
+  OneToMany,
 } from 'typeorm';
 import { Equipment } from './equipment.entity';
+import { EquipmentMotor } from './motor.entity';
+import { EquipmentCompressor } from './compressor.entity';
 
 @Entity('equipment_condensers')
 export class EquipmentCondenser {
@@ -21,6 +24,7 @@ export class EquipmentCondenser {
   @JoinColumn({ name: 'equipment_id' })
   equipment: Equipment;
 
+  // Campos actuales (mantenerlos, todos opcionales)
   @Column({ name: 'marca', type: 'varchar', length: 150, nullable: true })
   marca?: string;
 
@@ -68,4 +72,17 @@ export class EquipmentCondenser {
     onUpdate: 'CURRENT_TIMESTAMP',
   })
   updatedAt: Date;
+
+  // Nuevas relaciones
+  @OneToMany(() => EquipmentMotor, (motor) => motor.condenser, {
+    cascade: true,
+    nullable: true,
+  })
+  motors?: EquipmentMotor[];
+
+  @OneToMany(() => EquipmentCompressor, (comp) => comp.condenser, {
+    cascade: true,
+    nullable: true,
+  })
+  compressors?: EquipmentCompressor[];
 }

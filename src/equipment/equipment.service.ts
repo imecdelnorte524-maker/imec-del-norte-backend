@@ -12,13 +12,13 @@ import { Client } from '../client/entities/client.entity';
 import { Area } from '../area/entities/area.entity';
 import { SubArea } from '../sub-area/entities/sub-area.entity';
 import { ImagesService } from '../images/images.service';
-import { WorkOrder } from '../work-orders/entities/work-order.entity';
 import { AirConditionerType } from '../air-conditioner-types/entities/air-conditioner-type.entity';
 import { ServiceCategory } from '../services/enums/service.enums';
 import { EquipmentMotor } from './entities/motor.entity';
 import { EquipmentEvaporator } from './entities/evaporator.entity';
 import { EquipmentCondenser } from './entities/condenser.entity';
 import { EquipmentCompressor } from './entities/compressor.entity';
+import { PlanMantenimiento } from './entities/plan-mantenimiento.entity';
 import { EquipmentStatus } from './enums/equipment-status.enum';
 
 @Injectable()
@@ -32,8 +32,6 @@ export class EquipmentService {
     private readonly areaRepository: Repository<Area>,
     @InjectRepository(SubArea)
     private readonly subAreaRepository: Repository<SubArea>,
-    @InjectRepository(WorkOrder)
-    private readonly workOrderRepository: Repository<WorkOrder>,
     @InjectRepository(AirConditionerType)
     private readonly acTypeRepository: Repository<AirConditionerType>,
     @InjectRepository(EquipmentMotor)
@@ -44,8 +42,14 @@ export class EquipmentService {
     private readonly condenserRepository: Repository<EquipmentCondenser>,
     @InjectRepository(EquipmentCompressor)
     private readonly compressorRepository: Repository<EquipmentCompressor>,
+    @InjectRepository(PlanMantenimiento)
+    private readonly planMantenimientoRepository: Repository<PlanMantenimiento>,
     private readonly imagesService: ImagesService,
   ) {}
+
+  // ────────────────────────────────────────────────────────────────
+  // Helpers para generación de código
+  // ────────────────────────────────────────────────────────────────
 
   private getClientInitials(clientName: string): string {
     if (!clientName) return 'XX';
@@ -55,19 +59,20 @@ export class EquipmentService {
       .map((w) => w.trim())
       .filter((w) => w.length > 0 && !ignore.has(w.toLowerCase()));
     if (words.length === 0) return 'XX';
-    const initials = words
+    return words
       .slice(0, 2)
       .map((w) => w[0].toUpperCase())
       .join('');
-    return initials || 'XX';
   }
 
   private getCategoryPrefix(category: ServiceCategory): string {
-    if (category === ServiceCategory.AIRES_ACONDICIONADOS) return 'AA';
-    if (category === ServiceCategory.REDES_CONTRA_INCENDIOS) return 'RCI';
-    if (category === ServiceCategory.REDES_ELECTRICAS) return 'RE';
-    if (category === ServiceCategory.OBRAS_CIVILES) return 'OC';
-    return 'EQ';
+    const prefixes: Record<ServiceCategory, string> = {
+      [ServiceCategory.AIRES_ACONDICIONADOS]: 'AA',
+      [ServiceCategory.REDES_CONTRA_INCENDIOS]: 'RCI',
+      [ServiceCategory.REDES_ELECTRICAS]: 'RE',
+      [ServiceCategory.OBRAS_CIVILES]: 'OC',
+    };
+    return prefixes[category] ?? 'EQ';
   }
 
   private async getAreaIndex(
@@ -79,9 +84,8 @@ export class EquipmentService {
       order: { createdAt: 'ASC' },
     });
     const index = areas.findIndex((a) => a.idArea === areaId);
-    if (index === -1) {
-      throw new BadRequestException('El área no pertenece al cliente');
-    }
+    if (index === -1)
+      throw new BadRequestException('Área no pertenece al cliente');
     return (index + 1).toString().padStart(2, '0');
   }
 
@@ -89,9 +93,7 @@ export class EquipmentService {
     const subArea = await this.subAreaRepository.findOne({
       where: { idSubArea: subAreaId },
     });
-    if (!subArea) {
-      throw new BadRequestException('Subárea no encontrada');
-    }
+    if (!subArea) throw new BadRequestException('Subárea no encontrada');
 
     const parentId = subArea.parentSubAreaId ?? null;
     const siblings = await this.subAreaRepository.find({
@@ -103,9 +105,8 @@ export class EquipmentService {
     });
 
     const index = siblings.findIndex((s) => s.idSubArea === subAreaId);
-    if (index === -1) {
-      throw new BadRequestException('Error al calcular índice de subárea');
-    }
+    if (index === -1)
+      throw new BadRequestException('Error calculando índice de subárea');
     return (index + 1).toString().padStart(2, '0');
   }
 
@@ -114,15 +115,9 @@ export class EquipmentService {
     areaId: number,
     subAreaId: number | null,
   ): Promise<string> {
-    const where: any = {
-      clientId,
-      areaId,
-    };
-    if (subAreaId !== null) {
-      where.subAreaId = subAreaId;
-    } else {
-      where.subAreaId = IsNull();
-    }
+    const where: any = { clientId, areaId };
+    if (subAreaId !== null) where.subAreaId = subAreaId;
+    else where.subAreaId = IsNull();
 
     const count = await this.equipmentRepository.count({ where });
     return (count + 1).toString().padStart(2, '0');
@@ -137,200 +132,164 @@ export class EquipmentService {
     const clientInitials = this.getClientInitials(client.nombre);
     const categoryPrefix = this.getCategoryPrefix(category);
 
-    // 1) Índice de área
     const areaIndex = await this.getAreaIndex(client.idCliente, areaId);
 
-    // 2) Ruta completa de subáreas (si hay)
     let subAreasPath = '';
-    let currentSubAreaId = subAreaId ?? null;
-
-    while (currentSubAreaId) {
-      const index = await this.getSubAreaIndex(currentSubAreaId);
-      subAreasPath = index + subAreasPath; // prepend
-      const subArea = await this.subAreaRepository.findOne({
-        where: { idSubArea: currentSubAreaId },
+    let current = subAreaId ?? null;
+    while (current) {
+      const index = await this.getSubAreaIndex(current);
+      subAreasPath = index + subAreasPath;
+      const sub = await this.subAreaRepository.findOne({
+        where: { idSubArea: current },
       });
-      currentSubAreaId = subArea?.parentSubAreaId ?? null;
+      current = sub?.parentSubAreaId ?? null;
     }
+    if (!subAreasPath) subAreasPath = '00';
 
-    // Si no hay subáreas, usar '00'
-    if (subAreasPath === '') {
-      subAreasPath = '00';
-    }
-
-    // 3) Índice del equipo (dentro de esa ubicación)
     const equipmentIndex = await this.getEquipmentIndexInLocation(
       client.idCliente,
       areaId,
       subAreaId ?? null,
     );
 
-    // Resultado: CI-AA-01-02-01
-    const code = `${clientInitials}${categoryPrefix}${areaIndex}${subAreasPath}${equipmentIndex}`;
-    return code;
+    return `${clientInitials}${categoryPrefix}${areaIndex}${subAreasPath}${equipmentIndex}`;
   }
 
-  async create(createEquipmentDto: CreateEquipmentDto): Promise<Equipment> {
-    // Validar cliente
+  // ────────────────────────────────────────────────────────────────
+  // CREATE
+  // ────────────────────────────────────────────────────────────────
+
+  async create(dto: CreateEquipmentDto): Promise<Equipment> {
     const client = await this.clientRepository.findOne({
-      where: { idCliente: createEquipmentDto.clientId },
+      where: { idCliente: dto.clientId },
     });
-    if (!client) {
-      throw new NotFoundException(
-        `Cliente con ID ${createEquipmentDto.clientId} no encontrado`,
-      );
+    if (!client)
+      throw new NotFoundException(`Cliente ${dto.clientId} no encontrado`);
+
+    // Validar ubicación
+    if (!dto.areaId && !dto.subAreaId) {
+      throw new BadRequestException('Debe especificar área o subárea');
     }
 
-    // Validación de ubicación
-    if (!createEquipmentDto.areaId && !createEquipmentDto.subAreaId) {
-      throw new BadRequestException(
-        'Debe proporcionar al menos un área o subárea',
-      );
-    }
-
-    // Validar/ajustar área y subárea
-    let finalAreaId = createEquipmentDto.areaId;
-    let finalSubAreaId = createEquipmentDto.subAreaId ?? null;
+    let finalAreaId = dto.areaId;
+    let finalSubAreaId = dto.subAreaId ?? null;
 
     if (finalSubAreaId) {
-      const subArea = await this.subAreaRepository.findOne({
+      const sub = await this.subAreaRepository.findOne({
         where: { idSubArea: finalSubAreaId },
       });
-      if (!subArea) {
-        throw new NotFoundException(
-          `Subárea con ID ${finalSubAreaId} no encontrada`,
-        );
+      if (!sub)
+        throw new NotFoundException(`Subárea ${finalSubAreaId} no encontrada`);
+      if (finalAreaId && finalAreaId !== sub.areaId) {
+        throw new BadRequestException('Área no coincide con subárea');
       }
-
-      if (finalAreaId && finalAreaId !== subArea.areaId) {
-        throw new BadRequestException(
-          'El área proporcionada no coincide con el área de la subárea',
-        );
-      }
-
-      finalAreaId = subArea.areaId;
-    } else {
+      finalAreaId = sub.areaId;
+    } else if (finalAreaId) {
       const area = await this.areaRepository.findOne({
         where: { idArea: finalAreaId },
       });
-      if (!area) {
-        throw new NotFoundException(`Área con ID ${finalAreaId} no encontrada`);
-      }
+      if (!area)
+        throw new NotFoundException(`Área ${finalAreaId} no encontrada`);
     }
 
-    // Validar orden de trabajo
-    if (createEquipmentDto.workOrderId) {
-      const workOrder = await this.workOrderRepository.findOne({
-        where: { ordenId: createEquipmentDto.workOrderId },
-      });
-
-      if (!workOrder) {
-        throw new NotFoundException(
-          `Orden de trabajo con ID ${createEquipmentDto.workOrderId} no encontrada`,
-        );
-      }
-
-      if (
-        workOrder.clienteEmpresaId &&
-        workOrder.clienteEmpresaId !== createEquipmentDto.clientId
-      ) {
-        throw new BadRequestException(
-          'La orden de trabajo no pertenece a la misma empresa (cliente) del equipo',
-        );
-      }
-    }
-
-    // Validación de tipo de aire acondicionado
-    if (createEquipmentDto.category === ServiceCategory.AIRES_ACONDICIONADOS) {
-      if (!createEquipmentDto.airConditionerTypeId) {
-        throw new BadRequestException(
-          'Debe especificar el tipo de aire acondicionado',
-        );
-      }
-
+    // Validar categoría y tipo de aire
+    if (dto.category === ServiceCategory.AIRES_ACONDICIONADOS) {
+      if (!dto.airConditionerTypeId)
+        throw new BadRequestException('Tipo de aire requerido');
       const acType = await this.acTypeRepository.findOne({
-        where: { id: createEquipmentDto.airConditionerTypeId },
+        where: { id: dto.airConditionerTypeId },
       });
-      if (!acType) {
-        throw new BadRequestException(
-          'El tipo de aire acondicionado no existe',
-        );
-      }
-
-      if (!acType.hasEvaporator && createEquipmentDto.evaporator) {
-        throw new BadRequestException(
-          'Este tipo de aire no tiene evaporador, no se aceptan datos de evaporador',
-        );
-      }
-
-      if (!acType.hasCondenser && createEquipmentDto.condenser) {
-        throw new BadRequestException(
-          'Este tipo de aire no tiene condensadora, no se aceptan datos de condensadora',
-        );
-      }
-    } else {
-      if (createEquipmentDto.airConditionerTypeId) {
-        throw new BadRequestException(
-          'Solo los equipos de Aires Acondicionados pueden tener airConditionerTypeId',
-        );
-      }
-    }
-
-    // Generar código interno
-    if (!finalAreaId) {
+      if (!acType) throw new BadRequestException('Tipo de aire no existe');
+    } else if (dto.airConditionerTypeId) {
       throw new BadRequestException(
-        'El área es requerida para generar el código del equipo',
+        'Solo aires acondicionados pueden tener tipo de aire',
       );
     }
+
+    // Generar código
+    if (!finalAreaId)
+      throw new BadRequestException('Área requerida para generar código');
     const code = await this.generateEquipmentCode(
       client,
       finalAreaId,
       finalSubAreaId,
-      createEquipmentDto.category,
+      dto.category,
     );
 
     // Crear equipo base
-    const equipmentData = {
-      ...createEquipmentDto,
+    const equipment = this.equipmentRepository.create({
+      ...dto,
       areaId: finalAreaId,
-      subAreaId: finalSubAreaId === null ? undefined : finalSubAreaId,
+      subAreaId: finalSubAreaId ?? undefined,
       code,
-      status: createEquipmentDto.status || EquipmentStatus.ACTIVE,
-    };
+      status: dto.status ?? EquipmentStatus.ACTIVE,
+    });
 
-    const equipment = this.equipmentRepository.create(equipmentData);
-    const savedEquipment = await this.equipmentRepository.save(equipment);
+    const saved = await this.equipmentRepository.save(equipment);
 
-    await this.createComponents(savedEquipment.equipmentId, createEquipmentDto);
+    // Crear componentes y plan
+    await this.createComponents(saved.equipmentId, dto);
 
-    return this.findOne(savedEquipment.equipmentId);
+    return this.findOne(saved.equipmentId);
   }
 
   private async createComponents(
     equipmentId: number,
     dto: CreateEquipmentDto,
   ): Promise<void> {
-    if (dto.motor) {
-      await this.motorRepository.save(
-        this.motorRepository.create({ ...dto.motor, equipmentId }),
-      );
+    // Evaporadores + sus motores
+    if (dto.evaporators?.length) {
+      for (const evapDto of dto.evaporators) {
+        const evap = await this.evaporatorRepository.save({
+          ...evapDto,
+          equipmentId,
+        });
+
+        if (evapDto.motors?.length) {
+          for (const m of evapDto.motors) {
+            await this.motorRepository.save({ ...m, evaporatorId: evap.id });
+          }
+        }
+      }
     }
-    if (dto.evaporator) {
-      await this.evaporatorRepository.save(
-        this.evaporatorRepository.create({ ...dto.evaporator, equipmentId }),
-      );
+
+    // Condensadoras + motores + compresores
+    if (dto.condensers?.length) {
+      for (const condDto of dto.condensers) {
+        const cond = await this.condenserRepository.save({
+          ...condDto,
+          equipmentId,
+        });
+
+        if (condDto.motors?.length) {
+          for (const m of condDto.motors) {
+            await this.motorRepository.save({ ...m, condenserId: cond.id });
+          }
+        }
+
+        if (condDto.compressors?.length) {
+          for (const c of condDto.compressors) {
+            await this.compressorRepository.save({
+              ...c,
+              condenserId: cond.id,
+            });
+          }
+        }
+      }
     }
-    if (dto.condenser) {
-      await this.condenserRepository.save(
-        this.condenserRepository.create({ ...dto.condenser, equipmentId }),
-      );
-    }
-    if (dto.compressor) {
-      await this.compressorRepository.save(
-        this.compressorRepository.create({ ...dto.compressor, equipmentId }),
-      );
+
+    // Plan de mantenimiento
+    if (dto.planMantenimiento) {
+      await this.planMantenimientoRepository.save({
+        ...dto.planMantenimiento,
+        equipmentId,
+      });
     }
   }
+
+  // ────────────────────────────────────────────────────────────────
+  // FIND
+  // ────────────────────────────────────────────────────────────────
 
   async findAll(params?: {
     clientId?: number;
@@ -338,154 +297,114 @@ export class EquipmentService {
     subAreaId?: number;
     search?: string;
   }): Promise<Equipment[]> {
-    const query = this.equipmentRepository
-      .createQueryBuilder('equipment')
-      .leftJoinAndSelect('equipment.client', 'client')
-      .leftJoinAndSelect('equipment.area', 'area')
-      .leftJoinAndSelect('equipment.subArea', 'subArea')
-      .leftJoinAndSelect('equipment.images', 'images')
-      .leftJoinAndSelect('equipment.workOrder', 'workOrder')
-      .leftJoinAndSelect('equipment.airConditionerType', 'airConditionerType')
-      .leftJoinAndSelect('equipment.motors', 'motors')
-      .leftJoinAndSelect('equipment.evaporators', 'evaporators')
-      .leftJoinAndSelect('equipment.condensers', 'condensers')
-      .leftJoinAndSelect('equipment.compressors', 'compressors')
-      .orderBy('equipment.createdAt', 'DESC');
+    const qb = this.equipmentRepository
+      .createQueryBuilder('e')
+      .leftJoinAndSelect('e.client', 'client')
+      .leftJoinAndSelect('e.area', 'area')
+      .leftJoinAndSelect('e.subArea', 'subArea')
+      .leftJoinAndSelect('e.images', 'images')
+      .leftJoinAndSelect('e.equipmentWorkOrders', 'equipmentWorkOrders')
+      .leftJoinAndSelect('equipmentWorkOrders.workOrder', 'workOrder')
+      .leftJoinAndSelect('e.airConditionerType', 'acType')
+      .leftJoinAndSelect('e.evaporators', 'evaps')
+      .leftJoinAndSelect('evaps.motors', 'evapMotors')
+      .leftJoinAndSelect('e.condensers', 'conds')
+      .leftJoinAndSelect('conds.motors', 'condMotors')
+      .leftJoinAndSelect('conds.compressors', 'comps')
+      .leftJoinAndSelect('e.planMantenimiento', 'plan')
+      .orderBy('e.createdAt', 'DESC');
 
-    if (params?.clientId) {
-      query.andWhere('equipment.clientId = :clientId', {
-        clientId: params.clientId,
-      });
-    }
-
-    if (params?.areaId) {
-      query.andWhere('equipment.areaId = :areaId', {
-        areaId: params.areaId,
-      });
-    }
-
-    if (params?.subAreaId) {
-      query.andWhere('equipment.subAreaId = :subAreaId', {
-        subAreaId: params.subAreaId,
-      });
-    }
-
+    if (params?.clientId)
+      qb.andWhere('e.clientId = :clientId', { clientId: params.clientId });
+    if (params?.areaId)
+      qb.andWhere('e.areaId = :areaId', { areaId: params.areaId });
+    if (params?.subAreaId)
+      qb.andWhere('e.subAreaId = :subAreaId', { subAreaId: params.subAreaId });
     if (params?.search) {
-      query.andWhere(
-        `(equipment.nombre_equipo ILIKE :search 
-         OR equipment.codigo_equipo ILIKE :search)`,
-        { search: `%${params.search}%` },
-      );
+      qb.andWhere('e.code ILIKE :search', { search: `%${params.search}%` });
     }
 
-    return query.getMany();
+    return qb.getMany();
   }
 
   async findOne(id: number): Promise<Equipment> {
-    const equipment = await this.equipmentRepository.findOne({
+    const eq = await this.equipmentRepository.findOne({
       where: { equipmentId: id },
       relations: [
         'client',
         'area',
         'subArea',
         'images',
-        'workOrder',
+        'equipmentWorkOrders',
+        'equipmentWorkOrders.workOrder',
         'airConditionerType',
-        'motors',
         'evaporators',
+        'evaporators.motors',
         'condensers',
-        'compressors',
+        'condensers.motors',
+        'condensers.compressors',
+        'planMantenimiento',
       ],
     });
 
-    if (!equipment) {
-      throw new NotFoundException(`Equipo con ID ${id} no encontrado`);
-    }
-
-    return equipment;
+    if (!eq) throw new NotFoundException(`Equipo ${id} no encontrado`);
+    return eq;
   }
 
-  async update(
-    id: number,
-    updateEquipmentDto: UpdateEquipmentDto,
-  ): Promise<Equipment> {
-    const equipment = await this.findOne(id);
+  // ────────────────────────────────────────────────────────────────
+  // UPDATE
+  // ────────────────────────────────────────────────────────────────
 
-    const originalAreaId = equipment.areaId ?? null;
-    const originalSubAreaId = equipment.subAreaId ?? null;
+  async update(id: number, dto: UpdateEquipmentDto): Promise<Equipment> {
+    let equipment = await this.findOne(id);
 
-    if (updateEquipmentDto.clientId !== undefined) {
+    // Cliente
+    if (dto.clientId !== undefined) {
       const client = await this.clientRepository.findOne({
-        where: { idCliente: updateEquipmentDto.clientId },
+        where: { idCliente: dto.clientId },
       });
       if (!client)
-        throw new NotFoundException(
-          `Cliente con ID ${updateEquipmentDto.clientId} no encontrado`,
-        );
-      equipment.clientId = updateEquipmentDto.clientId;
+        throw new NotFoundException(`Cliente ${dto.clientId} no encontrado`);
+      equipment.clientId = dto.clientId;
       equipment.client = client;
     }
 
-    const incomingAreaId = updateEquipmentDto.areaId;
-    const incomingSubAreaId = updateEquipmentDto.subAreaId;
+    // Ubicación y regeneración de código
+    const incomingArea = dto.areaId;
+    const incomingSub = dto.subAreaId;
 
-    if (incomingAreaId !== undefined || incomingSubAreaId !== undefined) {
-      let finalAreaId =
-        incomingAreaId !== undefined ? incomingAreaId : equipment.areaId;
-      let finalSubAreaId =
-        incomingSubAreaId !== undefined
-          ? incomingSubAreaId
-          : equipment.subAreaId;
+    if (incomingArea !== undefined || incomingSub !== undefined) {
+      let finalArea = incomingArea ?? equipment.areaId;
+      let finalSub = incomingSub ?? equipment.subAreaId;
 
-      // Normalizar: aseguramos que undefined se vuelva null para la lógica interna
-      // (aunque TypeScript prefiera undefined para los tipos opcionales)
-      finalAreaId = finalAreaId ?? undefined;
-      finalSubAreaId = finalSubAreaId ?? undefined;
-
-      if (finalSubAreaId !== null) {
-        const subArea = await this.subAreaRepository.findOne({
-          where: { idSubArea: finalSubAreaId },
+      if (finalSub != null) {
+        const sub = await this.subAreaRepository.findOne({
+          where: { idSubArea: finalSub },
         });
-        if (!subArea)
-          throw new NotFoundException(
-            `Subárea con ID ${finalSubAreaId} no encontrada`,
-          );
-
-        if (finalAreaId && finalAreaId !== subArea.areaId) {
-          throw new BadRequestException(
-            'El área no coincide con el área de la subárea',
-          );
+        if (!sub) throw new NotFoundException('Subárea no encontrada');
+        if (finalArea != null && finalArea !== sub.areaId) {
+          throw new BadRequestException('Área no coincide con subárea');
         }
-        finalAreaId = subArea.areaId;
-      } else if (finalAreaId !== null) {
+        finalArea = sub.areaId;
+      } else if (finalArea != null) {
         const area = await this.areaRepository.findOne({
-          where: { idArea: finalAreaId },
+          where: { idArea: finalArea },
         });
-        if (!area)
-          throw new NotFoundException(`Área con ID ${finalAreaId} no encontrada`);
+        if (!area) throw new NotFoundException('Área no encontrada');
       }
 
-      const locationChanged =
-        finalAreaId !== originalAreaId || finalSubAreaId !== originalSubAreaId;
+      const changed =
+        finalArea !== equipment.areaId || finalSub !== equipment.subAreaId;
 
-      if (locationChanged) {
-        // Desconectar relaciones para que TypeORM no use los objetos viejos cargados
-        delete equipment.area;
-        delete equipment.subArea;
+      if (changed) {
+        equipment.areaId = finalArea ?? undefined;
+        equipment.subAreaId = finalSub ?? undefined;
 
-        // CORRECCIÓN TS 2322: Usamos 'as any' para permitir asignar null
-        // a una propiedad que la entidad define como opcional (number | undefined).
-        // Esto fuerza a TypeORM a limpiar la columna en BD.
-        equipment.areaId = (finalAreaId ?? null) as any;
-        equipment.subAreaId = (finalSubAreaId ?? null) as any;
-
-        if (finalAreaId !== undefined) {
-          const client = equipment.client;
-          // CORRECCIÓN TS 2345: finalAreaId aquí es 'number' porque chequeamos !== null
+        if (finalArea != null) {
           const newCode = await this.generateEquipmentCode(
-            client,
-            finalAreaId,
-            finalSubAreaId,
+            equipment.client,
+            finalArea,
+            finalSub,
             equipment.category,
           );
           equipment.code = newCode;
@@ -493,101 +412,142 @@ export class EquipmentService {
       }
     }
 
-    if (updateEquipmentDto.category === ServiceCategory.AIRES_ACONDICIONADOS) {
-      if (updateEquipmentDto.airConditionerTypeId !== undefined) {
-        if (!updateEquipmentDto.airConditionerTypeId)
+    // Categoría y tipo de aire
+    if (dto.category !== undefined) {
+      equipment.category = dto.category;
+      if (dto.category === ServiceCategory.AIRES_ACONDICIONADOS) {
+        if (dto.airConditionerTypeId == null) {
           throw new BadRequestException('Tipo de aire requerido');
-        const acType = await this.acTypeRepository.findOne({
-          where: { id: updateEquipmentDto.airConditionerTypeId },
+        }
+        const ac = await this.acTypeRepository.findOne({
+          where: { id: dto.airConditionerTypeId },
         });
-        if (!acType)
-          throw new BadRequestException('Tipo de aire no existe');
-
-        if (!acType.hasEvaporator && updateEquipmentDto.evaporator)
-          throw new BadRequestException('Este tipo no usa evaporador');
-        if (!acType.hasCondenser && updateEquipmentDto.condenser)
-          throw new BadRequestException('Este tipo no usa condensadora');
-
-        equipment.airConditionerTypeId =
-          updateEquipmentDto.airConditionerTypeId;
+        if (!ac) throw new BadRequestException('Tipo de aire no existe');
+        equipment.airConditionerTypeId = dto.airConditionerTypeId;
+      } else {
+        equipment.airConditionerTypeId = undefined;
       }
-    } else if (updateEquipmentDto.category) {
-      if (updateEquipmentDto.airConditionerTypeId)
-        throw new BadRequestException(
-          'Solo aires acondicionados llevan tipo de aire',
-        );
-      equipment.airConditionerTypeId = undefined;
-      equipment.airConditionerType = undefined;
     }
 
-    const {
-      motor,
-      evaporator,
-      condenser,
-      compressor,
-      areaId,
-      subAreaId,
-      clientId,
-      ...rest
-    } = updateEquipmentDto as any;
-
+    // Campos simples
+    const { evaporators, condensers, planMantenimiento, ...rest } = dto;
     Object.assign(equipment, rest);
 
     await this.equipmentRepository.save(equipment);
 
-    if (motor !== undefined)
-      await this.updateComponent(
-        equipment.equipmentId,
-        motor,
-        this.motorRepository,
-      );
-    if (evaporator !== undefined)
-      await this.updateComponent(
-        equipment.equipmentId,
-        evaporator,
-        this.evaporatorRepository,
-      );
-    if (condenser !== undefined)
-      await this.updateComponent(
-        equipment.equipmentId,
-        condenser,
-        this.condenserRepository,
-      );
-    if (compressor !== undefined)
-      await this.updateComponent(
-        equipment.equipmentId,
-        compressor,
-        this.compressorRepository,
-      );
+    // Componentes anidados
+    if (
+      evaporators !== undefined ||
+      condensers !== undefined ||
+      planMantenimiento !== undefined
+    ) {
+      await this.updateComponents(id, dto);
+    }
 
     return this.findOne(id);
   }
 
-  private async updateComponent(
-    equipmentId: number,
-    componentData: any,
-    repository: Repository<any>,
+  private async updateComponents(
+    id: number,
+    dto: UpdateEquipmentDto,
   ): Promise<void> {
-    if (componentData === null) {
-      await repository.delete({ equipmentId });
-      return;
+    // Evaporadores: reemplazo completo si se envía
+    if (dto.evaporators !== undefined) {
+      await this.evaporatorRepository.delete({ equipmentId: id });
+      if (dto.evaporators.length) {
+        for (const e of dto.evaporators) {
+          const evap = await this.evaporatorRepository.save({
+            ...e,
+            equipmentId: id,
+          });
+          if (e.motors?.length) {
+            await this.motorRepository.save(
+              e.motors.map((m) => ({ ...m, evaporatorId: evap.id })),
+            );
+          }
+        }
+      }
     }
-    const existing = await repository.findOne({ where: { equipmentId } });
-    if (existing) {
-      Object.assign(existing, componentData);
-      await repository.save(existing);
-    } else if (Object.keys(componentData).length > 0) {
-      await repository.save(repository.create({ ...componentData, equipmentId }));
+
+    // Condensadoras
+    if (dto.condensers !== undefined) {
+      await this.condenserRepository.delete({ equipmentId: id });
+      if (dto.condensers.length) {
+        for (const c of dto.condensers) {
+          const cond = await this.condenserRepository.save({
+            ...c,
+            equipmentId: id,
+          });
+          if (c.motors?.length) {
+            await this.motorRepository.save(
+              c.motors.map((m) => ({ ...m, condenserId: cond.id })),
+            );
+          }
+          if (c.compressors?.length) {
+            await this.compressorRepository.save(
+              c.compressors.map((comp) => ({ ...comp, condenserId: cond.id })),
+            );
+          }
+        }
+      }
+    }
+
+    // Plan de mantenimiento
+    if (dto.planMantenimiento !== undefined) {
+      await this.planMantenimientoRepository.delete({ equipmentId: id });
+      if (dto.planMantenimiento) {
+        await this.planMantenimientoRepository.save({
+          ...dto.planMantenimiento,
+          equipmentId: id,
+        });
+      }
     }
   }
 
+  // ────────────────────────────────────────────────────────────────
+  // DELETE
+  // ────────────────────────────────────────────────────────────────
+
   async remove(id: number): Promise<void> {
-    const equipment = await this.findOne(id);
+    const eq = await this.findOne(id);
     await this.imagesService.deleteByEquipment(id);
-    await this.motorRepository.delete({ equipmentId: id });
-    await this.evaporatorRepository.delete({ equipmentId: id });
-    await this.condenserRepository.delete({ equipmentId: id });
-    await this.compressorRepository.delete({ equipmentId: id });
-    await this.equipmentRepository.remove(equipment);
+    await this.equipmentRepository.remove(eq); // cascade debería eliminar el resto
+  }
+
+  // ────────────────────────────────────────────────────────────────
+  // NUEVOS MÉTODOS PARA RELACIÓN CON ÓRDENES
+  // ────────────────────────────────────────────────────────────────
+
+  async getEquipmentWorkOrders(equipmentId: number): Promise<any[]> {
+    const equipment = await this.equipmentRepository.findOne({
+      where: { equipmentId },
+      relations: [
+        'equipmentWorkOrders',
+        'equipmentWorkOrders.workOrder',
+        'equipmentWorkOrders.workOrder.service',
+        'equipmentWorkOrders.workOrder.cliente',
+        'equipmentWorkOrders.workOrder.tecnico',
+      ],
+    });
+
+    if (!equipment) {
+      throw new NotFoundException(`Equipo ${equipmentId} no encontrado`);
+    }
+
+    return equipment.equipmentWorkOrders.map((ewo) => ({
+      id: ewo.id,
+      workOrderId: ewo.workOrder.ordenId,
+      description: ewo.description,
+      createdAt: ewo.createdAt,
+      workOrder: {
+        ordenId: ewo.workOrder.ordenId,
+        fechaSolicitud: ewo.workOrder.fechaSolicitud,
+        estado: ewo.workOrder.estado,
+        tipoServicio: ewo.workOrder.tipoServicio,
+        service: ewo.workOrder.service,
+        cliente: ewo.workOrder.cliente,
+        tecnico: ewo.workOrder.tecnico,
+      },
+    }));
   }
 }

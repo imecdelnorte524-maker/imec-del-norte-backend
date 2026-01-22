@@ -139,7 +139,7 @@ export class InventoryService {
         insumoId: createInventoryDto.insumoId,
         herramientaId: createInventoryDto.herramientaId,
         cantidadActual: cantidadInicial,
-        ubicacion: '',
+        ubicacion: createInventoryDto.ubicacion || '',
         bodega: bodega || undefined,
         fechaUltimaActualizacion: new Date(),
       };

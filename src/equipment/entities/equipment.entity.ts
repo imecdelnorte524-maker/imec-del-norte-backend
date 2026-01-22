@@ -7,6 +7,7 @@ import {
   CreateDateColumn,
   UpdateDateColumn,
   OneToMany,
+  OneToOne,
 } from 'typeorm';
 import { Client } from '../../client/entities/client.entity';
 import { Area } from '../../area/entities/area.entity';
@@ -14,12 +15,13 @@ import { SubArea } from '../../sub-area/entities/sub-area.entity';
 import { EquipmentStatus } from '../enums/equipment-status.enum';
 import { ServiceCategory } from '../../services/enums/service.enums';
 import { Image } from '../../images/entities/image.entity';
-import { WorkOrder } from '../../work-orders/entities/work-order.entity';
 import { AirConditionerType } from '../../air-conditioner-types/entities/air-conditioner-type.entity';
 import { EquipmentMotor } from './motor.entity';
 import { EquipmentEvaporator } from './evaporator.entity';
 import { EquipmentCondenser } from './condenser.entity';
 import { EquipmentCompressor } from './compressor.entity';
+import { PlanMantenimiento } from './plan-mantenimiento.entity';
+import { EquipmentWorkOrder } from '../../work-orders/entities/equipment-work-order.entity';
 
 @Entity('equipos')
 export class Equipment {
@@ -61,14 +63,8 @@ export class Equipment {
   @JoinColumn({ name: 'air_conditioner_type_id' })
   airConditionerType?: AirConditionerType;
 
-  @Column({ name: 'nombre_equipo', length: 255 })
-  name: string;
-
   @Column({ name: 'codigo_equipo', length: 100, nullable: true })
   code?: string;
-
-  @Column({ name: 'ubicacion_fisica', length: 500, nullable: true })
-  physicalLocation?: string;
 
   @Column({
     name: 'estado_equipo',
@@ -91,9 +87,7 @@ export class Equipment {
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 
-  @UpdateDateColumn({
-    name: 'updated_at',
-  })
+  @UpdateDateColumn({ name: 'updated_at' })
   updatedAt: Date;
 
   @OneToMany(() => Image, (image) => image.equipment, {
@@ -102,34 +96,27 @@ export class Equipment {
   })
   images?: Image[];
 
-  @Column({ name: 'work_order_id', nullable: true })
-  workOrderId?: number;
-
-  @ManyToOne(() => WorkOrder, { nullable: true })
-  @JoinColumn({ name: 'work_order_id' })
-  workOrder?: WorkOrder;
-
-  @OneToMany(() => EquipmentMotor, (motor) => motor.equipment, {
+  // ⚠️ NUEVA RELACIÓN: Tabla intermedia para relación N:M con WorkOrder
+  @OneToMany(() => EquipmentWorkOrder, (ewo) => ewo.equipment, {
     cascade: true,
-    eager: true,
   })
-  motors?: EquipmentMotor[];
+  equipmentWorkOrders: EquipmentWorkOrder[];
 
-  @OneToMany(() => EquipmentEvaporator, (evaporator) => evaporator.equipment, {
+  @OneToOne(() => PlanMantenimiento, (plan) => plan.equipment, {
+    cascade: true,
+    nullable: true,
+  })
+  planMantenimiento?: PlanMantenimiento;
+
+  @OneToMany(() => EquipmentEvaporator, (evap) => evap.equipment, {
     cascade: true,
     eager: true,
   })
   evaporators?: EquipmentEvaporator[];
 
-  @OneToMany(() => EquipmentCondenser, (condenser) => condenser.equipment, {
+  @OneToMany(() => EquipmentCondenser, (cond) => cond.equipment, {
     cascade: true,
     eager: true,
   })
   condensers?: EquipmentCondenser[];
-
-  @OneToMany(() => EquipmentCompressor, (compressor) => compressor.equipment, {
-    cascade: true,
-    eager: true,
-  })
-  compressors?: EquipmentCompressor[];
 }

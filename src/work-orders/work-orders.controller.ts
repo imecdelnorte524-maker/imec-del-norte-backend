@@ -20,7 +20,6 @@ import {
   ApiOperation,
   ApiResponse,
   ApiBearerAuth,
-  ApiQuery,
 } from '@nestjs/swagger';
 import { WorkOrdersService } from './work-orders.service';
 import { CreateWorkOrderDto } from './dto/create-work-order.dto';
@@ -154,14 +153,8 @@ export class WorkOrdersController {
   @Patch(':id/cancel')
   @Roles('Cliente')
   @ApiOperation({ summary: 'Cancelar una orden por parte del cliente' })
-  async cancelByClient(
-    @Param('id', ParseIntPipe) id: number,
-    @Req() req: any,
-  ) {
-    const workOrder = await this.workOrdersService.cancelByClient(
-      id,
-      req.user,
-    );
+  async cancelByClient(@Param('id', ParseIntPipe) id: number, @Req() req: any) {
+    const workOrder = await this.workOrdersService.cancelByClient(id, req.user);
     const costs = await this.workOrdersService.calculateTotalCost(id);
 
     return {
@@ -218,6 +211,85 @@ export class WorkOrdersController {
         ...this.mapToResponseDto(workOrder),
         ...costs,
       },
+    };
+  }
+
+  @Post(':id/equipment/:equipmentId')
+  @Roles('Administrador', 'Técnico', 'Secretaria', 'Supervisor')
+  @ApiOperation({ summary: 'Asociar un equipo a una orden' })
+  async addEquipment(
+    @Param('id', ParseIntPipe) ordenId: number,
+    @Param('equipmentId', ParseIntPipe) equipmentId: number,
+    @Body() body: { description?: string },
+  ) {
+    const result = await this.workOrdersService.addEquipmentToOrder(
+      ordenId,
+      equipmentId,
+      body.description,
+    );
+    return {
+      message: 'Equipo asociado a la orden correctamente',
+      data: result,
+    };
+  }
+
+  @Delete(':id/equipment/:equipmentId')
+  @Roles('Administrador', 'Técnico', 'Secretaria', 'Supervisor')
+  @ApiOperation({ summary: 'Desasociar un equipo de una orden' })
+  async removeEquipment(
+    @Param('id', ParseIntPipe) ordenId: number,
+    @Param('equipmentId', ParseIntPipe) equipmentId: number,
+  ) {
+    await this.workOrdersService.removeEquipmentFromOrder(ordenId, equipmentId);
+    return {
+      message: 'Equipo desasociado de la orden correctamente',
+    };
+  }
+
+  @Get('equipment/:equipmentId')
+  @Roles('Administrador', 'Técnico', 'Secretaria', 'Supervisor', 'Cliente')
+  @ApiOperation({ summary: 'Obtener órdenes asociadas a un equipo' })
+  async getOrdersByEquipment(
+    @Param('equipmentId', ParseIntPipe) equipmentId: number,
+    @Req() req: any,
+  ) {
+    const workOrders =
+      await this.workOrdersService.getWorkOrdersByEquipment(equipmentId);
+
+    return {
+      message: 'Órdenes del equipo obtenidas',
+      data: workOrders.map((wo) => this.mapToResponseDto(wo)),
+    };
+  }
+
+  @Get('client/:clienteEmpresaId/category/:category')
+  @Roles('Administrador', 'Secretaria', 'Técnico', 'Cliente')
+  @ApiOperation({ summary: 'Obtener órdenes por cliente empresa y categoría' })
+  async getWorkOrdersByClientAndCategory(
+    @Param('clienteEmpresaId', ParseIntPipe) clienteEmpresaId: number,
+    @Param('category') category: string,
+  ) {
+    const workOrders =
+      await this.workOrdersService.getWorkOrdersByClientAndCategory(
+        clienteEmpresaId,
+        category,
+      );
+
+    const ordersWithCosts = await Promise.all(
+      workOrders.map(async (order) => {
+        const costs = await this.workOrdersService.calculateTotalCost(
+          order.ordenId,
+        );
+        return {
+          ...this.mapToResponseDto(order),
+          ...costs,
+        };
+      }),
+    );
+
+    return {
+      message: 'Órdenes obtenidas exitosamente',
+      data: ordersWithCosts,
     };
   }
 
@@ -329,26 +401,55 @@ export class WorkOrdersController {
         marca: detail.tool?.marca || '',
       })) || [];
 
+    const equipments =
+      workOrder.equipmentWorkOrders?.map((ewo) => ({
+        equipmentId: ewo.equipment.equipmentId,
+        code: ewo.equipment.code,
+        category: ewo.equipment.category,
+        description: ewo.description,
+      })) || [];
+
     return {
       ordenId: workOrder.ordenId,
       fechaSolicitud: workOrder.fechaSolicitud,
       fechaInicio: workOrder.fechaInicio,
       fechaFinalizacion: workOrder.fechaFinalizacion,
       estado: workOrder.estado,
+      tipoServicio: workOrder.tipoServicio ?? null,
+
+      maintenanceType: workOrder.maintenanceType
+        ? {
+            id: workOrder.maintenanceType.id,
+            nombre: workOrder.maintenanceType.nombre,
+          }
+        : null,
+
       comentarios: workOrder.comentarios,
       estadoFacturacion: workOrder.estadoFacturacion,
       facturaPdfUrl: workOrder.facturaPdfUrl,
       service: workOrder.service,
-      cliente: workOrder.cliente ? { ...workOrder.cliente, apellido: workOrder.cliente.apellido || '' } : null,
+      cliente: workOrder.cliente
+        ? {
+            usuarioId: workOrder.cliente.usuarioId,
+            nombre: workOrder.cliente.nombre,
+            apellido: workOrder.cliente.apellido || undefined,
+            email: workOrder.cliente.email ?? undefined,
+            telefono: workOrder.cliente.telefono ?? undefined,
+            cedula: workOrder.cliente.cedula ?? undefined,
+          }
+        : null,
       clienteEmpresa: workOrder.clienteEmpresa,
-      tecnico: workOrder.tecnico ? { ...workOrder.tecnico, apellido: workOrder.tecnico.apellido || '' } : null,
-      equipos:
-        workOrder.equipments?.map((e) => ({
-          equipmentId: e.equipmentId,
-          name: e.name,
-          code: e.code,
-          category: e.category,
-        })) || [],
+      tecnico: workOrder.tecnico
+        ? {
+            usuarioId: workOrder.cliente.usuarioId,
+            nombre: workOrder.tecnico.nombre,
+            apellido: workOrder.tecnico.apellido || '', // Manejo del apellido por si es undefined
+            email: workOrder.tecnico.email ?? undefined,
+            telefono: workOrder.tecnico.telefono ?? undefined,
+            cedula: workOrder.tecnico.cedula ?? undefined,
+          }
+        : null,
+      equipos: equipments,
       supplyDetails,
       toolDetails,
       costoTotalEstimado: 0,

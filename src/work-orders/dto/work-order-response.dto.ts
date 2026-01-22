@@ -1,12 +1,8 @@
-// src/work-orders/dto/work-order-response.dto.ts
 import { ApiProperty } from '@nestjs/swagger';
 import { WorkOrderStatus } from '../enums/work-order-status.enum';
-import {
-  ServiceCategory,
-  WorkNature,
-  MaintenanceType,
-} from '../../services/enums/service.enums';
+import { ServiceCategory } from '../../services/enums/service.enums';
 import { BillingStatus } from '../enums/billing-status.enum';
+import { ServiceRequestType } from '../enums/service-request-type.enum';
 
 export class ServiceInfo {
   @ApiProperty({ example: 1 })
@@ -15,17 +11,16 @@ export class ServiceInfo {
   @ApiProperty({ example: 'Instalación de Aires Acondicionados' })
   nombreServicio: string;
 
-  @ApiProperty({ example: 150000 })
-  precioBase: number;
-
   @ApiProperty({ enum: ServiceCategory, required: false, nullable: true })
   categoriaServicio?: ServiceCategory | null;
+}
 
-  @ApiProperty({ enum: WorkNature, required: false, nullable: true })
-  tipoTrabajo?: WorkNature | null;
+export class MaintenanceTypeInfo {
+  @ApiProperty({ example: 1 })
+  id: number;
 
-  @ApiProperty({ enum: MaintenanceType, required: false, nullable: true })
-  tipoMantenimiento?: MaintenanceType | null;
+  @ApiProperty({ example: 'Preventivo' })
+  nombre: string;
 }
 
 export class UserInfo {
@@ -35,15 +30,21 @@ export class UserInfo {
   @ApiProperty({ example: 'Juan' })
   nombre: string;
 
-  // Aceptamos nullable para coincidir con la entidad User
   @ApiProperty({ example: 'Pérez', required: false, nullable: true })
   apellido?: string | null;
 
-  @ApiProperty({ example: 'juan.perez@correo.com', required: false, nullable: true })
+  @ApiProperty({
+    example: 'juan.perez@correo.com',
+    required: false,
+    nullable: true,
+  })
   email?: string | null;
 
   @ApiProperty({ example: '3001234567', required: false, nullable: true })
   telefono?: string | null;
+
+  @ApiProperty({ example: 54424415 })
+  cedula?: string | null;
 }
 
 export class ClientCompanyInfo {
@@ -56,7 +57,11 @@ export class ClientCompanyInfo {
   @ApiProperty({ example: '900123456-7' })
   nit: string;
 
-  @ApiProperty({ example: 'empresa@correo.com', required: false, nullable: true })
+  @ApiProperty({
+    example: 'empresa@correo.com',
+    required: false,
+    nullable: true,
+  })
   email?: string | null;
 
   @ApiProperty({ example: '3001234567', required: false, nullable: true })
@@ -70,14 +75,17 @@ export class EquipmentInfo {
   @ApiProperty({ example: 10 })
   equipmentId: number;
 
-  @ApiProperty({ example: 'Aire acondicionado sala juntas' })
-  name: string;
-
   @ApiProperty({ example: 'AA-001', required: false })
   code?: string;
 
   @ApiProperty({ enum: ServiceCategory })
   category: ServiceCategory;
+
+  @ApiProperty({
+    example: 'Mantenimiento preventivo programado',
+    required: false,
+  })
+  description?: string;
 }
 
 export class SupplyDetailInfo {
@@ -115,22 +123,16 @@ export class WorkOrderResponseDto {
   @ApiProperty({ type: ServiceInfo })
   service: ServiceInfo;
 
-  // clienteEmpresa puede ser null si no aplica
   @ApiProperty({ type: ClientCompanyInfo, required: false, nullable: true })
   clienteEmpresa?: ClientCompanyInfo | null;
 
-  // cliente ahora puede ser null (ajusta si lo quieres obligatorio)
   @ApiProperty({ type: UserInfo, required: false, nullable: true })
   cliente?: UserInfo | null;
 
   @ApiProperty({ type: UserInfo, required: false, nullable: true })
   tecnico?: UserInfo | null;
 
-  @ApiProperty({
-    type: [EquipmentInfo],
-    description: 'Equipos asociados a la orden',
-    required: false,
-  })
+  @ApiProperty({ type: [EquipmentInfo], required: false })
   equipos: EquipmentInfo[];
 
   @ApiProperty({ required: false })
@@ -144,6 +146,12 @@ export class WorkOrderResponseDto {
 
   @ApiProperty({ enum: WorkOrderStatus })
   estado: WorkOrderStatus;
+
+  @ApiProperty({ enum: ServiceRequestType, required: false, nullable: true })
+  tipoServicio?: ServiceRequestType | null;
+
+  @ApiProperty({ type: MaintenanceTypeInfo, required: false, nullable: true })
+  maintenanceType?: MaintenanceTypeInfo | null;
 
   @ApiProperty({ required: false, nullable: true })
   comentarios?: string | null;

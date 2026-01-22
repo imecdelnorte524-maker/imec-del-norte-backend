@@ -5,6 +5,7 @@ import { WorkOrdersController } from './work-orders.controller';
 import { WorkOrder } from './entities/work-order.entity';
 import { SupplyDetail } from './entities/supply-detail.entity';
 import { ToolDetail } from './entities/tool-detail.entity';
+import { EquipmentWorkOrder } from './entities/equipment-work-order.entity';
 import { Service } from '../services/entities/service.entity';
 import { User } from '../users/entities/user.entity';
 import { Supply } from '../supplies/entities/supply.entity';
@@ -19,6 +20,7 @@ import { Equipment } from '../equipment/entities/equipment.entity';
       WorkOrder,
       SupplyDetail,
       ToolDetail,
+      EquipmentWorkOrder,
       Service,
       User,
       Supply,
@@ -29,7 +31,7 @@ import { Equipment } from '../equipment/entities/equipment.entity';
     ]),
   ],
   controllers: [WorkOrdersController],
-  providers: [WorkOrdersService],
+  providers: [WorkOrdersService], 
   exports: [WorkOrdersService],
 })
 export class WorkOrdersModule {}

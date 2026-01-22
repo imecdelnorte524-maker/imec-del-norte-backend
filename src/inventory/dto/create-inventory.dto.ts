@@ -3,6 +3,7 @@ import {
   IsNotEmpty,
   IsNumber,
   IsOptional,
+  IsString,
   Min,
   ValidateIf,
 } from 'class-validator';
@@ -12,7 +13,8 @@ import { Type } from 'class-transformer';
 export class CreateInventoryDto {
   @ApiProperty({
     example: 1,
-    description: 'ID del insumo (debe ser null si se proporciona herramientaId)',
+    description:
+      'ID del insumo (debe ser null si se proporciona herramientaId)',
     required: false,
   })
   @ValidateIf((o) => !o.herramientaId)
@@ -23,7 +25,8 @@ export class CreateInventoryDto {
 
   @ApiProperty({
     example: 1,
-    description: 'ID de la herramienta (debe ser null si se proporciona insumoId)',
+    description:
+      'ID de la herramienta (debe ser null si se proporciona insumoId)',
     required: false,
   })
   @ValidateIf((o) => !o.insumoId)
@@ -53,4 +56,13 @@ export class CreateInventoryDto {
   @Min(1, { message: 'El ID de la bodega debe ser mayor a 0' })
   @Type(() => Number)
   bodegaId?: number;
+
+  @ApiProperty({
+    example: 'Estante A, Caja 3, Piso 2',
+    description: 'Ubicación dentro de la bodega',
+    required: false,
+  })
+  @IsOptional()
+  @IsString({ message: 'La ubicación debe ser una cadena de texto' })
+  ubicacion?: string;
 }

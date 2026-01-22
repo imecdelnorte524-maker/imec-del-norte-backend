@@ -15,10 +15,13 @@ interface DashboardFilters {
   page?: number;
   limit?: number;
   tecnicoId?: number;
-  clienteId?: number; // Nuevo: para filtrar por cliente
+  clienteId?: number;
 }
 
-interface MyServicesFilters extends Omit<DashboardFilters, 'tecnicoId' | 'clienteId'> {
+interface MyServicesFilters extends Omit<
+  DashboardFilters,
+  'tecnicoId' | 'clienteId'
+> {
   userRole: string;
   userId: number;
 }
@@ -33,19 +36,6 @@ export class DashboardService {
 
   /**
    * Métricas generales para el dashboard.
-   * - total
-   * - completados
-   * - en_proceso
-   * - pendientes (sin asignar + asignadas)
-   * - sin_asignar (Solicitada sin asignar)
-   * - asignadas (Solicitada asignada)
-   * - cancelados
-   * - mis_servicios (para técnicos y clientes)
-   * - facturadas / no_facturadas
-   * - ingresos_totales (órdenes finalizadas)
-   * - completadas_este_mes
-   * - status_counts (para gráfica de barras, separando sin asignar / asignadas)
-   * - technicians (servicios por técnico)
    */
   async getMetrics(currentUser: any): Promise<{
     total: number;
@@ -75,8 +65,6 @@ export class DashboardService {
       completados: number;
     }[];
   }> {
-    // Usamos las estadísticas globales de WorkOrdersService,
-    // que incluyen un "byStatus" agrupado por el valor real de la BD.
     const stats = await this.workOrdersService.getWorkOrderStats();
 
     const total = stats.total || 0;
@@ -87,16 +75,15 @@ export class DashboardService {
       return row ? parseInt(row.count, 10) || 0 : 0;
     };
 
-    // Contadores por estado real en BD
     const countSolicitadaSinAsignar = getCount(
       WorkOrderStatus.REQUESTED_UNASSIGNED,
-    ); // "Solicitada sin asignar"
+    );
     const countSolicitadaAsignada = getCount(
       WorkOrderStatus.REQUESTED_ASSIGNED,
-    ); // "Solicitada asignada"
-    const countEnProceso = getCount(WorkOrderStatus.IN_PROGRESS); // "En proceso"
-    const countFinalizada = getCount(WorkOrderStatus.COMPLETED); // "Finalizada"
-    const countCancelada = getCount(WorkOrderStatus.CANCELED); // "Cancelada"
+    );
+    const countEnProceso = getCount(WorkOrderStatus.IN_PROGRESS);
+    const countFinalizada = getCount(WorkOrderStatus.COMPLETED);
+    const countCancelada = getCount(WorkOrderStatus.CANCELED);
 
     const pendientes = countSolicitadaSinAsignar + countSolicitadaAsignada;
     const sin_asignar = countSolicitadaSinAsignar;
@@ -105,18 +92,16 @@ export class DashboardService {
     const completados = countFinalizada;
     const cancelados = countCancelada;
 
-    // mis_servicios: para técnicos y clientes
     let mis_servicios = 0;
     const roleName = this.getRoleName(currentUser);
     const userId = currentUser?.userId;
-    
+
     if (userId) {
       if (roleName === 'Técnico') {
         mis_servicios = await this.workOrderRepository.count({
           where: { tecnicoId: userId },
         });
       } else if (roleName === 'Cliente') {
-        // Contar órdenes donde el cliente es el usuario (empresa o contacto)
         mis_servicios = await this.workOrderRepository
           .createQueryBuilder('wo')
           .where('(wo.clienteId = :userId OR wo.clienteEmpresaId = :userId)', {
@@ -126,7 +111,6 @@ export class DashboardService {
       }
     }
 
-    // Facturación
     const facturadas = await this.workOrderRepository.count({
       where: { estadoFacturacion: BillingStatus.BILLED },
     });
@@ -135,11 +119,9 @@ export class DashboardService {
       where: { estadoFacturacion: BillingStatus.NOT_BILLED },
     });
 
-    // Ingresos y completadas_este_mes vienen de getWorkOrderStats()
     const ingresos_totales = stats.totalRevenue || 0;
     const completadas_este_mes = stats.completedThisMonth || 0;
 
-    // Distribución por estado para gráfica de barras (claves explícitas)
     const status_counts = {
       solicitada_sin_asignar: countSolicitadaSinAsignar,
       solicitada_asignada: countSolicitadaAsignada,
@@ -148,7 +130,6 @@ export class DashboardService {
       cancelado: cancelados,
     };
 
-    // Métrica de técnicos: servicios realizados / completados por técnico
     const technicians = await this.getTechnicianStats();
 
     return {
@@ -171,13 +152,8 @@ export class DashboardService {
 
   /**
    * Devuelve una lista paginada de órdenes de trabajo para el dashboard.
-   * - Si se pasa tecnicoId, filtra por ese técnico (mis servicios).
-   * - Si se pasa clienteId, filtra por ese cliente (mis servicios).
-   * - Aplica filtros por estado, búsqueda y rango de fechas.
    */
-  async getDashboardOrders(
-    filters: DashboardFilters,
-  ): Promise<{
+  async getDashboardOrders(filters: DashboardFilters): Promise<{
     services: any[];
     total: number;
     page: number;
@@ -188,24 +164,23 @@ export class DashboardService {
     const limit = filters.limit && filters.limit > 0 ? filters.limit : 20;
     const skip = (page - 1) * limit;
 
+    // ✅ CONSULTA CORREGIDA: Usar equipmentWorkOrders y cargar equipment
     const qb = this.workOrderRepository
       .createQueryBuilder('wo')
       .leftJoinAndSelect('wo.service', 'service')
       .leftJoinAndSelect('wo.cliente', 'cliente')
       .leftJoinAndSelect('wo.clienteEmpresa', 'clienteEmpresa')
       .leftJoinAndSelect('wo.tecnico', 'tecnico')
-      .leftJoinAndSelect('wo.equipments', 'equipments')
+      .leftJoinAndSelect('wo.equipmentWorkOrders', 'equipmentWorkOrders')
+      .leftJoinAndSelect('equipmentWorkOrders.equipment', 'equipment')
       .orderBy('wo.fechaSolicitud', 'DESC');
 
-    // Filtro por técnico (para "mis servicios" de técnicos)
     if (filters.tecnicoId) {
       qb.andWhere('wo.tecnicoId = :tecnicoId', {
         tecnicoId: filters.tecnicoId,
       });
     }
 
-    // Filtro por cliente (para "mis servicios" de clientes)
-    // El cliente puede ser tanto clienteEmpresa como clienteContacto
     if (filters.clienteId) {
       qb.andWhere(
         '(wo.clienteId = :clienteId OR wo.clienteEmpresaId = :clienteId)',
@@ -215,7 +190,6 @@ export class DashboardService {
       );
     }
 
-    // Filtro por estado (string que viene del frontend, como "Pendiente", "En Proceso", etc.)
     if (filters.estado) {
       const estados = this.mapEstadoFilterToWorkOrderStatuses(filters.estado);
       if (estados.length === 1) {
@@ -225,7 +199,6 @@ export class DashboardService {
       }
     }
 
-    // Filtro por búsqueda (cliente empresa, cliente contacto, técnico, servicio, ID de orden)
     if (filters.search) {
       const search = `%${filters.search.toLowerCase()}%`;
       qb.andWhere(
@@ -237,14 +210,14 @@ export class DashboardService {
           LOWER(service.nombreServicio) LIKE :search OR
           LOWER(tecnico.nombre) LIKE :search OR
           LOWER(tecnico.apellido) LIKE :search OR
-          CAST(wo.ordenId AS TEXT) LIKE :search
+          CAST(wo.ordenId AS TEXT) LIKE :search OR
+          LOWER(equipment.code) LIKE :search
         )
       `,
         { search },
       );
     }
 
-    // Filtro por rango de fechas (usamos fechaSolicitud para simplicidad)
     if (filters.startDate) {
       qb.andWhere('DATE(wo.fechaSolicitud) >= :startDate', {
         startDate: filters.startDate,
@@ -275,13 +248,9 @@ export class DashboardService {
   }
 
   /**
-   * Obtiene las órdenes de servicio del usuario actual según su rol:
-   * - Técnico: órdenes asignadas a él
-   * - Cliente: órdenes creadas por él (tanto de cliente empresa como cliente contacto)
+   * Obtiene las órdenes de servicio del usuario actual según su rol.
    */
-  async getMyServices(
-    filters: MyServicesFilters,
-  ): Promise<{
+  async getMyServices(filters: MyServicesFilters): Promise<{
     services: any[];
     total: number;
     page: number;
@@ -300,7 +269,6 @@ export class DashboardService {
       };
     }
 
-    // Configurar filtros según el rol
     let dashboardFilters: DashboardFilters = {
       estado: filters.estado,
       search: filters.search,
@@ -315,7 +283,6 @@ export class DashboardService {
     } else if (userRole === 'Cliente') {
       dashboardFilters.clienteId = userId;
     } else {
-      // Si el rol no es Técnico ni Cliente, no hay servicios para mostrar
       return {
         services: [],
         total: 0,
@@ -336,8 +303,6 @@ export class DashboardService {
 
   /**
    * Métrica de técnicos: cuántos servicios ha realizado cada uno.
-   * - total_servicios: recuento total de órdenes donde es técnico.
-   * - completados: órdenes finalizadas.
    */
   private async getTechnicianStats(): Promise<
     {
@@ -382,8 +347,7 @@ export class DashboardService {
   }
 
   /**
-   * Mapea los estados del filtro recibido desde el frontend
-   * a una o varias constantes de WorkOrderStatus.
+   * Mapea los estados del filtro recibido desde el frontend.
    */
   private mapEstadoFilterToWorkOrderStatuses(
     estado: string,
@@ -408,8 +372,7 @@ export class DashboardService {
   }
 
   /**
-   * Mapea los estados del backend (WorkOrderStatus) a los estados que
-   * espera el frontend en el dashboard:
+   * Mapea los estados del backend a los estados del frontend.
    */
   private mapEstadoWorkOrderToDashboard(estado: WorkOrderStatus): string {
     switch (estado) {
@@ -428,32 +391,42 @@ export class DashboardService {
   }
 
   /**
-   * Mapea una WorkOrder al formato ServiceFromAPI que espera el frontend.
-   * Aquí usamos el nombre de la EMPRESA cuando existe clienteEmpresa,
-   * en lugar del contacto persona.
+   * Mapea una WorkOrder al formato que espera el frontend.
+   * ✅ CORREGIDO: Acceder a equipmentWorkOrders[0].equipment
    */
   private mapWorkOrderToServiceFromAPI(wo: WorkOrder): any {
     const estadoDashboard = this.mapEstadoWorkOrderToDashboard(wo.estado);
 
-    const equipoAsignado =
-      wo.equipments && wo.equipments.length > 0
-        ? wo.equipments[0].name
-        : 'Por asignar';
+    // ✅ CORREGIDO: Acceder al equipo a través de la tabla intermedia
+    const primerEquipo = wo.equipmentWorkOrders?.[0]?.equipment;
+    const equipoAsignado = primerEquipo
+      ? primerEquipo.code || `Equipo #${primerEquipo.equipmentId}`
+      : 'Por asignar';
 
     const empresa = wo.clienteEmpresa;
     const persona = wo.cliente;
 
     const nombreCliente = empresa?.nombre || persona?.nombre || '';
-    const apellidoCliente = empresa ? null : persona?.apellido ?? null;
+    const apellidoCliente = empresa ? null : (persona?.apellido ?? null);
     const emailCliente = empresa?.email || persona?.email || '';
     const telefonoCliente = empresa?.telefono || persona?.telefono || null;
+
+    // ✅ ARRAY DE EQUIPOS ASOCIADOS
+    const equiposAsociados =
+      wo.equipmentWorkOrders?.map((ewo) => ({
+        equipmentId: ewo.equipment.equipmentId,
+        code: ewo.equipment.code,
+        category: ewo.equipment.category,
+        description: ewo.description || ewo.equipment.notes || null,
+        status: ewo.equipment.status,
+      })) || [];
 
     return {
       orden_id: wo.ordenId,
       servicio_id: wo.servicioId,
       cliente_id: empresa
         ? empresa.idCliente
-        : persona?.usuarioId ?? wo.clienteId,
+        : (persona?.usuarioId ?? wo.clienteId),
       tecnico_id: wo.tecnicoId ?? null,
       fecha_solicitud: wo.fechaSolicitud.toISOString(),
       fecha_inicio: wo.fechaInicio ? wo.fechaInicio.toISOString() : null,
@@ -462,22 +435,46 @@ export class DashboardService {
         : null,
       estado: estadoDashboard,
       comentarios: wo.comentarios ?? null,
+      tipo_servicio: wo.tipoServicio || null,
+      maintenance_type: wo.maintenanceType
+        ? {
+            id: wo.maintenanceType.id,
+            nombre: wo.maintenanceType.nombre,
+          }
+        : null,
+      estado_facturacion:
+        wo.estadoFacturacion === BillingStatus.BILLED
+          ? 'Facturado'
+          : 'No facturado',
+      factura_pdf_url: wo.facturaPdfUrl || null,
       servicio: {
         servicio_id: wo.service?.servicioId ?? wo.servicioId,
         nombre_servicio: wo.service?.nombreServicio ?? '',
         descripcion: wo.service?.descripcion ?? null,
-        precio_base: wo.service?.precioBase ?? 0,
         duracion_estimada: wo.service?.duracionEstimada ?? null,
+        categoria_servicio: wo.service?.categoriaServicio ?? null,
       },
       cliente: {
         usuario_id: empresa
           ? empresa.idCliente
-          : persona?.usuarioId ?? wo.clienteId,
+          : (persona?.usuarioId ?? wo.clienteId),
         nombre: nombreCliente,
         apellido: apellidoCliente,
         email: emailCliente,
         telefono: telefonoCliente,
       },
+      cliente_empresa: empresa
+        ? {
+            id_cliente: empresa.idCliente,
+            nombre: empresa.nombre,
+            nit: empresa.nit,
+            email: empresa.email,
+            telefono: empresa.telefono,
+            localizacion: empresa.localizacion,
+            direccion: empresa.direccionCompleta || null,
+            contacto: empresa.contacto || null,
+          }
+        : null,
       tecnico: wo.tecnico
         ? {
             usuario_id: wo.tecnico.usuarioId,
@@ -488,6 +485,27 @@ export class DashboardService {
         : null,
       prioridad: 'Media',
       equipo_asignado: equipoAsignado,
+      equipos: equiposAsociados,
+      supplyDetails:
+        wo.supplyDetails?.map((det) => ({
+          detalleInsumoId: det.detalleInsumoId,
+          cantidadUsada: det.cantidadUsada,
+          costoUnitarioAlMomento: det.costoUnitarioAlMomento,
+          nombreInsumo: det.supply?.nombre || '',
+        })) || [],
+      toolDetails:
+        wo.toolDetails?.map((det) => ({
+          detalleHerramientaId: det.detalleHerramientaId,
+          tiempoUso: det.tiempoUso,
+          nombreHerramienta: det.tool?.nombre || '',
+          marca: det.tool?.marca || '',
+        })) || [],
+      costo_total_insumos:
+        wo.supplyDetails?.reduce(
+          (sum, det) =>
+            sum + det.cantidadUsada * (det.costoUnitarioAlMomento || 0),
+          0,
+        ) || 0,
     };
   }
 }

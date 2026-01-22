@@ -29,6 +29,7 @@ import { AirConditionerTypesModule } from './air-conditioner-types/air-condition
 import { ModulesModule } from './modules/modules.module';
 import { WarehousesModule } from './warehouses/warehouses.module';
 import { UnitMeasureModule } from './unit-measure/unit-measure.module';
+import { MaintenanceTypesModule } from './maintenance-types/maintenance-types.module';
 
 @Module({
   imports: [
@@ -73,6 +74,7 @@ import { UnitMeasureModule } from './unit-measure/unit-measure.module';
     ModulesModule,
     WarehousesModule,
     UnitMeasureModule,
+    MaintenanceTypesModule,
   ],
 })
 export class AppModule {}

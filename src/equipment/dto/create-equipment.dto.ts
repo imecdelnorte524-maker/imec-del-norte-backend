@@ -11,198 +11,9 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { ServiceCategory } from '../../services/enums/service.enums';
 import { EquipmentStatus } from '../enums/equipment-status.enum';
 import { Type } from 'class-transformer';
-
-// --- DTOs para componentes anidados ---
-
-class CreateMotorDto {
-  @ApiPropertyOptional({ example: '10A' })
-  @IsOptional()
-  @IsString()
-  amperaje?: string;
-
-  @ApiPropertyOptional({ example: '220V' })
-  @IsOptional()
-  @IsString()
-  voltaje?: string;
-
-  @ApiPropertyOptional({ example: '1500' })
-  @IsOptional()
-  @IsString()
-  rpm?: string;
-
-  @ApiPropertyOptional({ example: 'SN123456' })
-  @IsOptional()
-  @IsString()
-  serialMotor?: string;
-
-  @ApiPropertyOptional({ example: 'MTR-001' })
-  @IsOptional()
-  @IsString()
-  modeloMotor?: string;
-
-  @ApiPropertyOptional({ example: '12mm' })
-  @IsOptional()
-  @IsString()
-  diametroEje?: string;
-
-  @ApiPropertyOptional({ example: 'Redondo' })
-  @IsOptional()
-  @IsString()
-  tipoEje?: string;
-}
-
-class CreateEvaporatorDto {
-  @ApiPropertyOptional({ example: 'Samsung' })
-  @IsOptional()
-  @IsString()
-  marca?: string;
-
-  @ApiPropertyOptional({ example: 'AEV12' })
-  @IsOptional()
-  @IsString()
-  modelo?: string;
-
-  @ApiPropertyOptional({ example: 'EV123456' })
-  @IsOptional()
-  @IsString()
-  serial?: string;
-
-  @ApiPropertyOptional({ example: '12000 BTU' })
-  @IsOptional()
-  @IsString()
-  capacidad?: string;
-
-  @ApiPropertyOptional({ example: '8A' })
-  @IsOptional()
-  @IsString()
-  amperaje?: string;
-
-  @ApiPropertyOptional({ example: 'R410A' })
-  @IsOptional()
-  @IsString()
-  tipoRefrigerante?: string;
-
-  @ApiPropertyOptional({ example: '220V' })
-  @IsOptional()
-  @IsString()
-  voltaje?: string;
-
-  @ApiPropertyOptional({ example: '1' })
-  @IsOptional()
-  @IsString()
-  numeroFases?: string;
-}
-
-class CreateCompressorDto {
-  @ApiPropertyOptional({ example: 'Samsung' })
-  @IsOptional()
-  @IsString()
-  marca?: string;
-
-  @ApiPropertyOptional({ example: 'AEV12' })
-  @IsOptional()
-  @IsString()
-  modelo?: string;
-
-  @ApiPropertyOptional({ example: 'EV123456' })
-  @IsOptional()
-  @IsString()
-  serial?: string;
-
-  @ApiPropertyOptional({ example: '12000 BTU' })
-  @IsOptional()
-  @IsString()
-  capacidad?: string;
-
-  @ApiPropertyOptional({ example: '8A' })
-  @IsOptional()
-  @IsString()
-  amperaje?: string;
-
-  @ApiPropertyOptional({ example: 'R410A' })
-  @IsOptional()
-  @IsString()
-  tipoRefrigerante?: string;
-
-  @ApiPropertyOptional({ example: '220V' })
-  @IsOptional()
-  @IsString()
-  voltaje?: string;
-
-  @ApiPropertyOptional({ example: '1' })
-  @IsOptional()
-  @IsString()
-  numeroFases?: string;
-
-  @ApiPropertyOptional({ example: '15W' })
-  @IsOptional()
-  @IsString()
-  tipoAceite?: string;
-
-  @ApiPropertyOptional({ example: '15W' })
-  @IsOptional()
-  @IsString()
-  cantidadAceite?: string;
-}
-
-class CreateCondenserDto {
-  @ApiPropertyOptional({ example: 'Samsung' })
-  @IsOptional()
-  @IsString()
-  marca?: string;
-
-  @ApiPropertyOptional({ example: 'CNV12' })
-  @IsOptional()
-  @IsString()
-  modelo?: string;
-
-  @ApiPropertyOptional({ example: 'CN123456' })
-  @IsOptional()
-  @IsString()
-  serial?: string;
-
-  @ApiPropertyOptional({ example: '12000 BTU' })
-  @IsOptional()
-  @IsString()
-  capacidad?: string;
-
-  @ApiPropertyOptional({ example: '8A' })
-  @IsOptional()
-  @IsString()
-  amperaje?: string;
-
-  @ApiPropertyOptional({ example: '220V' })
-  @IsOptional()
-  @IsString()
-  voltaje?: string;
-
-  @ApiPropertyOptional({ example: 'R410A' })
-  @IsOptional()
-  @IsString()
-  tipoRefrigerante?: string;
-
-  @ApiPropertyOptional({ example: '1' })
-  @IsOptional()
-  @IsString()
-  numeroFases?: string;
-
-  @ApiPropertyOptional({ example: '150 PSI' })
-  @IsOptional()
-  @IsString()
-  presionAlta?: string;
-
-  @ApiPropertyOptional({ example: '50 PSI' })
-  @IsOptional()
-  @IsString()
-  presionBaja?: string;
-
-  @ApiPropertyOptional({ example: '2.5' })
-  @IsOptional()
-  @IsString()
-  hp?: string;
-}
-
-// --- DTO principal ---
+import { CreateEvaporatorDto } from './create-evaporator.dto';
+import { CreateCondenserDto } from './create-condenser.dto';
+import { PlanMantenimientoDto } from './plan-mantenimiento.dto';
 
 export class CreateEquipmentDto {
   @ApiProperty({ example: 1 })
@@ -230,27 +41,13 @@ export class CreateEquipmentDto {
 
   @ApiPropertyOptional({
     example: 1,
-    description:
-      'ID del tipo de aire (solo si category = Aires Acondicionados)',
+    description: 'ID del tipo de aire (solo si category = AIRES_ACONDICIONADOS)',
   })
   @IsOptional()
   @IsNumber()
   airConditionerTypeId?: number;
 
-  @ApiProperty({ example: 'Aire sala de juntas' })
-  @IsNotEmpty()
-  @IsString()
-  name: string;
-
-  @ApiPropertyOptional({ example: 'Techo bodega 1' })
-  @IsOptional()
-  @IsString()
-  physicalLocation?: string;
-
-  @ApiPropertyOptional({
-    example: EquipmentStatus.ACTIVE,
-    enum: EquipmentStatus,
-  })
+  @ApiPropertyOptional({ example: EquipmentStatus.ACTIVE, enum: EquipmentStatus })
   @IsOptional()
   @IsEnum(EquipmentStatus)
   status?: EquipmentStatus;
@@ -265,52 +62,28 @@ export class CreateEquipmentDto {
   @IsString()
   notes?: string;
 
-  @ApiPropertyOptional({ example: 'AC-001' })
-  @IsOptional()
-  @IsString()
-  code?: string;
+  // ⚠️ ELIMINADO: workOrderId (ahora es relación N:M a través de equipment_work_order)
+  // @ApiPropertyOptional({ example: 15 })
+  // @IsOptional()
+  // @IsNumber()
+  // workOrderId?: number;
 
-  @ApiPropertyOptional({ example: 15 })
+  // Nuevos campos anidados
+  @ApiPropertyOptional({ type: [CreateEvaporatorDto] })
   @IsOptional()
-  @IsNumber()
-  workOrderId?: number;
-
-  // --- Componentes anidados ---
-
-  @ApiPropertyOptional({
-    type: CreateMotorDto,
-    description: 'Datos del motor (opcional)',
-  })
-  @IsOptional()
-  @ValidateNested()
-  @Type(() => CreateMotorDto)
-  motor?: CreateMotorDto;
-
-  @ApiPropertyOptional({
-    type: CreateEvaporatorDto,
-    description: 'Datos del evaporador (opcional)',
-  })
-  @IsOptional()
-  @ValidateNested()
+  @ValidateNested({ each: true })
   @Type(() => CreateEvaporatorDto)
-  evaporator?: CreateEvaporatorDto;
+  evaporators?: CreateEvaporatorDto[];
 
-  @ApiPropertyOptional({
-    type: CreateCondenserDto,
-    description: 'Datos de la condensadora (opcional)',
-  })
+  @ApiPropertyOptional({ type: [CreateCondenserDto] })
   @IsOptional()
-  @ValidateNested()
+  @ValidateNested({ each: true })
   @Type(() => CreateCondenserDto)
-  condenser?: CreateCondenserDto;
+  condensers?: CreateCondenserDto[];
 
-  // También incluimos el compressor por si acaso
-  @ApiPropertyOptional({
-    type: CreateCompressorDto,
-    description: 'Datos del compresor (opcional)',
-  })
+  @ApiPropertyOptional({ type: PlanMantenimientoDto })
   @IsOptional()
   @ValidateNested()
-  @Type(() => CreateCompressorDto)
-  compressor?: CreateCompressorDto;
+  @Type(() => PlanMantenimientoDto)
+  planMantenimiento?: PlanMantenimientoDto;
 }

@@ -25,6 +25,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { Service } from './entities/service.entity';
+import { ServiceCategory } from './enums/service.enums';
 
 @ApiTags('services')
 @Controller('services')
@@ -65,7 +66,10 @@ export class ServicesController {
     description: 'Incluir estadísticas de órdenes de trabajo',
     type: Boolean,
   })
-  @ApiResponse({ status: 200, description: 'Lista de servicios obtenida exitosamente' })
+  @ApiResponse({
+    status: 200,
+    description: 'Lista de servicios obtenida exitosamente',
+  })
   async findAll(
     @Query('search') search?: string,
     @Query('stats') stats?: boolean,
@@ -82,7 +86,9 @@ export class ServicesController {
 
     return {
       message: 'Servicios obtenidos exitosamente',
-      data: stats ? data : data.map((service) => this.mapToResponseDto(service)),
+      data: stats
+        ? data
+        : data.map((service) => this.mapToResponseDto(service)),
     };
   }
 
@@ -107,7 +113,10 @@ export class ServicesController {
     summary: 'Actualizar servicio',
     description: 'Actualiza un servicio existente (Administrador y Secretaria)',
   })
-  @ApiResponse({ status: 200, description: 'Servicio actualizado exitosamente' })
+  @ApiResponse({
+    status: 200,
+    description: 'Servicio actualizado exitosamente',
+  })
   @ApiResponse({ status: 404, description: 'Servicio no encontrado' })
   @ApiResponse({ status: 409, description: 'El nombre del servicio ya existe' })
   async update(
@@ -155,16 +164,27 @@ export class ServicesController {
     };
   }
 
+  @Get('category/:category')
+  @ApiOperation({
+    summary: 'Obtener servicios por categoría',
+    description: 'Obtiene todos los servicios de una categoría específica',
+  })
+  @ApiResponse({ status: 200, description: 'Servicios obtenidos exitosamente' })
+  async findByCategory(@Param('category') category: ServiceCategory) {
+    const services = await this.servicesService.findByCategory(category);
+    return {
+      message: `Servicios de la categoría ${category} obtenidos exitosamente`,
+      data: services.map((service) => this.mapToResponseDto(service)),
+    };
+  }
+
   private mapToResponseDto(service: Service): ServiceResponseDto {
     return {
       servicioId: service.servicioId,
       nombreServicio: service.nombreServicio,
       descripcion: service.descripcion,
-      precioBase: service.precioBase,
       duracionEstimada: service.duracionEstimada,
       categoriaServicio: service.categoriaServicio,
-      tipoTrabajo: service.tipoTrabajo,
-      tipoMantenimiento: service.tipoMantenimiento,
     };
   }
 }

@@ -1,5 +1,6 @@
+// src/services/dto/service-response.dto.ts
 import { ApiProperty } from '@nestjs/swagger';
-import { ServiceCategory, WorkNature, MaintenanceType } from '../enums/service.enums';
+import { ServiceCategory } from '../enums/service.enums';
 
 export class ServiceResponseDto {
   @ApiProperty({
@@ -15,46 +16,21 @@ export class ServiceResponseDto {
   nombreServicio: string;
 
   @ApiProperty({
-    example:
-      'Instalación profesional de sistemas de aire acondicionado',
+    example: 'Instalación profesional de sistemas de aire acondicionado',
     description: 'Descripción del servicio',
   })
-  descripcion: string;
-
-  @ApiProperty({
-    example: 150000.0,
-    description: 'Precio base del servicio',
-  })
-  precioBase: number;
+  descripcion?: string;
 
   @ApiProperty({
     example: '4-6 horas',
     description: 'Duración estimada del servicio',
   })
-  duracionEstimada: string;
+  duracionEstimada?: string;
 
   @ApiProperty({
     example: 'Aires Acondicionados',
     description: 'Categoría del servicio (línea de negocio)',
     enum: ServiceCategory,
-    required: false,
   })
-  categoriaServicio?: ServiceCategory;
-
-  @ApiProperty({
-    example: 'Mantenimiento',
-    description: 'Tipo de trabajo: Instalación, Mantenimiento o Construcción',
-    enum: WorkNature,
-    required: false,
-  })
-  tipoTrabajo?: WorkNature;
-
-  @ApiProperty({
-    example: 'Preventivo',
-    description:
-      'Tipo de mantenimiento (solo aplica cuando el tipo de trabajo es Mantenimiento)',
-    enum: MaintenanceType,
-    required: false,
-  })
-  tipoMantenimiento?: MaintenanceType;
+  categoriaServicio: ServiceCategory;
 }

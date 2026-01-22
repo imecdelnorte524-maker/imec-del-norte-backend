@@ -4,8 +4,10 @@ import {
   Column,
   ManyToOne,
   JoinColumn,
+  OneToMany,
 } from 'typeorm';
 import { Equipment } from './equipment.entity';
+import { EquipmentMotor } from './motor.entity';
 
 @Entity('equipment_evaporators')
 export class EquipmentEvaporator {
@@ -21,6 +23,7 @@ export class EquipmentEvaporator {
   @JoinColumn({ name: 'equipment_id' })
   equipment: Equipment;
 
+  // Campos nuevos / ajustados (todos opcionales)
   @Column({ name: 'marca', type: 'varchar', length: 150, nullable: true })
   marca?: string;
 
@@ -31,19 +34,10 @@ export class EquipmentEvaporator {
   serial?: string;
 
   @Column({ name: 'capacidad', type: 'varchar', length: 150, nullable: true })
-  capacidad?: string;
-
-  @Column({ name: 'amperaje', type: 'varchar', length: 50, nullable: true })
-  amperaje?: string;
+  capacidad?: string; // ej: '12000 BTU', '18000 BTU'
 
   @Column({ name: 'tipo_refrigerante', type: 'varchar', length: 100, nullable: true })
   tipoRefrigerante?: string;
-
-  @Column({ name: 'voltaje', type: 'varchar', length: 50, nullable: true })
-  voltaje?: string;
-
-  @Column({ name: 'numero_fases', type: 'varchar', length: 50, nullable: true })
-  numeroFases?: string;
 
   @Column({
     name: 'created_at',
@@ -59,4 +53,11 @@ export class EquipmentEvaporator {
     onUpdate: 'CURRENT_TIMESTAMP',
   })
   updatedAt: Date;
+
+  // Nueva relación: un evaporador puede tener varios motores
+  @OneToMany(() => EquipmentMotor, (motor) => motor.evaporator, {
+    cascade: true,
+    nullable: true,
+  })
+  motors?: EquipmentMotor[];
 }

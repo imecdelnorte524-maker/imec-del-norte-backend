@@ -5,22 +5,23 @@ import {
   ManyToOne,
   JoinColumn,
 } from 'typeorm';
-import { Equipment } from './equipment.entity';
+import { EquipmentCondenser } from './condenser.entity';
 
 @Entity('equipment_compressors')
 export class EquipmentCompressor {
   @PrimaryGeneratedColumn({ name: 'id' })
   id: number;
 
-  @Column({ name: 'equipment_id' })
-  equipmentId: number;
+  @Column({ name: 'condenser_id' })
+  condenserId: number;
 
-  @ManyToOne(() => Equipment, (equipment) => equipment.compressors, {
+  @ManyToOne(() => EquipmentCondenser, (condenser) => condenser.compressors, {
     onDelete: 'CASCADE',
   })
-  @JoinColumn({ name: 'equipment_id' })
-  equipment: Equipment;
+  @JoinColumn({ name: 'condenser_id' })
+  condenser: EquipmentCondenser;
 
+  // Campos nuevos / ajustados (todos opcionales)
   @Column({ name: 'marca', type: 'varchar', length: 150, nullable: true })
   marca?: string;
 
@@ -31,25 +32,43 @@ export class EquipmentCompressor {
   serial?: string;
 
   @Column({ name: 'capacidad', type: 'varchar', length: 150, nullable: true })
-  capacidad?: string;
-
-  @Column({ name: 'amperaje', type: 'varchar', length: 50, nullable: true })
-  amperaje?: string;
-
-  @Column({ name: 'tipo_refrigerante', type: 'varchar', length: 100, nullable: true })
-  tipoRefrigerante?: string;
+  capacidad?: string; // ej: '12000 BTU'
 
   @Column({ name: 'voltaje', type: 'varchar', length: 50, nullable: true })
   voltaje?: string;
 
-  @Column({ name: 'numero_fases', type: 'varchar', length: 50, nullable: true })
-  numeroFases?: string;
+  @Column({ name: 'frecuencia', type: 'varchar', length: 50, nullable: true })
+  frecuencia?: string; // ej: '60 Hz'
+
+  @Column({ name: 'tipo_refrigerante', type: 'varchar', length: 100, nullable: true })
+  tipoRefrigerante?: string;
 
   @Column({ name: 'tipo_aceite', type: 'varchar', length: 50, nullable: true })
   tipoAceite?: string;
 
   @Column({ name: 'cantidad_aceite', type: 'varchar', length: 50, nullable: true })
   cantidadAceite?: string;
+
+  @Column({ name: 'capacitor', type: 'varchar', length: 100, nullable: true })
+  capacitor?: string; // ej: '35/5 µF'
+
+  @Column({ name: 'lra', type: 'varchar', length: 50, nullable: true })
+  lra?: string; // Locked Rotor Amps
+
+  @Column({ name: 'fla', type: 'varchar', length: 50, nullable: true })
+  fla?: string; // Full Load Amps
+
+  @Column({ name: 'cantidad_polos', type: 'varchar', length: 50, nullable: true })
+  cantidadPolos?: string; // ej: '4 polos'
+
+  @Column({ name: 'amperaje', type: 'varchar', length: 50, nullable: true })
+  amperaje?: string;
+
+  @Column({ name: 'voltaje_bobina', type: 'varchar', length: 50, nullable: true })
+  voltajeBobina?: string;
+
+  @Column({ name: 'vac', type: 'varchar', length: 50, nullable: true })
+  vac?: string; // Voltaje de arranque o similar
 
   @Column({
     name: 'created_at',

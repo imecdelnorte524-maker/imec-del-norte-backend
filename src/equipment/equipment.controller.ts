@@ -1,4 +1,3 @@
-// src/equipment/equipment.controller.ts
 import {
   Controller,
   Get,
@@ -36,21 +35,8 @@ export class EquipmentController {
 
   @Post()
   @Roles('Administrador', 'Técnico')
-  @ApiOperation({
-    summary: 'Crear equipo (hoja de vida)',
-    description:
-      'Crea un nuevo equipo asociado a un cliente (empresa) y a un área/subárea',
-  })
-  @ApiResponse({
-    status: 201,
-    description: 'Equipo creado exitosamente',
-    type: EquipmentResponseDto,
-  })
-  @ApiResponse({ status: 400, description: 'Datos inválidos' })
-  @ApiResponse({
-    status: 404,
-    description: 'Cliente, área o subárea no encontrada',
-  })
+  @ApiOperation({ summary: 'Crear equipo (hoja de vida)' })
+  @ApiResponse({ status: 201, description: 'Equipo creado', type: EquipmentResponseDto })
   async create(@Body() createEquipmentDto: CreateEquipmentDto) {
     const equipment = await this.equipmentService.create(createEquipmentDto);
     return {
@@ -61,40 +47,12 @@ export class EquipmentController {
 
   @Get()
   @Roles('Administrador', 'Secretaria', 'Técnico')
-  @ApiOperation({
-    summary: 'Obtener todos los equipos',
-    description:
-      'Obtiene la lista de equipos, con opción de filtrar por cliente, área, subárea o búsqueda',
-  })
-  @ApiQuery({
-    name: 'clientId',
-    required: false,
-    description: 'Filtrar por ID de cliente (empresa)',
-    type: Number,
-  })
-  @ApiQuery({
-    name: 'areaId',
-    required: false,
-    description: 'Filtrar por ID de área',
-    type: Number,
-  })
-  @ApiQuery({
-    name: 'subAreaId',
-    required: false,
-    description: 'Filtrar por ID de subárea',
-    type: Number,
-  })
-  @ApiQuery({
-    name: 'search',
-    required: false,
-    description: 'Buscar por nombre, código, serie o marca del equipo',
-    type: String,
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Equipos obtenidos exitosamente',
-    type: [EquipmentResponseDto],
-  })
+  @ApiOperation({ summary: 'Obtener todos los equipos' })
+  @ApiQuery({ name: 'clientId', required: false, type: Number })
+  @ApiQuery({ name: 'areaId', required: false, type: Number })
+  @ApiQuery({ name: 'subAreaId', required: false, type: Number })
+  @ApiQuery({ name: 'search', required: false, type: String })
+  @ApiResponse({ status: 200, description: 'Equipos obtenidos', type: [EquipmentResponseDto] })
   async findAll(
     @Query('clientId') clientId?: string,
     @Query('areaId') areaId?: string,
@@ -116,16 +74,8 @@ export class EquipmentController {
 
   @Get(':id')
   @Roles('Administrador', 'Secretaria', 'Técnico')
-  @ApiOperation({
-    summary: 'Obtener equipo por ID',
-    description: 'Obtiene la información detallada de un equipo por su ID',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Equipo obtenido exitosamente',
-    type: EquipmentResponseDto,
-  })
-  @ApiResponse({ status: 404, description: 'Equipo no encontrado' })
+  @ApiOperation({ summary: 'Obtener equipo por ID' })
+  @ApiResponse({ status: 200, description: 'Equipo obtenido', type: EquipmentResponseDto })
   async findOne(@Param('id', ParseIntPipe) id: number) {
     const equipment = await this.equipmentService.findOne(id);
     return {
@@ -134,28 +84,26 @@ export class EquipmentController {
     };
   }
 
+  @Get(':id/work-orders')
+  @Roles('Administrador', 'Secretaria', 'Técnico', 'Cliente')
+  @ApiOperation({ summary: 'Obtener historial de órdenes del equipo' })
+  async getEquipmentWorkOrders(@Param('id', ParseIntPipe) id: number) {
+    const workOrders = await this.equipmentService.getEquipmentWorkOrders(id);
+    return {
+      message: 'Órdenes del equipo obtenidas exitosamente',
+      data: workOrders,
+    };
+  }
+
   @Patch(':id')
   @Roles('Administrador', 'Técnico')
-  @ApiOperation({
-    summary: 'Actualizar equipo',
-    description: 'Actualiza la información de un equipo existente',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Equipo actualizado exitosamente',
-    type: EquipmentResponseDto,
-  })
-  @ApiResponse({ status: 400, description: 'Datos inválidos' })
-  @ApiResponse({ status: 404, description: 'Equipo no encontrado' })
+  @ApiOperation({ summary: 'Actualizar equipo' })
+  @ApiResponse({ status: 200, description: 'Equipo actualizado', type: EquipmentResponseDto })
   async update(
     @Param('id', ParseIntPipe) id: number,
     @Body() updateEquipmentDto: UpdateEquipmentDto,
   ) {
-
-    const equipment = await this.equipmentService.update(
-      id,
-      updateEquipmentDto,
-    );
+    const equipment = await this.equipmentService.update(id, updateEquipmentDto);
     return {
       message: 'Equipo actualizado exitosamente',
       data: this.mapToResponseDto(equipment),
@@ -164,27 +112,19 @@ export class EquipmentController {
 
   @Delete(':id')
   @Roles('Administrador')
-  @ApiOperation({
-    summary: 'Eliminar equipo',
-    description:
-      'Elimina un equipo permanentemente (y las imágenes asociadas en Cloudinary)',
-  })
-  @ApiResponse({ status: 200, description: 'Equipo eliminado exitosamente' })
-  @ApiResponse({ status: 404, description: 'Equipo no encontrado' })
+  @ApiOperation({ summary: 'Eliminar equipo' })
   async remove(@Param('id', ParseIntPipe) id: number) {
     await this.equipmentService.remove(id);
-    return {
-      message: 'Equipo eliminado exitosamente',
-    };
+    return { message: 'Equipo eliminado exitosamente' };
   }
 
-  // ... imports y código anterior ...
-
   private mapToResponseDto(equipment: Equipment): EquipmentResponseDto {
-    const motor = equipment.motors?.[0] ?? null;
-    const evaporator = equipment.evaporators?.[0] ?? null;
-    const condenser = equipment.condensers?.[0] ?? null;
-    const compressor = equipment.compressors?.[0] ?? null;
+    // Obtener work orders desde la relación intermedia
+    const workOrders = equipment.equipmentWorkOrders?.map((ewo) => ({
+      workOrderId: ewo.workOrder?.ordenId,
+      description: ewo.description,
+      createdAt: ewo.createdAt,
+    })) || [];
 
     return {
       equipmentId: equipment.equipmentId,
@@ -194,18 +134,13 @@ export class EquipmentController {
         nit: equipment.client.nit,
       },
       area: equipment.area
-        ? {
-            idArea: equipment.area.idArea,
-            nombreArea: equipment.area.nombreArea,
-          }
+        ? { idArea: equipment.area.idArea, nombreArea: equipment.area.nombreArea }
         : undefined,
       subArea: equipment.subArea
-        ? {
-            idSubArea: equipment.subArea.idSubArea,
-            nombreSubArea: equipment.subArea.nombreSubArea,
-          }
+        ? { idSubArea: equipment.subArea.idSubArea, nombreSubArea: equipment.subArea.nombreSubArea }
         : undefined,
-      workOrderId: equipment.workOrderId ?? null,
+      // Ahora tenemos un array de work orders en lugar de un solo workOrderId
+      workOrders: workOrders,
       category: equipment.category,
       airConditionerTypeId: equipment.airConditionerTypeId,
       airConditionerType: equipment.airConditionerType
@@ -216,9 +151,7 @@ export class EquipmentController {
             hasCondenser: equipment.airConditionerType.hasCondenser,
           }
         : undefined,
-      name: equipment.name,
       code: equipment.code,
-      physicalLocation: equipment.physicalLocation,
       status: equipment.status,
       installationDate: equipment.installationDate,
       notes: equipment.notes,
@@ -232,56 +165,77 @@ export class EquipmentController {
           description: null,
           createdAt: img.created_at.toISOString(),
         })) ?? [],
-      motor: motor
+
+      // Nueva estructura anidada
+      evaporators: equipment.evaporators?.map((evap) => ({
+        marca: evap.marca,
+        modelo: evap.modelo,
+        serial: evap.serial,
+        capacidad: evap.capacidad,
+        tipoRefrigerante: evap.tipoRefrigerante,
+        motors: evap.motors?.map((m) => ({
+          amperaje: m.amperaje,
+          voltaje: m.voltaje,
+          numeroFases: m.numeroFases,
+          diametroEje: m.diametroEje,
+          tipoEje: m.tipoEje,
+          rpm: m.rpm,
+          correa: m.correa,
+          diametroPolea: m.diametroPolea,
+          capacidadHp: m.capacidadHp,
+          frecuencia: m.frecuencia,
+        })),
+      })),
+
+      condensers: equipment.condensers?.map((cond) => ({
+        marca: cond.marca,
+        modelo: cond.modelo,
+        serial: cond.serial,
+        capacidad: cond.capacidad,
+        amperaje: cond.amperaje,
+        voltaje: cond.voltaje,
+        tipoRefrigerante: cond.tipoRefrigerante,
+        numeroFases: cond.numeroFases,
+        presionAlta: cond.presionAlta,
+        presionBaja: cond.presionBaja,
+        hp: cond.hp,
+        motors: cond.motors?.map((m) => ({
+          amperaje: m.amperaje,
+          voltaje: m.voltaje,
+          numeroFases: m.numeroFases,
+          diametroEje: m.diametroEje,
+          tipoEje: m.tipoEje,
+          rpm: m.rpm,
+          correa: m.correa,
+          diametroPolea: m.diametroPolea,
+          capacidadHp: m.capacidadHp,
+          frecuencia: m.frecuencia,
+        })),
+        compressors: cond.compressors?.map((c) => ({
+          marca: c.marca,
+          modelo: c.modelo,
+          serial: c.serial,
+          capacidad: c.capacidad,
+          voltaje: c.voltaje,
+          frecuencia: c.frecuencia,
+          tipoRefrigerante: c.tipoRefrigerante,
+          tipoAceite: c.tipoAceite,
+          cantidadAceite: c.cantidadAceite,
+          capacitor: c.capacitor,
+          lra: c.lra,
+          fla: c.fla,
+          cantidadPolos: c.cantidadPolos,
+          amperaje: c.amperaje,
+          voltajeBobina: c.voltajeBobina,
+          vac: c.vac,
+        })),
+      })),
+
+      planMantenimiento: equipment.planMantenimiento
         ? {
-            amperaje: motor.amperaje,
-            voltaje: motor.voltaje,
-            rpm: motor.rpm,
-            serialMotor: motor.serialMotor,
-            modeloMotor: motor.modeloMotor,
-            diametroEje: motor.diametroEje,
-            tipoEje: motor.tipoEje,
-          }
-        : null,
-      evaporator: evaporator
-        ? {
-            marca: evaporator.marca,
-            modelo: evaporator.modelo,
-            serial: evaporator.serial,
-            capacidad: evaporator.capacidad,
-            amperaje: evaporator.amperaje,
-            tipoRefrigerante: evaporator.tipoRefrigerante,
-            voltaje: evaporator.voltaje,
-            numeroFases: evaporator.numeroFases,
-          }
-        : null,
-      condenser: condenser
-        ? {
-            marca: condenser.marca,
-            modelo: condenser.modelo,
-            serial: condenser.serial,
-            capacidad: condenser.capacidad,
-            amperaje: condenser.amperaje,
-            voltaje: condenser.voltaje,
-            tipoRefrigerante: condenser.tipoRefrigerante,
-            numeroFases: condenser.numeroFases,
-            presionAlta: condenser.presionAlta,
-            presionBaja: condenser.presionBaja,
-            hp: condenser.hp,
-          }
-        : null,
-      compressor: compressor
-        ? {
-            marca: compressor.marca,
-            modelo: compressor.modelo,
-            serial: compressor.serial,
-            capacidad: compressor.capacidad,
-            amperaje: compressor.amperaje,
-            tipoRefrigerante: compressor.tipoRefrigerante,
-            voltaje: compressor.voltaje,
-            numeroFases: compressor.numeroFases,
-            tipoAceite: compressor.tipoAceite,
-            cantidadAceite: compressor.cantidadAceite,
+            frecuencia: equipment.planMantenimiento.frecuencia,
+            fechaProgramada: equipment.planMantenimiento.fechaProgramada,
+            notas: equipment.planMantenimiento.notas,
           }
         : null,
     };

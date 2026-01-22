@@ -12,9 +12,11 @@ import { User } from '../../users/entities/user.entity';
 import { SupplyDetail } from './supply-detail.entity';
 import { ToolDetail } from './tool-detail.entity';
 import { Client } from '../../client/entities/client.entity';
-import { Equipment } from '../../equipment/entities/equipment.entity';
+import { MaintenanceType } from '../../maintenance-types/entities/maintenance-type.entity';
 import { WorkOrderStatus } from '../enums/work-order-status.enum';
 import { BillingStatus } from '../enums/billing-status.enum';
+import { ServiceRequestType } from '../enums/service-request-type.enum';
+import { EquipmentWorkOrder } from './equipment-work-order.entity';
 
 @Entity('ordenes_trabajo')
 export class WorkOrder {
@@ -80,12 +82,30 @@ export class WorkOrder {
   @Column({ type: 'text', nullable: true })
   comentarios?: string;
 
-  @OneToMany(() => SupplyDetail, detail => detail.workOrder)
+  @Column({
+    name: 'tipo_servicio',
+    type: 'enum',
+    enum: ServiceRequestType,
+    nullable: true,
+  })
+  tipoServicio?: ServiceRequestType;
+
+  @Column({ name: 'tipo_mantenimiento_id', nullable: true })
+  maintenanceTypeId?: number;
+
+  @ManyToOne(() => MaintenanceType, (mt) => mt.workOrders, { nullable: true })
+  @JoinColumn({ name: 'tipo_mantenimiento_id' })
+  maintenanceType?: MaintenanceType;
+
+  @OneToMany(() => SupplyDetail, (detail) => detail.workOrder)
   supplyDetails!: SupplyDetail[];
 
-  @OneToMany(() => ToolDetail, detail => detail.workOrder)
+  @OneToMany(() => ToolDetail, (detail) => detail.workOrder)
   toolDetails!: ToolDetail[];
-  
-  @OneToMany(() => Equipment, equipment => equipment.workOrder)
-  equipments?: Equipment[];
+
+  // ✅ RELACIÓN CORREGIDA: Tabla intermedia
+  @OneToMany(() => EquipmentWorkOrder, (ewo) => ewo.workOrder, {
+    cascade: true,
+  })
+  equipmentWorkOrders!: EquipmentWorkOrder[];
 }

@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { OnEvent } from '@nestjs/event-emitter';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -22,6 +22,8 @@ interface WorkOrderAssignedEvent {
 
 @Injectable()
 export class WorkOrdersNotificationsListener {
+  private readonly logger = new Logger(WorkOrdersNotificationsListener.name);
+
   constructor(
     private readonly notificationsService: NotificationsService,
     @InjectRepository(User)
@@ -30,13 +32,18 @@ export class WorkOrdersNotificationsListener {
 
   @OnEvent('work-order.created')
   async handleWorkOrderCreated(payload: WorkOrderCreatedEvent) {
-    // Notificar a todos los Administradores y secretarias activos
+    this.logger.log(`📢 Evento recibido: work-order.created ID: ${payload.workOrderId}`);
+
+    // Buscar usuarios con rol Administrador o Secretaria
     const admins = await this.usersRepo
       .createQueryBuilder('user')
       .leftJoinAndSelect('user.role', 'role')
-      .where('role.nombreRol IN (:rol)', { rol: ['Administrador', 'Secretaria'] })
+      // CORRECCIÓN AQUÍ: Usar :...rol para que TypeORM expanda el array
+      .where('role.nombreRol IN (:...rol)', { rol: ['Administrador', 'Secretaria'] })
       .andWhere('user.activo = true')
       .getMany();
+
+    this.logger.log(`👥 Encontrados ${admins.length} usuarios para notificar (Admin/Secretaria).`);
 
     const notificaciones = admins.map((admin) =>
       this.notificationsService.createAndSend({
@@ -53,12 +60,15 @@ export class WorkOrdersNotificationsListener {
 
   @OnEvent('work-order.assigned')
   async handleWorkOrderAssigned(payload: WorkOrderAssignedEvent) {
+    this.logger.log(`📢 Evento recibido: work-order.assigned ID: ${payload.workOrderId}`);
+
     // Buscar al técnico asignado
     const tecnico = await this.usersRepo.findOne({
       where: { usuarioId: payload.tecnicoId },
     });
 
     if (!tecnico || !tecnico.activo) {
+      this.logger.warn(`⚠️ Técnico ${payload.tecnicoId} no encontrado o inactivo.`);
       return;
     }
 
