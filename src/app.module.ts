@@ -4,7 +4,6 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 import databaseConfig from './config/database.config';
-import { DatabaseModule } from './database/database.module';
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
 import { ServicesModule } from './services/services.module';
@@ -41,7 +40,6 @@ import { ImagesModule } from './images/images.module';
       }),
     }),
 
-    DatabaseModule,
     HealthModule,
     AuthModule,
     UsersModule,
