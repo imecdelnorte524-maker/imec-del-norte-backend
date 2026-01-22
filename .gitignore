@@ -34,4 +34,3 @@ build/
 .cache/
 package-lock.json
 .env.docker
-database/
