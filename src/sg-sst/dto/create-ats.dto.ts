@@ -1,5 +1,10 @@
 // src/sg-sst/dto/create-ats.dto.ts
-import { IsString, IsOptional, IsObject, IsNumber, IsDateString } from 'class-validator';
+import {
+  IsString,
+  IsOptional,
+  IsObject,
+  IsNumber,
+} from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class CreateAtsDto {
@@ -72,12 +77,20 @@ export class CreateAtsDto {
   @IsOptional()
   observations?: string;
 
-  @ApiProperty({ description: 'Riesgos seleccionados en formato JSON', required: false, example: { fisicos: ['ruido'], quimicos: ['vapores'] } })
+  @ApiProperty({
+    description: 'Riesgos seleccionados en formato JSON',
+    required: false,
+    example: { fisicos: ['ruido'], quimicos: ['vapores'] },
+  })
   @IsObject()
   @IsOptional()
   selectedRisks?: any;
 
-  @ApiProperty({ description: 'Equipos de protección personal requeridos', required: false, example: { cascos: 1, guantes: 2 } })
+  @ApiProperty({
+    description: 'Equipos de protección personal requeridos',
+    required: false,
+    example: { cascos: 1, guantes: 2 },
+  })
   @IsObject()
   @IsOptional()
   requiredPpe?: any;
@@ -90,12 +103,19 @@ export class CreateAtsDto {
   @IsNumber()
   createdBy: number;
 
-  @ApiProperty({ 
-    description: 'Firma del trabajador en formato base64', 
-    required: false, 
-    example: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA...' 
+  @ApiProperty({
+    description: 'Firma del trabajador en formato base64',
+    required: false,
+    example: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA...',
   })
   @IsString()
   @IsOptional()
   signatureData?: string;
+
+  @ApiProperty({
+    description: 'ID de la orden de trabajo asociada',
+    example: 5,
+  })
+  @IsNumber()
+  workOrderId: number;
 }

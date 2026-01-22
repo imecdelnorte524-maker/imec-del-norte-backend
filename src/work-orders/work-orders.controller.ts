@@ -11,13 +11,15 @@ import {
   ParseIntPipe,
   Req,
   ForbiddenException,
+  BadRequestException,
+  UploadedFile,
+  UseInterceptors,
 } from '@nestjs/common';
 import {
   ApiTags,
   ApiOperation,
   ApiResponse,
   ApiBearerAuth,
-  ApiQuery,
 } from '@nestjs/swagger';
 import { WorkOrdersService } from './work-orders.service';
 import { CreateWorkOrderDto } from './dto/create-work-order.dto';
@@ -30,6 +32,9 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { WorkOrder } from './entities/work-order.entity';
+import { diskStorage } from 'multer';
+import { FileInterceptor } from '@nestjs/platform-express';
+import * as path from 'path';
 
 @ApiTags('work-orders')
 @Controller('work-orders')
@@ -39,28 +44,14 @@ export class WorkOrdersController {
   constructor(private readonly workOrdersService: WorkOrdersService) {}
 
   private getRoleName(user: any): string {
-    // Soporta tanto req.user.role (string) como user.role.nombreRol (entidad)
     return user?.role?.nombreRol || user?.role || '';
   }
 
   @Post()
   @Roles('Administrador', 'Cliente')
-  @ApiOperation({
-    summary: 'Crear orden de trabajo',
-    description: 'Crea una nueva orden de trabajo',
-  })
-  @ApiResponse({
-    status: 201,
-    description: 'Orden de trabajo creada exitosamente',
-  })
-  async create(
-    @Body() createWorkOrderDto: CreateWorkOrderDto,
-    @Req() req: any,
-  ) {
-    const workOrder = await this.workOrdersService.create(
-      createWorkOrderDto,
-      req.user,
-    );
+  @ApiOperation({ summary: 'Crear una nueva orden de trabajo' })
+  async create(@Body() dto: CreateWorkOrderDto, @Req() req: any) {
+    const workOrder = await this.workOrdersService.create(dto, req.user);
     const costs = await this.workOrdersService.calculateTotalCost(
       workOrder.ordenId,
     );
@@ -77,164 +68,27 @@ export class WorkOrdersController {
   @Get()
   @Roles('Administrador', 'Técnico', 'Secretaria', 'Cliente', 'Supervisor')
   @ApiOperation({
-    summary: 'Obtener órdenes de trabajo',
-    description:
-      'Obtiene la lista de órdenes de trabajo, filtrada según el rol del usuario',
+    summary:
+      'Obtener órdenes de trabajo (filtradas por rol: técnico/cliente solo ven las suyas)',
   })
-  @ApiQuery({
-    name: 'estado',
-    required: false,
-    description:
-      'Filtrar por estado (Solicitada sin asignar, Solicitada asignada, En proceso, Finalizada, Cancelada)',
-  })
-  @ApiQuery({
-    name: 'cliente',
-    required: false,
-    description: 'Filtrar por ID de cliente (usuario contacto)',
-  })
-  @ApiQuery({
-    name: 'tecnico',
-    required: false,
-    description: 'Filtrar por ID de técnico',
-  })
-  @ApiQuery({
-    name: 'fecha-inicio',
-    required: false,
-    description: 'Fecha de inicio del rango (YYYY-MM-DD)',
-  })
-  @ApiQuery({
-    name: 'fecha-fin',
-    required: false,
-    description: 'Fecha de fin del rango (YYYY-MM-DD)',
-  })
-  @ApiQuery({
-    name: 'stats',
-    required: false,
-    description: 'Obtener estadísticas de órdenes de trabajo (solo Admin)',
-    type: Boolean,
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Órdenes de trabajo obtenidas exitosamente',
-  })
-  async findAll(
-    @Query('estado') estado?: string,
-    @Query('cliente') clienteQuery?: string,
-    @Query('tecnico') tecnicoQuery?: string,
-    @Query('fecha-inicio') fechaInicio?: string,
-    @Query('fecha-fin') fechaFin?: string,
-    @Query('stats') stats?: string,
-    @Req() req?: any,
-  ) {
-    const currentUser = req.user;
-    const roleName = this.getRoleName(currentUser);
-    let data: WorkOrder[] | any;
+  async findAll(@Req() req: any) {
+    const roleName = this.getRoleName(req.user);
+    let data: WorkOrder[];
 
-    const statsFlag = stats === 'true' || stats === '1';
-
-    if (statsFlag) {
-      if (roleName !== 'Administrador') {
-        throw new ForbiddenException(
-          'Solo el Administrador puede ver estadísticas de órdenes',
-        );
-      }
-      data = await this.workOrdersService.getWorkOrderStats();
-      return {
-        message: 'Estadísticas de órdenes de trabajo obtenidas exitosamente',
-        data,
-      };
-    }
-
-    const hasDateRange = fechaInicio && fechaFin;
-
-    // LÓGICA DE FILTRADO
-
-    // CASO 1: CLIENTE (Solo ve lo suyo)
-    if (roleName === 'Cliente') {
-      const myId = currentUser.userId; // ✅ usar userId del JWT
-
-      if (hasDateRange) {
-        const startDate = new Date(fechaInicio as string);
-        const endDate = new Date(fechaFin as string);
-        endDate.setHours(23, 59, 59, 999);
-        const allInRange =
-          await this.workOrdersService.getWorkOrdersByDateRange(
-            startDate,
-            endDate,
-          );
-        data = allInRange.filter((o) => o.clienteId === myId);
-      } else if (estado) {
-        const byStatus =
-          await this.workOrdersService.getWorkOrdersByStatus(estado);
-        data = byStatus.filter((o) => o.clienteId === myId);
-      } else {
-        // Caso base: todas MIS órdenes
-        data = await this.workOrdersService.getWorkOrdersByClient(myId);
-      }
-    }
-
-    // CASO 2: TÉCNICO (Solo ve lo asignado a él)
-    else if (roleName === 'Técnico' || roleName === 'Tecnico') {
-      const myId = currentUser.userId; // ✅ usar userId del JWT
-
-      if (hasDateRange) {
-        const startDate = new Date(fechaInicio as string);
-        const endDate = new Date(fechaFin as string);
-        endDate.setHours(23, 59, 59, 999);
-        const allInRange =
-          await this.workOrdersService.getWorkOrdersByDateRange(
-            startDate,
-            endDate,
-          );
-        data = allInRange.filter((o) => o.tecnicoId === myId);
-      } else if (estado) {
-        const byStatus =
-          await this.workOrdersService.getWorkOrdersByStatus(estado);
-        data = byStatus.filter((o) => o.tecnicoId === myId);
-      } else {
-        // Caso base: todas MIS asignaciones
-        data = await this.workOrdersService.getWorkOrdersByTechnician(myId);
-      }
-    }
-
-    // CASO 3: ADMIN / SECRETARIA / SUPERVISOR (Ven todo, aplican filtros opcionales)
-    else if (
-      roleName === 'Administrador' ||
-      roleName === 'Secretaria' ||
-      roleName === 'Supervisor'
-    ) {
-      if (estado) {
-        data = await this.workOrdersService.getWorkOrdersByStatus(estado);
-      } else if (clienteQuery) {
-        data = await this.workOrdersService.getWorkOrdersByClient(
-          parseInt(clienteQuery, 10),
-        );
-      } else if (tecnicoQuery) {
-        data = await this.workOrdersService.getWorkOrdersByTechnician(
-          parseInt(tecnicoQuery, 10),
-        );
-      } else if (hasDateRange) {
-        const startDate = new Date(fechaInicio as string);
-        const endDate = new Date(fechaFin as string);
-        endDate.setHours(23, 59, 59, 999);
-        data = await this.workOrdersService.getWorkOrdersByDateRange(
-          startDate,
-          endDate,
-        );
-      } else {
-        // Sin filtros: devolver TODO
-        data = await this.workOrdersService.findAll();
-      }
-    }
-
-    // CASO DEFAULT (Por seguridad, devolver vacío si el rol no coincide)
-    else {
-      console.warn(`Rol desconocido o sin permisos de lista: ${roleName}`);
-      data = [];
+    if (roleName === 'Técnico') {
+      data = await this.workOrdersService.getWorkOrdersByTechnician(
+        req.user.userId,
+      );
+    } else if (roleName === 'Cliente') {
+      data = await this.workOrdersService.getWorkOrdersByClient(
+        req.user.userId,
+      );
+    } else {
+      data = await this.workOrdersService.findAll();
     }
 
     const ordersWithCosts = await Promise.all(
-      (data as WorkOrder[]).map(async (order) => {
+      data.map(async (order) => {
         const costs = await this.workOrdersService.calculateTotalCost(
           order.ordenId,
         );
@@ -252,40 +106,17 @@ export class WorkOrdersController {
   }
 
   @Get(':id')
-  @Roles('Administrador', 'Técnico', 'Secretaria', 'Cliente', 'Supervisor')
-  @ApiOperation({
-    summary: 'Obtener orden de trabajo por ID',
-    description:
-      'Obtiene una orden de trabajo específica por su ID, según permisos del usuario',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Orden de trabajo obtenida exitosamente',
-  })
-  @ApiResponse({ status: 404, description: 'Orden de trabajo no encontrada' })
+  @ApiOperation({ summary: 'Obtener una orden de trabajo por ID' })
   async findOne(@Param('id', ParseIntPipe) id: number, @Req() req: any) {
     const workOrder = await this.workOrdersService.findOne(id);
-    const currentUser = req.user;
-    const roleName = this.getRoleName(currentUser);
+    const roleName = this.getRoleName(req.user);
 
-    // TÉCNICO: solo puede ver sus órdenes
-    if (
-      roleName === 'Técnico' &&
-      workOrder.tecnicoId !== currentUser.userId // ✅
-    ) {
-      throw new ForbiddenException(
-        'No tiene permiso para ver esta orden de trabajo',
-      );
+    if (roleName === 'Técnico' && workOrder.tecnicoId !== req.user.userId) {
+      throw new ForbiddenException();
     }
 
-    // CLIENTE: solo puede ver sus órdenes (clienteId)
-    if (
-      roleName === 'Cliente' &&
-      workOrder.clienteId !== currentUser.userId // ✅
-    ) {
-      throw new ForbiddenException(
-        'No tiene permiso para ver esta orden de trabajo',
-      );
+    if (roleName === 'Cliente' && workOrder.clienteId !== req.user.userId) {
+      throw new ForbiddenException();
     }
 
     const costs = await this.workOrdersService.calculateTotalCost(id);
@@ -300,26 +131,14 @@ export class WorkOrdersController {
   }
 
   @Patch(':id')
-  @Roles('Administrador', 'Técnico', 'Secretaria')
-  @ApiOperation({
-    summary: 'Actualizar orden de trabajo',
-    description: 'Actualiza una orden de trabajo existente',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Orden de trabajo actualizada exitosamente',
-  })
-  @ApiResponse({ status: 404, description: 'Orden de trabajo no encontrada' })
+  @Roles('Administrador', 'Técnico', 'Secretaria', 'Supervisor')
+  @ApiOperation({ summary: 'Actualizar una orden de trabajo' })
   async update(
     @Param('id', ParseIntPipe) id: number,
-    @Body() updateWorkOrderDto: UpdateWorkOrderDto,
+    @Body() dto: UpdateWorkOrderDto,
     @Req() req: any,
   ) {
-    const workOrder = await this.workOrdersService.update(
-      id,
-      updateWorkOrderDto,
-      req.user,
-    );
+    const workOrder = await this.workOrdersService.update(id, dto, req.user);
     const costs = await this.workOrdersService.calculateTotalCost(id);
 
     return {
@@ -331,22 +150,10 @@ export class WorkOrdersController {
     };
   }
 
-  // Endpoint para que el CLIENTE cancele su propia orden (máx. 3 días hábiles)
   @Patch(':id/cancel')
   @Roles('Cliente')
-  @ApiOperation({
-    summary: 'Cancelar orden de trabajo (Cliente)',
-    description:
-      'Permite al cliente cancelar su propia orden dentro de los primeros 3 días hábiles',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Orden de trabajo cancelada exitosamente',
-  })
-  async cancelByClient(
-    @Param('id', ParseIntPipe) id: number,
-    @Req() req: any,
-  ) {
+  @ApiOperation({ summary: 'Cancelar una orden por parte del cliente' })
+  async cancelByClient(@Param('id', ParseIntPipe) id: number, @Req() req: any) {
     const workOrder = await this.workOrdersService.cancelByClient(id, req.user);
     const costs = await this.workOrdersService.calculateTotalCost(id);
 
@@ -359,52 +166,9 @@ export class WorkOrdersController {
     };
   }
 
-  @Patch(':id/assign-technician')
-  @Roles('Administrador')
-  @ApiOperation({
-    summary: 'Asignar técnico a una orden de trabajo',
-    description:
-      'Asigna un técnico a una orden de trabajo. Si la orden estaba "Solicitada sin asignar", pasa a "Solicitada asignada".',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Técnico asignado exitosamente a la orden de trabajo',
-  })
-  @ApiResponse({ status: 404, description: 'Orden o técnico no encontrado' })
-  async assignTechnician(
-    @Param('id', ParseIntPipe) id: number,
-    @Body() assignTechnicianDto: AssignTechnicianDto,
-  ) {
-    const workOrder = await this.workOrdersService.assignTechnician(
-      id,
-      assignTechnicianDto.tecnicoId,
-    );
-    const costs = await this.workOrdersService.calculateTotalCost(id);
-
-    return {
-      message: 'Técnico asignado exitosamente a la orden de trabajo',
-      data: {
-        ...this.mapToResponseDto(workOrder),
-        ...costs,
-      },
-    };
-  }
-
   @Delete(':id')
   @Roles('Administrador')
-  @ApiOperation({
-    summary: 'Eliminar orden de trabajo',
-    description: 'Elimina una orden de trabajo permanentemente',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Orden de trabajo eliminada exitosamente',
-  })
-  @ApiResponse({ status: 404, description: 'Orden de trabajo no encontrada' })
-  @ApiResponse({
-    status: 409,
-    description: 'No se puede eliminar una orden finalizada o en proceso',
-  })
+  @ApiOperation({ summary: 'Eliminar una orden de trabajo' })
   async remove(@Param('id', ParseIntPipe) id: number) {
     await this.workOrdersService.remove(id);
     return {
@@ -412,196 +176,284 @@ export class WorkOrdersController {
     };
   }
 
+  @Patch(':id/assign-technician')
+  @Roles('Administrador', 'Secretaria', 'Supervisor')
+  @ApiOperation({ summary: 'Asignar o cambiar el técnico de una orden' })
+  async assignTechnician(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: AssignTechnicianDto,
+  ) {
+    const workOrder = await this.workOrdersService.assignTechnician(
+      id,
+      dto.tecnicoId,
+    );
+    const costs = await this.workOrdersService.calculateTotalCost(id);
+
+    return {
+      message: 'Técnico asignado/reasignado correctamente',
+      data: {
+        ...this.mapToResponseDto(workOrder),
+        ...costs,
+      },
+    };
+  }
+
+  @Delete(':id/technician')
+  @Roles('Administrador', 'Secretaria', 'Supervisor')
+  @ApiOperation({ summary: 'Quitar técnico de una orden de trabajo' })
+  async unassignTechnician(@Param('id', ParseIntPipe) id: number) {
+    const workOrder = await this.workOrdersService.unassignTechnician(id);
+    const costs = await this.workOrdersService.calculateTotalCost(id);
+
+    return {
+      message: 'Técnico removido de la orden correctamente',
+      data: {
+        ...this.mapToResponseDto(workOrder),
+        ...costs,
+      },
+    };
+  }
+
+  @Post(':id/equipment/:equipmentId')
+  @Roles('Administrador', 'Técnico', 'Secretaria', 'Supervisor')
+  @ApiOperation({ summary: 'Asociar un equipo a una orden' })
+  async addEquipment(
+    @Param('id', ParseIntPipe) ordenId: number,
+    @Param('equipmentId', ParseIntPipe) equipmentId: number,
+    @Body() body: { description?: string },
+  ) {
+    const result = await this.workOrdersService.addEquipmentToOrder(
+      ordenId,
+      equipmentId,
+      body.description,
+    );
+    return {
+      message: 'Equipo asociado a la orden correctamente',
+      data: result,
+    };
+  }
+
+  @Delete(':id/equipment/:equipmentId')
+  @Roles('Administrador', 'Técnico', 'Secretaria', 'Supervisor')
+  @ApiOperation({ summary: 'Desasociar un equipo de una orden' })
+  async removeEquipment(
+    @Param('id', ParseIntPipe) ordenId: number,
+    @Param('equipmentId', ParseIntPipe) equipmentId: number,
+  ) {
+    await this.workOrdersService.removeEquipmentFromOrder(ordenId, equipmentId);
+    return {
+      message: 'Equipo desasociado de la orden correctamente',
+    };
+  }
+
+  @Get('equipment/:equipmentId')
+  @Roles('Administrador', 'Técnico', 'Secretaria', 'Supervisor', 'Cliente')
+  @ApiOperation({ summary: 'Obtener órdenes asociadas a un equipo' })
+  async getOrdersByEquipment(
+    @Param('equipmentId', ParseIntPipe) equipmentId: number,
+    @Req() req: any,
+  ) {
+    const workOrders =
+      await this.workOrdersService.getWorkOrdersByEquipment(equipmentId);
+
+    return {
+      message: 'Órdenes del equipo obtenidas',
+      data: workOrders.map((wo) => this.mapToResponseDto(wo)),
+    };
+  }
+
+  @Get('client/:clienteEmpresaId/category/:category')
+  @Roles('Administrador', 'Secretaria', 'Técnico', 'Cliente')
+  @ApiOperation({ summary: 'Obtener órdenes por cliente empresa y categoría' })
+  async getWorkOrdersByClientAndCategory(
+    @Param('clienteEmpresaId', ParseIntPipe) clienteEmpresaId: number,
+    @Param('category') category: string,
+  ) {
+    const workOrders =
+      await this.workOrdersService.getWorkOrdersByClientAndCategory(
+        clienteEmpresaId,
+        category,
+      );
+
+    const ordersWithCosts = await Promise.all(
+      workOrders.map(async (order) => {
+        const costs = await this.workOrdersService.calculateTotalCost(
+          order.ordenId,
+        );
+        return {
+          ...this.mapToResponseDto(order),
+          ...costs,
+        };
+      }),
+    );
+
+    return {
+      message: 'Órdenes obtenidas exitosamente',
+      data: ordersWithCosts,
+    };
+  }
+
   @Post(':id/supplies')
-  @Roles('Administrador', 'Técnico')
-  @ApiOperation({
-    summary: 'Agregar insumo a orden de trabajo',
-    description: 'Agrega un insumo usado en la orden de trabajo',
-  })
-  @ApiResponse({ status: 201, description: 'Insumo agregado exitosamente' })
-  @ApiResponse({
-    status: 404,
-    description: 'Orden de trabajo o insumo no encontrado',
-  })
-  @ApiResponse({ status: 409, description: 'Stock insuficiente' })
+  @Roles('Administrador', 'Técnico', 'Secretaria', 'Supervisor')
+  @ApiOperation({ summary: 'Agregar un insumo usado a la orden' })
   async addSupplyDetail(
     @Param('id', ParseIntPipe) id: number,
-    @Body() addSupplyDetailDto: AddSupplyDetailDto,
+    @Body() dto: AddSupplyDetailDto,
   ) {
-    const supplyDetail = await this.workOrdersService.addSupplyDetail(
-      id,
-      addSupplyDetailDto,
-    );
+    const detail = await this.workOrdersService.addSupplyDetail(id, dto);
     return {
-      message: 'Insumo agregado exitosamente a la orden de trabajo',
-      data: supplyDetail,
+      message: 'Detalle de insumo agregado correctamente',
+      data: detail,
     };
   }
 
-  @Post(':id/tool')
-  @Roles('Administrador', 'Técnico')
-  @ApiOperation({
-    summary: 'Agregar herramienta a orden de trabajo',
-    description: 'Agrega una herramienta asignada a la orden de trabajo',
-  })
-  @ApiResponse({
-    status: 201,
-    description: 'Herramienta agregada exitosamente',
-  })
-  @ApiResponse({
-    status: 404,
-    description: 'Orden de trabajo o herramienta no encontrado',
-  })
-  @ApiResponse({ status: 409, description: 'Herramienta no disponible' })
-  async addToolDetail(
-    @Param('id', ParseIntPipe) id: number,
-    @Body() addToolDetailDto: AddToolDetailDto,
-  ) {
-    const toolDetail = await this.workOrdersService.addToolDetail(
-      id,
-      addToolDetailDto,
-    );
-    return {
-      message: 'Herramienta agregada exitosamente a la orden de trabajo',
-      data: toolDetail,
-    };
-  }
-
-  @Delete(':id/supplies/:supplyDetailId')
-  @Roles('Administrador', 'Técnico')
-  @ApiOperation({
-    summary: 'Remover insumo de orden de trabajo',
-    description: 'Remueve un insumo de la orden de trabajo',
-  })
-  @ApiResponse({ status: 200, description: 'Insumo removido exitosamente' })
-  @ApiResponse({ status: 404, description: 'Detalle de insumo no encontrado' })
+  @Delete(':id/supplies/:detalleInsumoId')
+  @Roles('Administrador', 'Técnico', 'Secretaria', 'Supervisor')
+  @ApiOperation({ summary: 'Eliminar un insumo usado de la orden' })
   async removeSupplyDetail(
     @Param('id', ParseIntPipe) id: number,
-    @Param('supplyDetailId', ParseIntPipe) supplyDetailId: number,
+    @Param('detalleInsumoId', ParseIntPipe) detalleInsumoId: number,
   ) {
-    await this.workOrdersService.removeSupplyDetail(id, supplyDetailId);
+    await this.workOrdersService.removeSupplyDetail(id, detalleInsumoId);
     return {
-      message: 'Insumo removido exitosamente de la orden de trabajo',
+      message: 'Detalle de insumo eliminado correctamente',
     };
   }
 
-  @Delete(':id/tool/:toolDetailId')
-  @Roles('Administrador', 'Técnico')
-  @ApiOperation({
-    summary: 'Remover herramienta de orden de trabajo',
-    description: 'Remueve una herramienta de la orden de trabajo',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Herramienta removida exitosamente',
-  })
-  @ApiResponse({
-    status: 404,
-    description: 'Detalle de herramienta no encontrado',
-  })
-  async removeEquipmentDetail(
-    @Param('id', ParseIntPipe) id: number,
-    @Param('toolDetailId', ParseIntPipe) toolDetailId: number,
-  ) {
-    await this.workOrdersService.removeToolDetail(id, toolDetailId);
-    return {
-      message: 'Herramienta removida exitosamente de la orden de trabajo',
-    };
-  }
-
-  @Get(':id/cost')
+  @Post(':id/tools')
   @Roles('Administrador', 'Técnico', 'Secretaria', 'Supervisor')
-  @ApiOperation({
-    summary: 'Calcular costos de orden de trabajo',
-    description: 'Calcula los costos totales de una orden de trabajo',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Costos calculados exitosamente',
-  })
-  async calculateCost(@Param('id', ParseIntPipe) id: number) {
-    const costs = await this.workOrdersService.calculateTotalCost(id);
+  @ApiOperation({ summary: 'Agregar una herramienta usada a la orden' })
+  async addToolDetail(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: AddToolDetailDto,
+  ) {
+    const detail = await this.workOrdersService.addToolDetail(id, dto);
     return {
-      message: 'Costos calculados exitosamente',
-      data: costs,
+      message: 'Detalle de herramienta agregado correctamente',
+      data: detail,
+    };
+  }
+
+  @Delete(':id/tools/:detalleHerramientaId')
+  @Roles('Administrador', 'Técnico', 'Secretaria', 'Supervisor')
+  @ApiOperation({ summary: 'Eliminar una herramienta usada de la orden' })
+  async removeToolDetail(
+    @Param('id', ParseIntPipe) id: number,
+    @Param('detalleHerramientaId', ParseIntPipe)
+    detalleHerramientaId: number,
+  ) {
+    await this.workOrdersService.removeToolDetail(id, detalleHerramientaId);
+    return {
+      message: 'Detalle de herramienta eliminado correctamente',
+    };
+  }
+
+  @Post(':id/invoice')
+  @Roles('Administrador', 'Secretaria')
+  @ApiOperation({ summary: 'Subir factura PDF para una orden finalizada' })
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: diskStorage({
+        destination: './uploads/invoices',
+        filename: (req, file, cb) => {
+          const uniqueSuffix =
+            Date.now() + '-' + Math.round(Math.random() * 1e9);
+          const ext = path.extname(file.originalname) || '.pdf';
+          cb(null, `invoice-${req.params.id}-${uniqueSuffix}${ext}`);
+        },
+      }),
+    }),
+  )
+  async uploadInvoice(
+    @Param('id', ParseIntPipe) id: number,
+    @UploadedFile() file: Express.Multer.File,
+  ) {
+    if (!file) {
+      throw new BadRequestException('No se ha subido ningún archivo');
+    }
+
+    const workOrder = await this.workOrdersService.uploadInvoice(id, file);
+    const costs = await this.workOrdersService.calculateTotalCost(id);
+
+    return {
+      message: 'Factura subida correctamente',
+      data: {
+        ...this.mapToResponseDto(workOrder),
+        ...costs,
+      },
     };
   }
 
   private mapToResponseDto(workOrder: WorkOrder): WorkOrderResponseDto {
-    const response: WorkOrderResponseDto = {
+    const supplyDetails =
+      workOrder.supplyDetails?.map((detail) => ({
+        detalleInsumoId: detail.detalleInsumoId,
+        cantidadUsada: Number(detail.cantidadUsada),
+        costoUnitarioAlMomento: Number(detail.costoUnitarioAlMomento || 0),
+        nombreInsumo: detail.supply?.nombre || '',
+      })) || [];
+
+    const toolDetails =
+      workOrder.toolDetails?.map((detail) => ({
+        detalleHerramientaId: detail.detalleHerramientaId,
+        tiempoUso: detail.tiempoUso || '',
+        nombreHerramienta: detail.tool?.nombre || '',
+        marca: detail.tool?.marca || '',
+      })) || [];
+
+    const equipments =
+      workOrder.equipmentWorkOrders?.map((ewo) => ({
+        equipmentId: ewo.equipment.equipmentId,
+        code: ewo.equipment.code,
+        category: ewo.equipment.category,
+        description: ewo.description,
+      })) || [];
+
+    return {
       ordenId: workOrder.ordenId,
-      service: {
-        servicioId: workOrder.service.servicioId,
-        nombreServicio: workOrder.service.nombreServicio,
-        precioBase: workOrder.service.precioBase,
-        categoriaServicio: workOrder.service.categoriaServicio,
-        tipoTrabajo: workOrder.service.tipoTrabajo,
-        tipoMantenimiento: workOrder.service.tipoMantenimiento,
-      },
-      cliente: {
-        usuarioId: workOrder.cliente.usuarioId,
-        nombre: workOrder.cliente.nombre,
-        apellido: workOrder.cliente.apellido,
-        email: workOrder.cliente.email,
-      },
       fechaSolicitud: workOrder.fechaSolicitud,
       fechaInicio: workOrder.fechaInicio,
       fechaFinalizacion: workOrder.fechaFinalizacion,
       estado: workOrder.estado,
+      tipoServicio: workOrder.tipoServicio ?? null,
+
+      maintenanceType: workOrder.maintenanceType
+        ? {
+            id: workOrder.maintenanceType.id,
+            nombre: workOrder.maintenanceType.nombre,
+          }
+        : null,
+
       comentarios: workOrder.comentarios,
-      supplyDetails: [],
-      toolDetails: [],
-      costoTotalInsumos: 0,
+      estadoFacturacion: workOrder.estadoFacturacion,
+      facturaPdfUrl: workOrder.facturaPdfUrl,
+      service: workOrder.service,
+      cliente: workOrder.cliente
+        ? {
+            usuarioId: workOrder.cliente.usuarioId,
+            nombre: workOrder.cliente.nombre,
+            apellido: workOrder.cliente.apellido || undefined,
+            email: workOrder.cliente.email ?? undefined,
+            telefono: workOrder.cliente.telefono ?? undefined,
+            cedula: workOrder.cliente.cedula ?? undefined,
+          }
+        : null,
+      clienteEmpresa: workOrder.clienteEmpresa,
+      tecnico: workOrder.tecnico
+        ? {
+            usuarioId: workOrder.cliente.usuarioId,
+            nombre: workOrder.tecnico.nombre,
+            apellido: workOrder.tecnico.apellido || '', // Manejo del apellido por si es undefined
+            email: workOrder.tecnico.email ?? undefined,
+            telefono: workOrder.tecnico.telefono ?? undefined,
+            cedula: workOrder.tecnico.cedula ?? undefined,
+          }
+        : null,
+      equipos: equipments,
+      supplyDetails,
+      toolDetails,
       costoTotalEstimado: 0,
+      costoTotalInsumos: 0,
     };
-
-    if (workOrder.clienteEmpresa) {
-      response.clienteEmpresa = {
-        idCliente: workOrder.clienteEmpresa.idCliente,
-        nombre: workOrder.clienteEmpresa.nombre,
-        nit: workOrder.clienteEmpresa.nit,
-        email: workOrder.clienteEmpresa.email,
-        telefono: workOrder.clienteEmpresa.telefono,
-        localizacion: workOrder.clienteEmpresa.localizacion,
-      };
-    }
-
-    if (workOrder.tecnico) {
-      response.tecnico = {
-        usuarioId: workOrder.tecnico.usuarioId,
-        nombre: workOrder.tecnico.nombre,
-        apellido: workOrder.tecnico.apellido,
-        email: workOrder.tecnico.email,
-      };
-    }
-
-    if (workOrder.equipment) {
-      response.equipo = {
-        equipmentId: workOrder.equipment.equipmentId,
-        name: workOrder.equipment.name,
-        code: workOrder.equipment.code,
-        category: workOrder.equipment.category,
-      };
-    }
-
-    if (workOrder.supplyDetails) {
-      response.supplyDetails = workOrder.supplyDetails.map((detail) => ({
-        detalleInsumoId: detail.detalleInsumoId,
-        cantidadUsada: detail.cantidadUsada,
-        costoUnitarioAlMomento: detail.costoUnitarioAlMomento,
-        nombreInsumo: detail.supply?.nombre || 'N/A',
-      }));
-    }
-
-    if (workOrder.toolDetails) {
-      response.toolDetails = workOrder.toolDetails.map((detail) => ({
-        detalleHerramientaId: detail.detalleHerramientaId,
-        tiempoUso: detail.tiempoUso,
-        nombreHerramienta: detail.tool?.nombre || 'N/A',
-        marca: detail.tool?.marca || 'N/A',
-      }));
-    }
-
-    return response;
   }
 }

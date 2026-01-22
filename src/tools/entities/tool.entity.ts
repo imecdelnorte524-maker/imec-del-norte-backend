@@ -1,69 +1,107 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, OneToOne, JoinColumn, OneToMany } from 'typeorm';
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  CreateDateColumn,
+  UpdateDateColumn,
+  DeleteDateColumn,
+  OneToOne,
+  OneToMany,
+  JoinColumn,
+} from 'typeorm';
 import { Inventory } from '../../inventory/entities/inventory.entity';
 import { ToolDetail } from '../../work-orders/entities/tool-detail.entity';
 import { ToolStatus, ToolType } from '../../shared/enums/inventory.enum';
-import { Image } from 'src/images/entities/image.entity';
+import { ToolEliminationReason } from '../../shared/enums/inventory.enum';
+import { Image } from '../../images/entities/image.entity';
 
 @Entity('herramientas')
 export class Tool {
   @PrimaryGeneratedColumn({ name: 'herramienta_id' })
   herramientaId: number;
 
-  @Column({ length: 100 })
+  @Column({ type: 'varchar', length: 100 })
   nombre: string;
 
-  @Column({ length: 100, nullable: true })
-  marca: string;
+  @Column({ type: 'varchar', length: 100, nullable: true }) // ← Tipo explícito
+  marca: string | null;
 
-  @Column({ length: 100, nullable: true, unique: true })
-  serial: string;
+  @Column({ type: 'varchar', length: 100, nullable: true, unique: true })
+  serial: string | null;
 
-  @Column({ length: 100, nullable: true })
-  modelo: string;
+  @Column({ type: 'varchar', length: 100, nullable: true })
+  modelo: string | null;
 
-  @Column({ name: 'caracteristicas_tecnicas', length: 255, nullable: true })
-  caracteristicasTecnicas: string;
+  @Column({ 
+    name: 'caracteristicas_tecnicas', 
+    type: 'varchar', 
+    length: 255, 
+    nullable: true 
+  })
+  caracteristicasTecnicas: string | null;
 
-  @Column({ nullable: true })
-  observacion: string;
+  @Column({ type: 'text', nullable: true })
+  observacion: string | null;
 
   @CreateDateColumn({ name: 'fecha_registro' })
   fechaRegistro: Date;
 
+  @UpdateDateColumn({ name: 'fecha_actualizacion' })
+  fechaActualizacion: Date;
+
+  @DeleteDateColumn({ name: 'fecha_eliminacion' })
+  fechaEliminacion: Date | null;
+
   @Column({
     type: 'enum',
     enum: ToolType,
-    default: ToolType.HERRAMIENTA
+    default: ToolType.HERRAMIENTA,
   })
   tipo: ToolType;
 
   @Column({
     type: 'enum',
     enum: ToolStatus,
-    default: ToolStatus.DISPONIBLE
+    default: ToolStatus.DISPONIBLE,
   })
   estado: ToolStatus;
 
-  @Column({ name: 'valor_unitario', type: 'decimal', precision: 10, scale: 2 })
-  valorUnitario: number;
+  @Column({
+    name: 'motivo_eliminacion',
+    type: 'enum',
+    enum: ToolEliminationReason,
+    nullable: true,
+  })
+  motivoEliminacion: ToolEliminationReason | null;
 
-  @Column({ name: 'foto_url', nullable: true })
-  fotoUrl: string;
+  @Column({ 
+    name: 'observacion_eliminacion', 
+    type: 'varchar', 
+    length: 500, 
+    nullable: true 
+  })
+  observacionEliminacion: string | null;
+
+  @Column({ 
+    name: 'valor_unitario', 
+    type: 'decimal', 
+    precision: 10, 
+    scale: 2 
+  })
+  valorUnitario: number;
 
   @OneToMany(() => Image, (image) => image.tool)
   images: Image[];
 
-  // RELACIÓN UNO A UNO CON INVENTARIO (CASCADA BIDIRECCIONAL)
-  @OneToOne(() => Inventory, inventory => inventory.tool, {
+  @OneToOne(() => Inventory, (inventory) => inventory.tool, {
     cascade: ['insert', 'update'],
-    onDelete: 'CASCADE'
+    onDelete: 'CASCADE',
   })
   @JoinColumn({ name: 'inventario_id' })
-  inventory: Inventory;
+  inventory: Inventory | null;
 
-  // Mantener relación con work orders si es necesario
-  @OneToOne(() => ToolDetail, toolDetail => toolDetail.tool, {
-    nullable: true
+  @OneToOne(() => ToolDetail, (toolDetail) => toolDetail.tool, {
+    nullable: true,
   })
-  toolDetails: ToolDetail;
+  toolDetails: ToolDetail | null;
 }

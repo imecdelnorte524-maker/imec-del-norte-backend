@@ -1,3 +1,4 @@
+// src/users/entities/user.entity.ts
 import {
   Entity,
   PrimaryGeneratedColumn,
@@ -9,15 +10,17 @@ import {
 } from 'typeorm';
 import { Role } from '../../roles/entities/role.entity';
 import { TipoCedula } from '../enums/Type-cedula.enum';
-import { Form } from '../../sg-sst/entities/form.entity'; // Ajusta la ruta
+import { Form } from '../../sg-sst/entities/form.entity';
 import { Image } from 'src/images/entities/image.entity';
+import { UserPasswordHistory } from './user-password-history.entity';
+import { Genero } from '../enums/genero.enum';
 
 @Entity('usuarios')
 export class User {
   @PrimaryGeneratedColumn({ name: 'usuario_id' })
   usuarioId: number;
 
-  @Column({ name: 'rol_id' })
+  @Column({ name: 'rol_id', type: 'int' })
   rolId: number;
 
   @ManyToOne(() => Role, { eager: true })
@@ -31,53 +34,124 @@ export class User {
     default: TipoCedula.CC,
     nullable: true,
   })
-  tipoCedula: TipoCedula;
+  tipoCedula?: TipoCedula | null;
 
-  @Column({ length: 10, nullable: true })
-  cedula: string;
+  // <-- explícito type: 'varchar' para evitar que TypeORM use la metadata "Object"
+  @Column({ name: 'cedula', type: 'varchar', length: 10, nullable: true })
+  cedula?: string | null;
 
-  @Column({ length: 100 })
+  @Column({ name: 'nombre', type: 'varchar', length: 100 })
   nombre: string;
 
-  @Column({ length: 100, nullable: true })
-  apellido: string;
+  @Column({ name: 'apellido', type: 'varchar', length: 100, nullable: true })
+  apellido?: string | null;
 
-  @Column({ length: 150, unique: true })
+  @Column({ name: 'email', type: 'varchar', length: 150, unique: true })
   email: string;
 
-  @Column({ length: 50, unique: true })
+  @Column({ name: 'username', type: 'varchar', length: 50, unique: true })
   username: string;
 
-  @Column({ name: 'password_hash', length: 255, nullable: true })
-  passwordHash: string;
+  @Column({ name: 'password_hash', type: 'varchar', length: 255, nullable: true })
+  passwordHash?: string | null;
 
-  @Column({ length: 20, nullable: true })
-  telefono: string;
+  @Column({ name: 'telefono', type: 'varchar', length: 20, nullable: true })
+  telefono?: string | null;
 
-  @Column({ default: true })
+  @Column({ name: 'activo', type: 'boolean', default: true })
   activo: boolean;
 
-  @CreateDateColumn({ name: 'fecha_creacion' })
+  @CreateDateColumn({ name: 'fecha_creacion', type: 'timestamp' })
   fechaCreacion: Date;
 
-  @Column({
-    name: 'reset_token',
-    length: 255,
-    nullable: true,
-  })
-  resetToken: string;
+  @Column({ name: 'fecha_nacimiento', type: 'date', nullable: true })
+  fechaNacimiento?: Date | null;
 
   @Column({
-    name: 'reset_token_expiry',
-    type: 'timestamp',
+    name: 'genero',
+    type: 'enum',
+    enum: Genero,
     nullable: true,
   })
-  resetTokenExpiry: Date;
+  genero?: Genero | null;
 
-  // Relación con los formularios creados por este usuario
+  @Column({ name: 'reset_token', type: 'varchar', length: 255, nullable: true })
+  resetToken?: string | null;
+
+  @Column({ name: 'reset_token_expiry', type: 'timestamp', nullable: true })
+  resetTokenExpiry?: Date | null;
+
   @OneToMany(() => Form, (form) => form.user)
   forms: Form[];
 
   @OneToMany(() => Image, (image) => image.user)
   images: Image[];
+
+  // Historial de contraseñas
+  @OneToMany(() => UserPasswordHistory, (history) => history.user)
+  passwordHistory: UserPasswordHistory[];
+
+  @Column({
+    name: 'must_change_password',
+    type: 'boolean',
+    default: false,
+  })
+  mustChangePassword: boolean;
+
+  // --- NUEVOS CAMPOS DE PERFIL (con type explícito) ---
+  @Column({
+    name: 'ubicacion_residencia',
+    type: 'varchar',
+    length: 255,
+    nullable: true,
+  })
+  ubicacionResidencia?: string | null;
+
+  @Column({
+    name: 'arl',
+    type: 'varchar',
+    length: 150,
+    nullable: true,
+  })
+  arl?: string | null;
+
+  @Column({
+    name: 'eps',
+    type: 'varchar',
+    length: 150,
+    nullable: true,
+  })
+  eps?: string | null;
+
+  @Column({
+    name: 'afp',
+    type: 'varchar',
+    length: 150,
+    nullable: true,
+  })
+  afp?: string | null;
+
+  @Column({
+    name: 'contacto_emergencia_nombre',
+    type: 'varchar',
+    length: 150,
+    nullable: true,
+  })
+  contactoEmergenciaNombre?: string | null;
+
+  @Column({
+    name: 'contacto_emergencia_telefono',
+    type: 'varchar',
+    length: 50,
+    nullable: true,
+  })
+  contactoEmergenciaTelefono?: string | null;
+
+  @Column({
+    name: 'contacto_emergencia_parentesco',
+    type: 'varchar',
+    length: 100,
+    nullable: true,
+  })
+  contactoEmergenciaParentesco?: string | null;
 }

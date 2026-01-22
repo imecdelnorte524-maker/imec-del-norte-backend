@@ -8,8 +8,14 @@ import {
   Delete,
   UseGuards,
   ParseIntPipe,
+  HttpStatus,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiBearerAuth,
+} from '@nestjs/swagger';
 import { RolesService } from './roles.service';
 import { CreateRoleDto } from './dto/create-role.dto';
 import { UpdateRoleDto } from './dto/update-role.dto';
@@ -18,6 +24,8 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { Role } from './entities/role.entity';
+import { AssignModulesDto } from './dto/assign-modules.dto';
+import { ModuleResponseDto } from '../modules/dto/module-response.dto';
 
 @ApiTags('roles')
 @Controller('roles')
@@ -107,6 +115,76 @@ export class RolesController {
     return {
       message: 'Rol eliminado exitosamente',
     };
+  }
+
+  /**
+   * --- Nuevos endpoints para gestionar módulos asignados a un rol ---
+   */
+
+  @Get(':id/modulos')
+  @Roles('Administrador', 'Secretaria', 'Técnico', 'SGSST')
+  @ApiOperation({ summary: 'Obtener módulos asociados a un rol', description: 'Retorna la lista de módulos que tiene asociado un rol.' })
+  @ApiResponse({ status: HttpStatus.OK, description: 'Módulos obtenidos exitosamente', type: [ModuleResponseDto] })
+  async getModules(@Param('id', ParseIntPipe) id: number) {
+    const modules = await this.rolesService.findModulesByRole(id);
+    const data: ModuleResponseDto[] = (modules || []).map(m => ({
+      moduloId: m.moduloId,
+      nombreModulo: m.nombreModulo,
+      descripcion: m.descripcion,
+      activo: m.activo,
+      orden: m.orden,
+      rutaFrontend: m.rutaFrontend,
+      icono: m.icono,
+      codigoInterno: m.codigoInterno,
+      fechaCreacion: m.fechaCreacion,
+      fechaActualizacion: m.fechaActualizacion,
+      roles: (m.roles || []).map(r => ({
+        rolId: r.rolId,
+        nombreRol: r.nombreRol,
+        descripcion: r.descripcion,
+        fechaCreacion: r.fechaCreacion,
+      })),
+    }));
+    return {
+      message: 'Módulos del rol obtenidos exitosamente',
+      data,
+    };
+  }
+
+  @Patch(':id/modulos')
+  @Roles('Administrador')
+  @ApiOperation({ summary: 'Asignar (reemplazar) módulos a un rol', description: 'Reemplaza los módulos asociados a un rol. Enviar array vacío para desasignar todos.' })
+  @ApiResponse({ status: 200, description: 'Módulos asignados al rol exitosamente' })
+  async setModules(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() assignModulesDto: AssignModulesDto,
+  ) {
+    const role = await this.rolesService.setModulesForRole(id, assignModulesDto.moduloIds || []);
+    return { message: 'Módulos asignados al rol exitosamente', data: this.mapToResponseDto(role) };
+  }
+
+  @Post(':id/modulos/:moduloId')
+  @Roles('Administrador')
+  @ApiOperation({ summary: 'Asignar un módulo a un rol', description: 'Asigna un módulo al rol si no está ya asignado.' })
+  @ApiResponse({ status: 200, description: 'Módulo asignado al rol exitosamente' })
+  async addModule(
+    @Param('id', ParseIntPipe) id: number,
+    @Param('moduloId', ParseIntPipe) moduloId: number,
+  ) {
+    const role = await this.rolesService.addModuleToRole(id, moduloId);
+    return { message: 'Módulo asignado al rol exitosamente', data: this.mapToResponseDto(role) };
+  }
+
+  @Delete(':id/modulos/:moduloId')
+  @Roles('Administrador')
+  @ApiOperation({ summary: 'Quitar un módulo a un rol', description: 'Quita la asociación entre módulo y rol.' })
+  @ApiResponse({ status: 200, description: 'Módulo removido del rol exitosamente' })
+  async removeModule(
+    @Param('id', ParseIntPipe) id: number,
+    @Param('moduloId', ParseIntPipe) moduloId: number,
+  ) {
+    await this.rolesService.removeModuleFromRole(id, moduloId);
+    return { message: 'Módulo removido del rol exitosamente' };
   }
 
   private mapToResponseDto(role: Role): RoleResponseDto {

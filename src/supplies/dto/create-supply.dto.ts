@@ -1,6 +1,14 @@
-import { IsNotEmpty, IsString, IsNumber, IsOptional, Min, IsUrl, IsEnum } from 'class-validator';
+// src/supplies/dto/create-supply.dto.ts
+import {
+  IsNotEmpty,
+  IsString,
+  IsNumber,
+  IsOptional,
+  Min,
+  IsEnum,
+} from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
-import { SupplyCategory, UnitOfMeasure, SupplyStatus } from '../../shared/enums/inventory.enum';
+import { SupplyCategory, SupplyStatus } from '../../shared/enums/inventory.enum';
 
 export class CreateSupplyDto {
   @ApiProperty({
@@ -22,12 +30,11 @@ export class CreateSupplyDto {
 
   @ApiProperty({
     example: 'Par',
-    description: 'Unidad de medida del insumo',
-    enum: UnitOfMeasure,
+    description: 'Nombre de la unidad de medida',
   })
   @IsNotEmpty({ message: 'La unidad de medida es requerida' })
-  @IsEnum(UnitOfMeasure, { message: 'La unidad de medida debe ser un valor válido' })
-  unidadMedida: UnitOfMeasure;
+  @IsString({ message: 'La unidad de medida debe ser una cadena de texto' })
+  unidadMedida: string; // Ahora es string, se buscará/creará la entidad
 
   @ApiProperty({
     example: 'Disponible',
@@ -59,16 +66,6 @@ export class CreateSupplyDto {
   valorUnitario: number;
 
   @ApiProperty({
-    example: 'https://example.com/foto-insumo.jpg',
-    description: 'URL de la foto del insumo',
-    required: false,
-  })
-  @IsOptional()
-  @IsString({ message: 'La URL de la foto debe ser una cadena de texto' })
-  fotoUrl?: string;
-
-  // NUEVO: Campos para el inventario asociado
-  @ApiProperty({
     example: 50,
     description: 'Cantidad inicial en inventario',
     default: 0,
@@ -76,14 +73,14 @@ export class CreateSupplyDto {
   @IsOptional()
   @IsNumber({}, { message: 'La cantidad inicial debe ser un número' })
   @Min(0, { message: 'La cantidad inicial no puede ser negativa' })
-  cantidadInicial?: number = 0; // VALOR POR DEFECTO AÑADIDO
+  cantidadInicial?: number = 0;
 
   @ApiProperty({
-    example: 'Almacén Principal - Estante A',
-    description: 'Ubicación del insumo en inventario',
+    example: 1,
+    description: 'ID de la bodega donde se almacena',
     required: false,
   })
   @IsOptional()
-  @IsString({ message: 'La ubicación debe ser una cadena de texto' })
-  ubicacion?: string;
+  @IsNumber({}, { message: 'El ID de la bodega debe ser un número' })
+  bodegaId?: number;
 }

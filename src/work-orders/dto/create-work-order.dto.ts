@@ -4,75 +4,90 @@ import {
   IsOptional,
   IsString,
   IsDateString,
+  IsEnum,
+  IsArray,
+  ArrayMinSize,
 } from 'class-validator';
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { BillingStatus } from '../enums/billing-status.enum';
+import { WorkOrderStatus } from '../enums/work-order-status.enum';
+import { ServiceRequestType } from '../enums/service-request-type.enum';
 
 export class CreateWorkOrderDto {
-  @ApiProperty({
-    example: 1,
-    description: 'ID del servicio',
-  })
-  @IsNotEmpty({ message: 'El ID del servicio es requerido' })
-  @IsNumber({}, { message: 'El ID del servicio debe ser un número' })
+  @ApiProperty({ example: 1 })
+  @IsNotEmpty()
+  @IsNumber()
   servicioId: number;
 
-  @ApiProperty({
-    example: 3,
-    description:
-      'ID del usuario cliente (persona de contacto). ' +
-      'Si no se envía, se utilizará el usuario contacto de la empresa seleccionada (para Administrador), ' +
-      'o el usuario autenticado (para Cliente).',
-    required: false,
-  })
+  @ApiProperty({ required: false })
   @IsOptional()
-  @IsNumber({}, { message: 'El ID del cliente debe ser un número' })
+  @IsNumber()
   clienteId?: number;
 
-  @ApiProperty({
-    example: 2,
-    description: 'ID del técnico asignado (opcional, se puede asignar luego)',
-    required: false,
-  })
+  @ApiProperty({ required: false })
   @IsOptional()
-  @IsNumber({}, { message: 'El ID del técnico debe ser un número' })
+  @IsNumber()
   tecnicoId?: number;
 
-  @ApiProperty({
-    example: 5,
-    description:
-      'ID del cliente empresa (tabla clientes). ' +
-      'Obligatorio para Administrador. Para Cliente se toma automáticamente la empresa donde él es usuario de contacto.',
-    required: false,
-  })
+  @ApiProperty({ required: false })
   @IsOptional()
-  @IsNumber({}, { message: 'El ID del cliente empresa debe ser un número' })
+  @IsNumber()
   clienteEmpresaId?: number;
 
-  @ApiProperty({
-    example: 10,
-    description:
-      'ID del equipo (hoja de vida) asociado a la orden (opcional, para mantenimientos)',
-    required: false,
-  })
+  @ApiProperty({ required: false })
   @IsOptional()
-  @IsNumber({}, { message: 'El ID del equipo debe ser un número' })
-  equipoId?: number;
-
-  @ApiProperty({
-    example: '2024-01-15T08:00:00.000Z',
-    description: 'Fecha de inicio programada (opcional)',
-    required: false,
-  })
-  @IsOptional()
-  @IsDateString({}, { message: 'La fecha de inicio debe ser una fecha válida' })
+  @IsDateString()
   fechaInicio?: Date;
 
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  comentarios?: string;
+
   @ApiProperty({
-    example: 'Instalación urgente requerida',
-    description: 'Comentarios adicionales (opcional)',
+    description: 'Tipo de servicio solicitado',
+    enum: ServiceRequestType,
     required: false,
   })
   @IsOptional()
-  @IsString({ message: 'Los comentarios deben ser una cadena de texto' })
-  comentarios?: string;
+  @IsEnum(ServiceRequestType)
+  tipoServicio?: ServiceRequestType;
+
+  @ApiProperty({
+    example: 1,
+    description: 'ID del tipo de mantenimiento (si aplica)',
+    required: false,
+  })
+  @IsOptional()
+  @IsNumber()
+  maintenanceTypeId?: number;
+
+  @ApiProperty({
+    example: [1, 2, 3],
+    description: 'IDs de equipos asociados a esta orden',
+    required: false,
+  })
+  @IsOptional()
+  @IsArray()
+  @IsNumber({}, { each: true })
+  @ArrayMinSize(0)
+  equipmentIds?: number[];
+
+  @ApiPropertyOptional({
+    description: 'Estado inicial de la orden',
+    enum: WorkOrderStatus,
+    default: WorkOrderStatus.REQUESTED_UNASSIGNED,
+  })
+  @IsOptional()
+  @IsEnum(WorkOrderStatus)
+  estado?: WorkOrderStatus;
+
+  @ApiPropertyOptional({
+    description: 'Estado de facturación',
+    enum: BillingStatus,
+    default: BillingStatus.NOT_BILLED,
+  })
+  @IsOptional()
+  @IsEnum(BillingStatus)
+  estadoFacturacion?: BillingStatus;
 }

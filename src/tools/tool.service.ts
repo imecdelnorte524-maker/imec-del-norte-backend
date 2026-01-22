@@ -1,13 +1,21 @@
-import { Injectable, NotFoundException, ConflictException, BadRequestException, Logger } from '@nestjs/common';
+// src/tools/tool.service.ts
+import {
+  Injectable,
+  NotFoundException,
+  ConflictException,
+  BadRequestException,
+  Logger,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, DataSource } from 'typeorm';
+import { Repository, DataSource, Not, IsNull } from 'typeorm';
 import { Tool } from './entities/tool.entity';
 import { Inventory } from '../inventory/entities/inventory.entity';
+import { Warehouse } from '../warehouses/entities/warehouse.entity';
 import { CreateToolDto } from './dto/create-tools.dto';
 import { UpdateToolDto } from './dto/update-tools.dto';
+import { DeleteToolDto } from './dto/delete-tool.dto';
 import { ToolStatus, ToolType } from '../shared/enums/inventory.enum';
-import { existsSync, unlinkSync } from 'fs';
-import { join } from 'path';
+import { ImagesService } from '../images/images.service';
 
 @Injectable()
 export class ToolService {
@@ -15,143 +23,128 @@ export class ToolService {
 
   constructor(
     @InjectRepository(Tool)
-    private equipmentRepository: Repository<Tool>,
+    private toolRepository: Repository<Tool>,
     @InjectRepository(Inventory)
     private inventoryRepository: Repository<Inventory>,
+    @InjectRepository(Warehouse)
+    private warehouseRepository: Repository<Warehouse>,
     private dataSource: DataSource,
-  ) { }
+    private readonly imagesService: ImagesService,
+  ) {}
 
-  async create(createToolDto: CreateToolDto): Promise<any> {
+  async create(createToolDto: CreateToolDto): Promise<Tool> {
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
     await queryRunner.startTransaction();
 
     try {
-      // Verificar si el serial ya existe (si se proporciona)
+      // Validar serial único
       if (createToolDto.serial) {
-        const existingEquipment = await queryRunner.manager.findOne(Tool, {
-          where: { serial: createToolDto.serial }
+        const existing = await queryRunner.manager.findOne(Tool, {
+          where: { serial: createToolDto.serial },
         });
-        if (existingEquipment) {
+        if (existing) {
           throw new ConflictException('El número de serie ya está registrado');
         }
       }
 
-      // Crear el herramienta
-      const equipmentData = {
+      // Buscar bodega si se proporciona
+      let bodega: Warehouse | null = null;
+      if (createToolDto.bodegaId) {
+        bodega = await queryRunner.manager.findOne(Warehouse, {
+          where: { bodegaId: createToolDto.bodegaId },
+        });
+        if (!bodega) {
+          throw new NotFoundException('Bodega no encontrada');
+        }
+      }
+
+      // Crear herramienta - valores undefined se convierten a null
+      const toolData: Partial<Tool> = {
         nombre: createToolDto.nombre,
-        marca: createToolDto.marca ?? undefined,
-        serial: createToolDto.serial ?? undefined,
-        modelo: createToolDto.modelo ?? undefined,
-        caracteristicasTecnicas: createToolDto.caracteristicasTecnicas ?? undefined,
-        observacion: createToolDto.observacion ?? undefined,
+        marca: createToolDto.marca ?? null,
+        serial: createToolDto.serial ?? null,
+        modelo: createToolDto.modelo ?? null,
+        caracteristicasTecnicas: createToolDto.caracteristicasTecnicas ?? null,
+        observacion: createToolDto.observacion ?? null,
         tipo: createToolDto.tipo as ToolType,
         estado: createToolDto.estado as ToolStatus,
         valorUnitario: createToolDto.valorUnitario,
-        fotoUrl: createToolDto.fotoUrl ?? undefined,
       };
 
-      const tool = queryRunner.manager.create(Tool, equipmentData);
-      const savedEquipment = await queryRunner.manager.save(tool);
-      
-      this.logger.log(`📦 Equipo creado con ID: ${savedEquipment.herramientaId}`);
+      const tool = queryRunner.manager.create(Tool, toolData);
+      const savedTool = await queryRunner.manager.save(tool);
 
-      // Crear automáticamente el registro en inventario
+      // Crear inventario asociado
       const inventoryData: Partial<Inventory> = {
-        herramientaId: savedEquipment.herramientaId,
-        cantidadActual: 1, // Los equipos siempre tienen cantidad 1
-        ubicacion: createToolDto.ubicacion ?? undefined,
+        herramientaId: savedTool.herramientaId,
+        cantidadActual: 1, // Siempre 1 para herramientas
+        bodega: bodega,
         fechaUltimaActualizacion: new Date(),
+        tool: savedTool,
       };
 
       const inventory = queryRunner.manager.create(Inventory, inventoryData);
-      inventory.tool = savedEquipment;
-      
-      // Guardar el inventario para obtener el inventarioId generado
       const savedInventory = await queryRunner.manager.save(inventory);
-      
-      this.logger.log(`📊 Inventario creado con ID: ${savedInventory.inventarioId} para herramienta ID: ${savedEquipment.herramientaId}`);
 
-      // Actualizar la herramienta con el inventarioId generado
-      // Asignar la relación de inventario directamente al objeto guardado
-      savedEquipment.inventory = savedInventory;
-      await queryRunner.manager.save(savedEquipment);
-      
-      this.logger.log(`✅ Herramienta actualizada con inventarioId: ${savedInventory.inventarioId}`);
+      // Asociar inventario a la herramienta
+      savedTool.inventory = savedInventory;
+      await queryRunner.manager.save(savedTool);
 
       await queryRunner.commitTransaction();
 
-      // Cargar relaciones completas para retornar
-      const result = await this.equipmentRepository.findOne({
-        where: { herramientaId: savedEquipment.herramientaId },
-        relations: ['inventory'],
-      });
-
-      if (!result) {
-        throw new NotFoundException(`Equipo con ID ${savedEquipment.herramientaId} no encontrado después de crear`);
-      }
-
-      this.logger.log(`✅ Equipo creado exitosamente: ${result.nombre} (ID: ${result.herramientaId})`);
+      this.logger.log(`Herramienta creada: ${savedTool.herramientaId} - ${savedTool.nombre}`);
       
-      // Retornar con el formato que necesitas
-      return {
-        ...result,
-        inventoryId: result.inventory?.inventarioId || savedInventory.inventarioId,
-      };
-
+      return this.findOne(savedTool.herramientaId);
     } catch (error) {
       await queryRunner.rollbackTransaction();
-      this.logger.error(`❌ Error creando herramienta: ${error.message}`);
       throw error;
     } finally {
       await queryRunner.release();
     }
   }
 
-  async findAll(): Promise<any[]> {
-    const equipmentList = await this.equipmentRepository.find({
-      relations: ['inventory'],
+  async findAll(includeDeleted = false): Promise<Tool[]> {
+    const options: any = {
+      relations: [
+        'inventory',
+        'inventory.bodega',
+        'images'
+      ],
       order: { fechaRegistro: 'DESC' },
-    });
+    };
 
-    // Mapear para incluir inventoryId en la respuesta
-    return equipmentList.map(tool => ({
-      ...tool,
-      inventoryId: tool.inventory?.inventarioId || null,
-    }));
-  }
-
-  async findOne(id: number): Promise<any> {
-    const tool = await this.equipmentRepository.findOne({
-      where: { herramientaId: id },
-      relations: ['inventory'],
-    });
-
-    if (!tool) {
-      throw new NotFoundException(`Equipo con ID ${id} no encontrado`);
+    if (includeDeleted) {
+      options.withDeleted = true;
     }
 
-    return {
-      ...tool,
-      inventoryId: tool.inventory?.inventarioId || null,
-    };
+    return this.toolRepository.find(options);
   }
 
-  async findBySerial(serial: string): Promise<any> {
-    const tool = await this.equipmentRepository.findOne({
-      where: { serial },
-      relations: ['inventory'],
-    });
-
-    if (!tool) return null;
-
-    return {
-      ...tool,
-      inventoryId: tool.inventory?.inventarioId || null,
+  async findOne(id: number, includeDeleted = false): Promise<Tool> {
+    const options: any = {
+      where: { herramientaId: id },
+      relations: [
+        'inventory',
+        'inventory.bodega',
+        'images'
+      ],
     };
+
+    if (includeDeleted) {
+      options.withDeleted = true;
+    }
+
+    const tool = await this.toolRepository.findOne(options);
+
+    if (!tool) {
+      throw new NotFoundException(`Herramienta con ID ${id} no encontrada`);
+    }
+
+    return tool;
   }
 
-  async update(id: number, updateToolDto: UpdateToolDto): Promise<any> {
+  async update(id: number, updateToolDto: UpdateToolDto): Promise<Tool> {
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
     await queryRunner.startTransaction();
@@ -159,112 +152,89 @@ export class ToolService {
     try {
       const tool = await this.findOne(id);
 
-      // Verificar si se está actualizando el serial y si ya existe
+      // Validar serial único si se cambia
       if (updateToolDto.serial && updateToolDto.serial !== tool.serial) {
-        const existingEquipment = await this.findBySerial(updateToolDto.serial);
-        if (existingEquipment) {
+        const existing = await queryRunner.manager.findOne(Tool, {
+          where: { serial: updateToolDto.serial ?? '' },
+        });
+        if (existing) {
           throw new ConflictException('El número de serie ya está registrado');
         }
       }
 
-      // Preparar datos de actualización
+      // Actualizar datos básicos de la herramienta
       const updateData: Partial<Tool> = {};
 
-      if (updateToolDto.nombre !== undefined) {
-        updateData.nombre = updateToolDto.nombre;
-      }
+      if (updateToolDto.nombre !== undefined) updateData.nombre = updateToolDto.nombre;
+      if (updateToolDto.marca !== undefined) updateData.marca = updateToolDto.marca ?? null;
+      if (updateToolDto.serial !== undefined) updateData.serial = updateToolDto.serial ?? null;
+      if (updateToolDto.modelo !== undefined) updateData.modelo = updateToolDto.modelo ?? null;
+      if (updateToolDto.caracteristicasTecnicas !== undefined) 
+        updateData.caracteristicasTecnicas = updateToolDto.caracteristicasTecnicas ?? null;
+      if (updateToolDto.observacion !== undefined) updateData.observacion = updateToolDto.observacion ?? null;
+      if (updateToolDto.tipo !== undefined) updateData.tipo = updateToolDto.tipo as ToolType;
+      if (updateToolDto.estado !== undefined) updateData.estado = updateToolDto.estado as ToolStatus;
+      if (updateToolDto.valorUnitario !== undefined) updateData.valorUnitario = updateToolDto.valorUnitario;
 
-      if (updateToolDto.marca !== undefined) {
-        updateData.marca = updateToolDto.marca;
-      }
-
-      if (updateToolDto.serial !== undefined) {
-        updateData.serial = updateToolDto.serial;
-      }
-
-      if (updateToolDto.modelo !== undefined) {
-        updateData.modelo = updateToolDto.modelo;
-      }
-
-      if (updateToolDto.caracteristicasTecnicas !== undefined) {
-        updateData.caracteristicasTecnicas = updateToolDto.caracteristicasTecnicas;
-      }
-
-      if (updateToolDto.observacion !== undefined) {
-        updateData.observacion = updateToolDto.observacion;
-      }
-
-      if (updateToolDto.tipo !== undefined) {
-        updateData.tipo = updateToolDto.tipo as ToolType;
-      }
-
-      if (updateToolDto.estado !== undefined) {
-        updateData.estado = updateToolDto.estado as ToolStatus;
-      }
-
-      if (updateToolDto.valorUnitario !== undefined) {
-        updateData.valorUnitario = updateToolDto.valorUnitario;
-      }
-
-      if (updateToolDto.fotoUrl !== undefined) {
-        updateData.fotoUrl = updateToolDto.fotoUrl;
-      }
-
-      // Actualizar datos del herramienta
       if (Object.keys(updateData).length > 0) {
         await queryRunner.manager.update(Tool, id, updateData);
       }
 
-      // Actualizar inventario si se proporciona ubicacion
-      if (updateToolDto.ubicacion !== undefined) {
-        const inventory = await queryRunner.manager.findOne(Inventory, {
-          where: { herramientaId: id }
-        });
+      // Actualizar bodega en el inventario
+      if (updateToolDto.bodegaId !== undefined && tool.inventory) {
+        const inventoryUpdate: Partial<Inventory> = {
+          fechaUltimaActualizacion: new Date(),
+        };
 
-        if (inventory) {
-          const inventoryUpdate: Partial<Inventory> = {
-            fechaUltimaActualizacion: new Date(),
-            ubicacion: updateToolDto.ubicacion || undefined,
-          };
-
-          await queryRunner.manager.update(Inventory, inventory.inventarioId, inventoryUpdate);
+        if (updateToolDto.bodegaId === null) {
+          inventoryUpdate.bodega = null;
+        } else {
+          const bodega = await queryRunner.manager.findOne(Warehouse, {
+            where: { bodegaId: updateToolDto.bodegaId },
+          });
+          if (!bodega) {
+            throw new NotFoundException('Bodega no encontrada');
+          }
+          inventoryUpdate.bodega = bodega;
         }
+        
+        await queryRunner.manager.update(Inventory, tool.inventory.inventarioId, inventoryUpdate);
       }
 
       await queryRunner.commitTransaction();
-      
-      // Retornar el herramienta actualizado con inventoryId
-      const updatedEquipment = await this.findOne(id);
-      this.logger.log(`✅ Equipo actualizado: ${updatedEquipment.nombre} (ID: ${id})`);
-      
-      return updatedEquipment;
 
+      this.logger.log(`Herramienta actualizada: ${id}`);
+      
+      return this.findOne(id);
     } catch (error) {
       await queryRunner.rollbackTransaction();
-      this.logger.error(`❌ Error actualizando herramienta ID ${id}: ${error.message}`);
       throw error;
     } finally {
       await queryRunner.release();
     }
   }
 
-  async remove(id: number): Promise<{ message: string, deletedImage?: string }> {
+  async remove(id: number): Promise<void> {
+    const tool = await this.findOne(id);
+    
+    // Eliminar imágenes asociadas
+    await this.imagesService.deleteByTool(tool);
+    
+    // Eliminación física (solo administrador)
+    await this.toolRepository.delete(id);
+    
+    this.logger.log(`Herramienta eliminada físicamente: ${id} - ${tool.nombre}`);
+  }
+
+  async softDeleteWithReason(id: number, dto: DeleteToolDto): Promise<void> {
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
     await queryRunner.startTransaction();
 
     try {
       const tool = await this.findOne(id);
-      const equipmentName = tool.nombre;
-      let deletedImagePath: string | undefined;
 
-      // 1. Eliminar la imagen física si existe
-      if (tool.fotoUrl) {
-        deletedImagePath = await this.deleteEquipmentPhoto(tool.fotoUrl);
-        this.logger.log(`🗑️ Imagen eliminada: ${deletedImagePath}`);
-      }
-
-      // 2. Verificar si el herramienta está siendo usado en órdenes de trabajo
+      // Verificar si está en uso en órdenes de trabajo
       const hasWorkOrders = await queryRunner.manager
         .createQueryBuilder(Tool, 'tool')
         .innerJoin('tool.toolDetails', 'toolDetail')
@@ -272,252 +242,182 @@ export class ToolService {
         .getCount();
 
       if (hasWorkOrders > 0) {
-        throw new ConflictException('No se puede eliminar el herramienta porque está siendo usado en órdenes de trabajo');
+        throw new ConflictException(
+          'No se puede eliminar la herramienta porque está siendo utilizada en órdenes de trabajo',
+        );
       }
 
-      // 3. Eliminar el inventario asociado (se eliminará por CASCADE, pero lo hacemos explícito)
+      // Actualizar estado y motivo
+      const toolUpdate: Partial<Tool> = {
+        estado: ToolStatus.RETIRADO,
+        motivoEliminacion: dto.motivo,
+        observacionEliminacion: dto.observacion ?? null,
+      };
+
+      await queryRunner.manager.update(Tool, id, toolUpdate);
+
+      // Soft delete de la herramienta
+      await queryRunner.manager.softDelete(Tool, id);
+
+      // Soft delete del inventario asociado
       const inventory = await queryRunner.manager.findOne(Inventory, {
-        where: { herramientaId: id }
+        where: { herramientaId: id },
       });
-
+      
       if (inventory) {
-        await queryRunner.manager.remove(inventory);
-        this.logger.log(`🗑️ Inventario eliminado: ${inventory.inventarioId}`);
+        await queryRunner.manager.softDelete(Inventory, inventory.inventarioId);
       }
-
-      // 4. Eliminar el herramienta
-      await queryRunner.manager.remove(tool);
 
       await queryRunner.commitTransaction();
 
-      this.logger.log(`🗑️ Equipo eliminado: ${equipmentName} (ID: ${id})`);
-
-      return {
-        message: `Equipo "${equipmentName}" eliminado exitosamente`,
-        deletedImage: deletedImagePath
-      };
-
+      this.logger.log(`Herramienta eliminada (soft): ${id} - Motivo: ${dto.motivo}`);
     } catch (error) {
       await queryRunner.rollbackTransaction();
-      this.logger.error(`❌ Error eliminando herramienta ID ${id}: ${error.message}`);
       throw error;
     } finally {
       await queryRunner.release();
     }
   }
 
-  async searchEquipment(keyword: string): Promise<any[]> {
-    const equipmentList = await this.equipmentRepository
-      .createQueryBuilder('tool')
-      .leftJoinAndSelect('tool.inventory', 'inventory')
-      .where('tool.nombre ILIKE :keyword', { keyword: `%${keyword}%` })
-      .orWhere('tool.marca ILIKE :keyword', { keyword: `%${keyword}%` })
-      .orWhere('tool.modelo ILIKE :keyword', { keyword: `%${keyword}%` })
-      .orWhere('tool.serial ILIKE :keyword', { keyword: `%${keyword}%` })
-      .orWhere('tool.tipo::text ILIKE :keyword', { keyword: `%${keyword}%` })
-      .orderBy('tool.nombre', 'ASC')
-      .getMany();
-
-    return equipmentList.map(tool => ({
-      ...tool,
-      inventoryId: tool.inventory?.inventarioId || null,
-    }));
-  }
-
-  async getEquipmentByStatus(estado: string): Promise<any[]> {
-    const equipmentList = await this.equipmentRepository.find({
-      where: { estado: estado as ToolStatus },
-      relations: ['inventory'],
-      order: { nombre: 'ASC' },
+  async restore(id: number): Promise<Tool> {
+    const tool = await this.toolRepository.findOne({
+      where: { herramientaId: id },
+      withDeleted: true,
     });
 
-    return equipmentList.map(tool => ({
-      ...tool,
-      inventoryId: tool.inventory?.inventarioId || null,
-    }));
-  }
+    if (!tool) {
+      throw new NotFoundException(`Herramienta con ID ${id} no encontrada`);
+    }
 
-  async getEquipmentByType(tipo: string): Promise<any[]> {
-    const equipmentList = await this.equipmentRepository.find({
-      where: { tipo: tipo as ToolType },
-      relations: ['inventory'],
-      order: { nombre: 'ASC' },
+    // Restaurar herramienta
+    await this.toolRepository.restore(id);
+
+    // Restaurar inventario si existe
+    const inventory = await this.inventoryRepository.findOne({
+      where: { herramientaId: id },
+      withDeleted: true,
     });
 
-    return equipmentList.map(tool => ({
-      ...tool,
-      inventoryId: tool.inventory?.inventarioId || null,
-    }));
+    if (inventory) {
+      await this.inventoryRepository.restore(inventory.inventarioId);
+    }
+
+    // Limpiar campos de eliminación
+    const toolUpdate: Partial<Tool> = {
+      motivoEliminacion: null,
+      observacionEliminacion: null,
+      estado: ToolStatus.DISPONIBLE,
+    };
+
+    await this.toolRepository.update(id, toolUpdate);
+
+    this.logger.log(`Herramienta restaurada: ${id}`);
+    
+    return this.findOne(id);
   }
 
-  async updateStatus(id: number, estado: string): Promise<any> {
+  async updateStatus(id: number, estado: string): Promise<Tool> {
     const validStatuses = Object.values(ToolStatus);
-
+    
     if (!validStatuses.includes(estado as ToolStatus)) {
-      throw new BadRequestException(`Estado inválido. Los estados válidos son: ${validStatuses.join(', ')}`);
+      throw new BadRequestException(
+        `Estado inválido. Estados válidos: ${validStatuses.join(', ')}`,
+      );
     }
 
     const tool = await this.findOne(id);
-    tool.estado = estado as ToolStatus;
     
-    const updated = await this.equipmentRepository.save(tool);
+    await this.toolRepository.update(id, {
+      estado: estado as ToolStatus,
+    });
     
-    this.logger.log(`✅ Estado actualizado para herramienta ID ${id}: ${estado}`);
+    this.logger.log(`Estado de herramienta actualizado: ${id} -> ${estado}`);
     
-    return {
-      ...updated,
-      inventoryId: tool.inventoryId,
-    };
+    return this.findOne(id);
+  }
+
+  async searchEquipment(keyword: string, includeDeleted = false): Promise<Tool[]> {
+    const queryBuilder = this.toolRepository
+      .createQueryBuilder('tool')
+      .leftJoinAndSelect('tool.inventory', 'inventory')
+      .leftJoinAndSelect('inventory.bodega', 'bodega')
+      .leftJoinAndSelect('tool.images', 'images')
+      .where('tool.nombre ILIKE :keyword', { keyword: `%${keyword}%` })
+      .orWhere('tool.serial ILIKE :keyword', { keyword: `%${keyword}%` })
+      .orWhere('tool.marca ILIKE :keyword', { keyword: `%${keyword}%` })
+      .orWhere('tool.modelo ILIKE :keyword', { keyword: `%${keyword}%` })
+      .orderBy('tool.nombre', 'ASC');
+
+    if (includeDeleted) {
+      queryBuilder.withDeleted();
+    }
+
+    return queryBuilder.getMany();
+  }
+
+  async getEquipmentByStatus(estado: string): Promise<Tool[]> {
+    return this.toolRepository.find({
+      where: { estado: estado as ToolStatus },
+      relations: ['inventory', 'inventory.bodega', 'images'],
+      order: { nombre: 'ASC' },
+    });
+  }
+
+  async getEquipmentByType(tipo: string): Promise<Tool[]> {
+    return this.toolRepository.find({
+      where: { tipo: tipo as ToolType },
+      relations: ['inventory', 'inventory.bodega', 'images'],
+      order: { nombre: 'ASC' },
+    });
+  }
+
+  async getDeleted(): Promise<Tool[]> {
+    return this.toolRepository.find({
+      where: { fechaEliminacion: Not(IsNull()) },
+      relations: ['inventory', 'inventory.bodega', 'images'],
+      withDeleted: true,
+      order: { fechaEliminacion: 'DESC' },
+    });
   }
 
   async getEquipmentStats(): Promise<any> {
-    const queryRunner = this.dataSource.createQueryRunner();
-    await queryRunner.connect();
+    const total = await this.toolRepository.count();
+    const disponibles = await this.toolRepository.count({
+      where: { estado: ToolStatus.DISPONIBLE },
+    });
+    const enUso = await this.toolRepository.count({
+      where: { estado: ToolStatus.EN_USO },
+    });
+    const enMantenimiento = await this.toolRepository.count({
+      where: { estado: ToolStatus.EN_MANTENIMIENTO },
+    });
+    const dañados = await this.toolRepository.count({
+      where: { estado: ToolStatus.DAÑADO },
+    });
+    const retirados = await this.toolRepository.count({
+      where: { estado: ToolStatus.RETIRADO },
+    });
 
-    try {
-      const total = await queryRunner.manager.count(Tool);
+    const totalValue = await this.toolRepository
+      .createQueryBuilder('tool')
+      .select('SUM(tool.valor_unitario)', 'total')
+      .getRawOne();
 
-      const stats = await queryRunner.manager
-        .createQueryBuilder(Tool, 'tool')
-        .leftJoin('tool.inventory', 'inventory')
-        .select('tool.estado', 'estado')
-        .addSelect('COUNT(*)', 'count')
-        .addSelect('SUM(tool.valor_unitario)', 'totalValue')
-        .groupBy('tool.estado')
-        .getRawMany();
-
-      const totalValue = await queryRunner.manager
-        .createQueryBuilder(Tool, 'tool')
-        .select('SUM(tool.valor_unitario)', 'total')
-        .getRawOne();
-
-      return {
-        total,
-        totalValue: parseFloat(totalValue?.total) || 0,
-        byStatus: stats,
-      };
-
-    } finally {
-      await queryRunner.release();
-    }
+    return {
+      total,
+      disponibles,
+      enUso,
+      enMantenimiento,
+      dañados,
+      retirados,
+      totalValue: parseFloat(totalValue?.total) || 0,
+    };
   }
 
-  async updatePhoto(id: number, photoUrl: string): Promise<any> {
-    this.logger.log(`📁 Actualizando foto para herramienta ID ${id} con URL: ${photoUrl}`);
-
-    const tool = await this.findOne(id);
-    const oldPhotoUrl = tool.fotoUrl;
-
-    // Si ya tenía una foto, eliminarla
-    if (oldPhotoUrl) {
-      await this.deleteEquipmentPhoto(oldPhotoUrl);
-    }
-
-    const result = await this.equipmentRepository.update(id, { fotoUrl: photoUrl });
-
-    if (result.affected === 0) {
-      throw new NotFoundException(`Equipo con ID ${id} no encontrado`);
-    }
-
-    const updated = await this.findOne(id);
-    this.logger.log(`✅ Foto actualizada para herramienta ID ${id}: ${updated.fotoUrl}`);
-
-    return updated;
-  }
-
-  // =======================================================
-  // MÉTODOS PRIVADOS PARA MANEJO DE ARCHIVOS
-  // =======================================================
-
-  private async deleteEquipmentPhoto(fotoUrl: string): Promise<string | undefined> {
-    try {
-      if (!fotoUrl) return undefined;
-
-      // Extraer el nombre del archivo de la URL
-      const filename = fotoUrl.split('/').pop();
-      if (!filename) return undefined;
-
-      // Rutas posibles donde podría estar el archivo
-      const possiblePaths = [
-        join('/app/uploads/tool', filename),          // Docker volumen
-        join('/app/dist/uploads/tool', filename),     // Docker dist
-        join(process.cwd(), 'uploads', 'tool', filename), // Desarrollo
-        join(__dirname, '..', '..', 'uploads', 'tool', filename), // Relativo
-      ];
-
-      let deletedPath: string | undefined;
-
-      for (const filePath of possiblePaths) {
-        if (existsSync(filePath)) {
-          try {
-            unlinkSync(filePath);
-            this.logger.log(`🗑️ Archivo eliminado físicamente: ${filePath}`);
-            deletedPath = filePath;
-            break;
-          } catch (unlinkError) {
-            this.logger.warn(`⚠️ No se pudo eliminar ${filePath}: ${unlinkError.message}`);
-          }
-        }
-      }
-
-      if (!deletedPath) {
-        this.logger.warn(`⚠️ No se encontró el archivo físico para eliminar: ${fotoUrl}`);
-      }
-
-      return deletedPath;
-
-    } catch (error) {
-      this.logger.error(`❌ Error eliminando foto: ${error.message}`);
-      return undefined;
-    }
-  }
-
-  // Método para limpiar imágenes huérfanas
-  async cleanupOrphanedImages(): Promise<{ deleted: string[], errors: string[] }> {
-    const deleted: string[] = [];
-    const errors: string[] = [];
-
-    try {
-      // Obtener todas las fotos que están en la base de datos
-      const allEquipment = await this.equipmentRepository.find({
-        select: ['fotoUrl']
-      });
-      const dbPhotos = allEquipment
-        .map(eq => eq.fotoUrl)
-        .filter(url => url && url.includes('/tool/'))
-        .map(url => url.split('/').pop());
-
-      // Buscar archivos en el directorio
-      const uploadPath = '/app/uploads/tool';
-      if (!existsSync(uploadPath)) {
-        this.logger.warn(`⚠️ Directorio no existe: ${uploadPath}`);
-        return { deleted, errors };
-      }
-
-      const fs = require('fs');
-      const files = fs.readdirSync(uploadPath);
-
-      for (const file of files) {
-        // Si el archivo no está en la base de datos, eliminarlo
-        if (!dbPhotos.includes(file) && (file.endsWith('.jpg') || file.endsWith('.png') || file.endsWith('.webp'))) {
-          const filePath = join(uploadPath, file);
-          try {
-            unlinkSync(filePath);
-            deleted.push(file);
-            this.logger.log(`🧹 Imagen huérfana eliminada: ${file}`);
-          } catch (error) {
-            errors.push(`Error eliminando ${file}: ${error.message}`);
-          }
-        }
-      }
-
-      this.logger.log(`🧹 Limpieza completada: ${deleted.length} archivos eliminados, ${errors.length} errores`);
-      return { deleted, errors };
-
-    } catch (error) {
-      this.logger.error(`❌ Error en limpieza de imágenes: ${error.message}`);
-      errors.push(error.message);
-      return { deleted, errors };
-    }
+  async findBySerial(serial: string): Promise<Tool | null> {
+    return this.toolRepository.findOne({
+      where: { serial },
+      relations: ['inventory', 'inventory.bodega', 'images'],
+    });
   }
 }

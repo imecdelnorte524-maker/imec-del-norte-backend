@@ -1,3 +1,4 @@
+// src/sg-sst/dto/create-height-work.dto.ts
 import { IsString, IsOptional, IsBoolean, IsNumber, IsObject } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
@@ -16,22 +17,38 @@ export class CreateHeightWorkDto {
   @IsOptional()
   position?: string;
 
-  @ApiProperty({ description: 'Descripción del trabajo en alturas', required: false, example: 'Mantenimiento de fachada' })
+  @ApiProperty({
+    description: 'Descripción del trabajo en alturas',
+    required: false,
+    example: 'Mantenimiento de fachada',
+  })
   @IsString()
   @IsOptional()
   workDescription?: string;
 
-  @ApiProperty({ description: 'Ubicación específica del trabajo', required: false, example: 'Fachada norte - Nivel 5' })
+  @ApiProperty({
+    description: 'Ubicación específica del trabajo',
+    required: false,
+    example: 'Fachada norte - Nivel 5',
+  })
   @IsString()
   @IsOptional()
   location?: string;
 
-  @ApiProperty({ description: 'Tiempo estimado para el trabajo', required: false, example: '4 horas' })
+  @ApiProperty({
+    description: 'Tiempo estimado para el trabajo',
+    required: false,
+    example: '4 horas',
+  })
   @IsString()
   @IsOptional()
   estimatedTime?: string;
 
-  @ApiProperty({ description: 'Elementos de protección en formato JSON', required: false, example: { arnes: true, casco: true } })
+  @ApiProperty({
+    description: 'Elementos de protección en formato JSON',
+    required: false,
+    example: { arnes: true, casco: true },
+  })
   @IsObject()
   @IsOptional()
   protectionElements?: any;
@@ -51,12 +68,20 @@ export class CreateHeightWorkDto {
   @IsOptional()
   fitForHeightWork?: boolean;
 
-  @ApiProperty({ description: 'Nombre del autorizador', required: false, example: 'María González' })
+  @ApiProperty({
+    description: 'Nombre del autorizador',
+    required: false,
+    example: 'María González',
+  })
   @IsString()
   @IsOptional()
   authorizerName?: string;
 
-  @ApiProperty({ description: 'Identificación del autorizador', required: false, example: '987654321' })
+  @ApiProperty({
+    description: 'Identificación del autorizador',
+    required: false,
+    example: '987654321',
+  })
   @IsString()
   @IsOptional()
   authorizerIdentification?: string;
@@ -72,9 +97,16 @@ export class CreateHeightWorkDto {
   @ApiProperty({
     description: 'Firma del trabajador en formato base64',
     required: false,
-    example: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA...'
+    example: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA...',
   })
   @IsString()
   @IsOptional()
   signatureData?: string;
+
+  @ApiProperty({
+    description: 'ID de la orden de trabajo asociada',
+    example: 5,
+  })
+  @IsNumber()
+  workOrderId: number;
 }

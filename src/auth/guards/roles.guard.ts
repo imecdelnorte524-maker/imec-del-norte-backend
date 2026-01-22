@@ -24,11 +24,10 @@ export class RolesGuard implements CanActivate {
       return false;
     }
 
-    // Soporta tanto:
-    // - req.user.role = 'Administrador'
-    // - req.user.role = Role { nombreRol: 'Administrador', ... }
     const userRoleName = user.role?.nombreRol || user.role;
 
-    return requiredRoles.some((role) => role === userRoleName);
+    return requiredRoles.some(
+      (role) => role.toLowerCase() === String(userRoleName).toLowerCase()
+    );
   }
 }

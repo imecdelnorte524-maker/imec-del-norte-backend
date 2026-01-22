@@ -1,3 +1,4 @@
+// src/client/client.service.ts
 import {
   Injectable,
   NotFoundException,
@@ -28,6 +29,21 @@ export class ClientService {
   }
 
   /**
+   * Helper para generar la dirección completa a partir de los campos desglosados.
+   */
+  private _generateFullAddress(clientData: Partial<Client>): string {
+    const parts = [
+      clientData.direccionBase,
+      clientData.barrio,
+      clientData.ciudad,
+      clientData.departamento,
+      clientData.pais,
+    ].filter(Boolean); // Elimina valores nulos o vacíos/undefined
+
+    return parts.join(', ');
+  }
+
+  /**
    * Crea un cliente empresa.
    * - Si el rol es Cliente: usa su propio usuario como contacto.
    * - Si es Admin/Secretaria: debe enviar idUsuarioContacto.
@@ -54,10 +70,9 @@ export class ClientService {
       throw new ConflictException('Ya existe un cliente con este email');
     }
 
-    let usuarioContacto: User; // ✅ Garantizamos que aquí solo entra un User válido
+    let usuarioContacto: User;
 
     if (roleName === 'Cliente') {
-      // CLIENTE: se usa a sí mismo como usuario contacto
       const uc = await this.userRepository.findOne({
         where: { usuarioId: currentUser.userId },
       });
@@ -82,13 +97,6 @@ export class ClientService {
         createClientDto.telefono = uc.telefono;
       }
     } else {
-      // ADMIN / SECRETARIA: deben enviar idUsuarioContacto
-      if (!createClientDto.idUsuarioContacto) {
-        throw new BadRequestException(
-          'El ID de usuario contacto es requerido',
-        );
-      }
-
       const uc = await this.userRepository.findOne({
         where: { usuarioId: createClientDto.idUsuarioContacto },
       });
@@ -102,10 +110,15 @@ export class ClientService {
       usuarioContacto = uc;
     }
 
+    // Crear la instancia del cliente con los datos recibidos
     const client = this.clientRepository.create({
       ...createClientDto,
-      usuarioContacto, // ✅ aquí ya es tipo User, sin null
+      usuarioContacto,
     });
+
+    // --- AUTOGENERAR direccionCompleta ANTES DE GUARDAR ---
+    client.direccionCompleta = this._generateFullAddress(client);
+    // --- FIN AUTOGENERAR ---
 
     const savedClient = await this.clientRepository.save(client);
     this.logger.log(
@@ -116,7 +129,7 @@ export class ClientService {
 
   async findAll(): Promise<Client[]> {
     return await this.clientRepository.find({
-      relations: ['usuarioContacto', 'areas', 'areas.subAreas'],
+      relations: ['usuarioContacto', 'areas', 'areas.subAreas', 'images'],
       order: { nombre: 'ASC' },
     });
   }
@@ -124,7 +137,7 @@ export class ClientService {
   async findOne(id: number): Promise<Client> {
     const client = await this.clientRepository.findOne({
       where: { idCliente: id },
-      relations: ['usuarioContacto', 'areas', 'areas.subAreas'],
+      relations: ['usuarioContacto', 'areas', 'areas.subAreas', 'images', 'bodegas'],
     });
 
     if (!client) {
@@ -137,7 +150,7 @@ export class ClientService {
   async findByNit(nit: string): Promise<Client | null> {
     return await this.clientRepository.findOne({
       where: { nit },
-      relations: ['usuarioContacto', 'areas', 'areas.subAreas'],
+      relations: ['usuarioContacto', 'areas', 'areas.subAreas', 'images', 'bodegas'],
     });
   }
 
@@ -179,6 +192,21 @@ export class ClientService {
     }
 
     Object.assign(client, updateClientDto);
+
+    // --- RE-AUTOGENERAR direccionCompleta DESPUÉS DE ASIGNAR LOS CAMBIOS ---
+    // Esto asegura que si se actualiza cualquier parte de la dirección, la completa se recalcule.
+    const hasAddressChanges =
+      updateClientDto.direccionBase !== undefined ||
+      updateClientDto.barrio !== undefined ||
+      updateClientDto.ciudad !== undefined ||
+      updateClientDto.departamento !== undefined ||
+      updateClientDto.pais !== undefined;
+
+    if (hasAddressChanges) {
+      client.direccionCompleta = this._generateFullAddress(client);
+    }
+    // --- FIN RE-AUTOGENERAR ---
+
     return await this.clientRepository.save(client);
   }
 
@@ -191,7 +219,7 @@ export class ClientService {
   async findByUsuarioContacto(usuarioId: number): Promise<Client[]> {
     return await this.clientRepository.find({
       where: { idUsuarioContacto: usuarioId },
-      relations: ['usuarioContacto', 'areas', 'areas.subAreas'],
+      relations: ['usuarioContacto', 'areas', 'areas.subAreas', 'images'],
       order: { nombre: 'ASC' },
     });
   }

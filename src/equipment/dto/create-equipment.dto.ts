@@ -5,165 +5,85 @@ import {
   IsString,
   IsEnum,
   IsDateString,
+  ValidateNested,
 } from 'class-validator';
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { ServiceCategory } from '../../services/enums/service.enums';
 import { EquipmentStatus } from '../enums/equipment-status.enum';
+import { Type } from 'class-transformer';
+import { CreateEvaporatorDto } from './create-evaporator.dto';
+import { CreateCondenserDto } from './create-condenser.dto';
+import { PlanMantenimientoDto } from './plan-mantenimiento.dto';
 
 export class CreateEquipmentDto {
-  @ApiProperty({
-    example: 1,
-    description: 'ID del cliente (empresa) al que pertenece el equipo',
-  })
-  @IsNotEmpty({ message: 'El cliente es requerido' })
-  @IsNumber({}, { message: 'El ID del cliente debe ser un número' })
+  @ApiProperty({ example: 1 })
+  @IsNotEmpty()
+  @IsNumber()
   clientId: number;
 
-  @ApiProperty({
-    example: 2,
-    description: 'ID del área donde está ubicado el equipo (opcional)',
-    required: false,
-  })
+  @ApiPropertyOptional({ example: 2 })
   @IsOptional()
-  @IsNumber({}, { message: 'El ID del área debe ser un número' })
+  @IsNumber()
   areaId?: number;
 
-  @ApiProperty({
-    example: 3,
-    description: 'ID de la subárea donde está ubicado el equipo (opcional)',
-    required: false,
-  })
+  @ApiPropertyOptional({ example: 3 })
   @IsOptional()
-  @IsNumber({}, { message: 'El ID de la subárea debe ser un número' })
+  @IsNumber()
   subAreaId?: number;
 
   @ApiProperty({
     example: ServiceCategory.AIRES_ACONDICIONADOS,
-    description: 'Categoría del equipo (línea de negocio)',
     enum: ServiceCategory,
   })
-  @IsNotEmpty({ message: 'La categoría del equipo es requerida' })
-  @IsEnum(ServiceCategory, {
-    message: 'La categoría del equipo no es válida',
-  })
+  @IsNotEmpty()
+  @IsEnum(ServiceCategory)
   category: ServiceCategory;
 
-  @ApiProperty({
-    example: 'Aire acondicionado sala de juntas 1',
-    description: 'Nombre o identificación del equipo',
-  })
-  @IsNotEmpty({ message: 'El nombre del equipo es requerido' })
-  @IsString({ message: 'El nombre del equipo debe ser una cadena de texto' })
-  name: string;
-
-  @ApiProperty({
-    example: 'AA-SJ-001',
-    description: 'Código interno del equipo (opcional)',
-    required: false,
+  @ApiPropertyOptional({
+    example: 1,
+    description: 'ID del tipo de aire (solo si category = AIRES_ACONDICIONADOS)',
   })
   @IsOptional()
-  @IsString({ message: 'El código del equipo debe ser una cadena de texto' })
-  code?: string;
+  @IsNumber()
+  airConditionerTypeId?: number;
 
-  @ApiProperty({
-    example: 'Samsung',
-    description: 'Marca del equipo',
-    required: false,
-  })
+  @ApiPropertyOptional({ example: EquipmentStatus.ACTIVE, enum: EquipmentStatus })
   @IsOptional()
-  @IsString({ message: 'La marca debe ser una cadena de texto' })
-  brand?: string;
-
-  @ApiProperty({
-    example: 'AR12TX',
-    description: 'Modelo del equipo',
-    required: false,
-  })
-  @IsOptional()
-  @IsString({ message: 'El modelo debe ser una cadena de texto' })
-  model?: string;
-
-  @ApiProperty({
-    example: 'SN1234567890',
-    description: 'Número de serie del equipo',
-    required: false,
-  })
-  @IsOptional()
-  @IsString({ message: 'El número de serie debe ser una cadena de texto' })
-  serialNumber?: string;
-
-  @ApiProperty({
-    example: '12000 BTU',
-    description: 'Capacidad del equipo (ej. para aires acondicionados)',
-    required: false,
-  })
-  @IsOptional()
-  @IsString({ message: 'La capacidad debe ser una cadena de texto' })
-  capacity?: string;
-
-  @ApiProperty({
-    example: 'R410A',
-    description: 'Tipo de refrigerante (para aires acondicionados)',
-    required: false,
-  })
-  @IsOptional()
-  @IsString({ message: 'El tipo de refrigerante debe ser una cadena de texto' })
-  refrigerantType?: string;
-
-  @ApiProperty({
-    example: '220V',
-    description: 'Voltaje del equipo',
-    required: false,
-  })
-  @IsOptional()
-  @IsString({ message: 'El voltaje debe ser una cadena de texto' })
-  voltage?: string;
-
-  @ApiProperty({
-    example: 'Techo bodega 1',
-    description: 'Ubicación física del equipo',
-    required: false,
-  })
-  @IsOptional()
-  @IsString({ message: 'La ubicación física debe ser una cadena de texto' })
-  physicalLocation?: string;
-
-  @ApiProperty({
-    example: 'LG',
-    description: 'Fabricante del equipo',
-    required: false,
-  })
-  @IsOptional()
-  @IsString({ message: 'El fabricante debe ser una cadena de texto' })
-  manufacturer?: string;
-
-  @ApiProperty({
-    example: EquipmentStatus.ACTIVE,
-    description: 'Estado del equipo',
-    enum: EquipmentStatus,
-    required: false,
-  })
-  @IsOptional()
-  @IsEnum(EquipmentStatus, {
-    message: 'El estado del equipo no es válido',
-  })
+  @IsEnum(EquipmentStatus)
   status?: EquipmentStatus;
 
-  @ApiProperty({
-    example: '2024-01-15',
-    description: 'Fecha de instalación del equipo',
-    required: false,
-  })
+  @ApiPropertyOptional({ example: '2024-01-15' })
   @IsOptional()
-  @IsDateString({}, { message: 'La fecha de instalación debe ser válida' })
+  @IsDateString()
   installationDate?: Date;
 
-  @ApiProperty({
-    example: 'Equipo instalado en buen estado, sin novedades.',
-    description: 'Observaciones generales del equipo',
-    required: false,
-  })
+  @ApiPropertyOptional({ example: 'Equipo en buen estado' })
   @IsOptional()
-  @IsString({ message: 'Las observaciones deben ser una cadena de texto' })
+  @IsString()
   notes?: string;
+
+  // ⚠️ ELIMINADO: workOrderId (ahora es relación N:M a través de equipment_work_order)
+  // @ApiPropertyOptional({ example: 15 })
+  // @IsOptional()
+  // @IsNumber()
+  // workOrderId?: number;
+
+  // Nuevos campos anidados
+  @ApiPropertyOptional({ type: [CreateEvaporatorDto] })
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => CreateEvaporatorDto)
+  evaporators?: CreateEvaporatorDto[];
+
+  @ApiPropertyOptional({ type: [CreateCondenserDto] })
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => CreateCondenserDto)
+  condensers?: CreateCondenserDto[];
+
+  @ApiPropertyOptional({ type: PlanMantenimientoDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => PlanMantenimientoDto)
+  planMantenimiento?: PlanMantenimientoDto;
 }

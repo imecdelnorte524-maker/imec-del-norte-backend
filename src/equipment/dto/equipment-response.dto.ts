@@ -1,193 +1,283 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { EquipmentStatus } from '../enums/equipment-status.enum';
+import { ServiceCategory } from '../../services/enums/service.enums';
+
+// Sub-DTOs para respuesta (similares a los de creación pero con datos reales)
 
 class ClientInfoDto {
-  @ApiProperty({ example: 1, description: 'ID del cliente empresa' })
+  @ApiProperty({ example: 1 })
   idCliente: number;
 
-  @ApiProperty({ example: 'IMEC DEL NORTE', description: 'Nombre de la empresa' })
+  @ApiProperty({ example: 'IMEC DEL NORTE' })
   nombre: string;
 
-  @ApiProperty({ example: '900123456-7', description: 'NIT de la empresa' })
+  @ApiProperty({ example: '900123456-7' })
   nit: string;
 }
 
 class AreaInfoDto {
-  @ApiProperty({ example: 10, description: 'ID del área' })
+  @ApiProperty({ example: 10 })
   idArea: number;
 
-  @ApiProperty({ example: 'Producción', description: 'Nombre del área' })
+  @ApiProperty({ example: 'Producción' })
   nombreArea: string;
 }
 
 class SubAreaInfoDto {
-  @ApiProperty({ example: 5, description: 'ID de la subárea' })
+  @ApiProperty({ example: 5 })
   idSubArea: number;
 
-  @ApiProperty({ example: 'Línea 1', description: 'Nombre de la subárea' })
+  @ApiProperty({ example: 'Línea 1' })
   nombreSubArea: string;
 }
 
+class WorkOrderInfoDto {
+  @ApiProperty({ example: 15 })
+  workOrderId: number;
+
+  @ApiPropertyOptional({ example: 'Mantenimiento preventivo programado' })
+  description?: string;
+
+  @ApiProperty({ example: '2024-03-15T10:30:00Z' })
+  createdAt: Date;
+
+  @ApiPropertyOptional()
+  workOrderDetails?: {
+    estado?: string;
+    tipoServicio?: string;
+    fechaSolicitud?: Date;
+  };
+}
+
 class EquipmentPhotoDto {
-  @ApiProperty({ example: 1, description: 'ID de la foto' })
+  @ApiProperty({ example: 1 })
   photoId: number;
 
-  @ApiProperty({ example: 12, description: 'ID del equipo al que pertenece' })
+  @ApiProperty({ example: 12 })
   equipmentId: number;
 
-  @ApiProperty({
-    example: 'https://mi-servidor.com/fotos/equipo1.jpg',
-    description: 'URL de la foto',
-  })
+  @ApiProperty({ example: 'https://...' })
   url: string;
 
-  @ApiProperty({
-    example: 'Unidad condensadora vista frontal',
-    description: 'Descripción de la foto',
-    required: false,
-  })
+  @ApiPropertyOptional()
   description?: string | null;
 
-  @ApiProperty({
-    example: '2025-01-10T14:30:00.000Z',
-    description: 'Fecha de creación de la foto',
-  })
-  createdAt: Date;
+  @ApiProperty()
+  createdAt: string;
+}
+
+class MotorResponseDto {
+  @ApiPropertyOptional({ example: '8.5A' })
+  amperaje?: string;
+
+  @ApiPropertyOptional({ example: '220-240V' })
+  voltaje?: string;
+
+  @ApiPropertyOptional({ example: '1' })
+  numeroFases?: string;
+
+  @ApiPropertyOptional({ example: '19mm' })
+  diametroEje?: string;
+
+  @ApiPropertyOptional({ example: 'Cónico' })
+  tipoEje?: string;
+
+  @ApiPropertyOptional({ example: '1450' })
+  rpm?: string;
+
+  @ApiPropertyOptional({ example: 'A-52' })
+  correa?: string;
+
+  @ApiPropertyOptional({ example: '150mm' })
+  diametroPolea?: string;
+
+  @ApiPropertyOptional({ example: '1.5 HP' })
+  capacidadHp?: string;
+
+  @ApiPropertyOptional({ example: '60 Hz' })
+  frecuencia?: string;
+}
+
+class EvaporatorResponseDto {
+  @ApiPropertyOptional({ example: 'Daikin' })
+  marca?: string;
+
+  @ApiPropertyOptional({ example: 'FTXS50K' })
+  modelo?: string;
+
+  @ApiPropertyOptional({ example: 'EV-987654' })
+  serial?: string;
+
+  @ApiPropertyOptional({ example: '18000 BTU' })
+  capacidad?: string;
+
+  @ApiPropertyOptional({ example: 'R-410A' })
+  tipoRefrigerante?: string;
+
+  @ApiPropertyOptional({ type: [MotorResponseDto] })
+  motors?: MotorResponseDto[];
+}
+
+class CompressorResponseDto {
+  @ApiPropertyOptional({ example: 'Copeland' })
+  marca?: string;
+
+  @ApiPropertyOptional({ example: 'ZR48K5E' })
+  modelo?: string;
+
+  @ApiPropertyOptional({ example: 'CMP-112233' })
+  serial?: string;
+
+  @ApiPropertyOptional({ example: '48000 BTU' })
+  capacidad?: string;
+
+  @ApiPropertyOptional({ example: '380V' })
+  voltaje?: string;
+
+  @ApiPropertyOptional({ example: '60 Hz' })
+  frecuencia?: string;
+
+  @ApiPropertyOptional({ example: 'R-410A' })
+  tipoRefrigerante?: string;
+
+  @ApiPropertyOptional({ example: 'POE' })
+  tipoAceite?: string;
+
+  @ApiPropertyOptional({ example: '1.8 L' })
+  cantidadAceite?: string;
+
+  @ApiPropertyOptional({ example: '45/5 µF' })
+  capacitor?: string;
+
+  @ApiPropertyOptional({ example: '120A' })
+  lra?: string;
+
+  @ApiPropertyOptional({ example: '18A' })
+  fla?: string;
+
+  @ApiPropertyOptional({ example: '4' })
+  cantidadPolos?: string;
+
+  @ApiPropertyOptional({ example: '16A' })
+  amperaje?: string;
+
+  @ApiPropertyOptional({ example: '24V' })
+  voltajeBobina?: string;
+
+  @ApiPropertyOptional({ example: '230V' })
+  vac?: string;
+}
+
+class CondenserResponseDto {
+  @ApiPropertyOptional({ example: 'Daikin' })
+  marca?: string;
+
+  @ApiPropertyOptional({ example: 'RXS50K' })
+  modelo?: string;
+
+  @ApiPropertyOptional({ example: 'CN-456789' })
+  serial?: string;
+
+  @ApiPropertyOptional({ example: '18000 BTU' })
+  capacidad?: string;
+
+  @ApiPropertyOptional({ example: '9A' })
+  amperaje?: string;
+
+  @ApiPropertyOptional({ example: '220V' })
+  voltaje?: string;
+
+  @ApiPropertyOptional({ example: 'R-410A' })
+  tipoRefrigerante?: string;
+
+  @ApiPropertyOptional({ example: '1' })
+  numeroFases?: string;
+
+  @ApiPropertyOptional({ example: '320 PSI' })
+  presionAlta?: string;
+
+  @ApiPropertyOptional({ example: '120 PSI' })
+  presionBaja?: string;
+
+  @ApiPropertyOptional({ example: '3.5 HP' })
+  hp?: string;
+
+  @ApiPropertyOptional({ type: [MotorResponseDto] })
+  motors?: MotorResponseDto[];
+
+  @ApiPropertyOptional({ type: [CompressorResponseDto] })
+  compressors?: CompressorResponseDto[];
+}
+
+class PlanMantenimientoResponseDto {
+  @ApiPropertyOptional({ example: 'trimestral' })
+  frecuencia?: string;
+
+  @ApiPropertyOptional({ example: '2026-04-15' })
+  fechaProgramada?: Date;
+
+  @ApiPropertyOptional({ example: 'Revisión general cada 3 meses' })
+  notas?: string;
 }
 
 export class EquipmentResponseDto {
-  @ApiProperty({ example: 12, description: 'ID del equipo (hoja de vida)' })
+  @ApiProperty({ example: 12 })
   equipmentId: number;
 
-  @ApiProperty({
-    type: ClientInfoDto,
-    description: 'Información del cliente (empresa) dueño del equipo',
-  })
+  @ApiProperty()
   client: ClientInfoDto;
 
-  @ApiProperty({
-    type: AreaInfoDto,
-    required: false,
-    description: 'Área a la que pertenece el equipo (opcional)',
-  })
+  @ApiPropertyOptional()
   area?: AreaInfoDto;
 
-  @ApiProperty({
-    type: SubAreaInfoDto,
-    required: false,
-    description: 'Subárea a la que pertenece el equipo (opcional)',
-  })
+  @ApiPropertyOptional()
   subArea?: SubAreaInfoDto;
 
-  @ApiProperty({
-    example: 'Aires Acondicionados',
-    description: 'Categoría del equipo',
-  })
-  category: string;
+  // ⚠️ CAMBIO: De workOrderId a workOrders (array)
+  @ApiPropertyOptional({ type: [WorkOrderInfoDto] })
+  workOrders?: WorkOrderInfoDto[];
 
-  @ApiProperty({
-    example: 'Aire acondicionado sala de juntas 1',
-    description: 'Nombre del equipo',
-  })
-  name: string;
+  @ApiProperty()
+  category: ServiceCategory;
 
-  @ApiProperty({
-    example: 'AA-SJ-001',
-    description: 'Código interno del equipo',
-    required: false,
-  })
+  @ApiPropertyOptional({ example: 1 })
+  airConditionerTypeId?: number;
+
+  @ApiPropertyOptional()
+  airConditionerType?: {
+    id: number;
+    name: string;
+    hasEvaporator: boolean;
+    hasCondenser: boolean;
+  };
+
+  @ApiPropertyOptional({ example: 'IM-AA-01-00-01' })
   code?: string | null;
 
-  @ApiProperty({
-    example: 'LG',
-    description: 'Marca del equipo',
-    required: false,
-  })
-  brand?: string | null;
+  @ApiProperty()
+  status: EquipmentStatus;
 
-  @ApiProperty({
-    example: 'Inverter 12000 BTU',
-    description: 'Modelo del equipo',
-    required: false,
-  })
-  model?: string | null;
-
-  @ApiProperty({
-    example: 'SN123456789',
-    description: 'Número de serie',
-    required: false,
-  })
-  serialNumber?: string | null;
-
-  @ApiProperty({
-    example: '12000 BTU',
-    description: 'Capacidad del equipo',
-    required: false,
-  })
-  capacity?: string | null;
-
-  @ApiProperty({
-    example: 'R410A',
-    description: 'Tipo de refrigerante',
-    required: false,
-  })
-  refrigerantType?: string | null;
-
-  @ApiProperty({
-    example: '220V',
-    description: 'Voltaje del equipo',
-    required: false,
-  })
-  voltage?: string | null;
-
-  @ApiProperty({
-    example: 'Sala de juntas 2º piso',
-    description: 'Ubicación física detallada',
-    required: false,
-  })
-  physicalLocation?: string | null;
-
-  @ApiProperty({
-    example: 'Samsung',
-    description: 'Fabricante del equipo',
-    required: false,
-  })
-  manufacturer?: string | null;
-
-  @ApiProperty({
-    example: 'Activo',
-    description: 'Estado del equipo',
-  })
-  status: string;
-
-  @ApiProperty({
-    example: '2024-05-10T00:00:00.000Z',
-    description: 'Fecha de instalación',
-    required: false,
-  })
+  @ApiPropertyOptional()
   installationDate?: Date | null;
 
-  @ApiProperty({
-    example: 'Equipo instalado en 2024, requiere mantenimiento anual.',
-    description: 'Observaciones / notas',
-    required: false,
-  })
+  @ApiPropertyOptional()
   notes?: string | null;
 
-  @ApiProperty({
-    example: '2024-05-01T12:34:56.000Z',
-    description: 'Fecha de creación del registro',
-  })
+  @ApiProperty()
   createdAt: Date;
 
-  @ApiProperty({
-    example: '2024-05-20T09:30:00.000Z',
-    description: 'Fecha de última actualización',
-  })
+  @ApiProperty()
   updatedAt: Date;
 
-  @ApiProperty({
-    type: [EquipmentPhotoDto],
-    description: 'Fotos asociadas al equipo',
-  })
+  @ApiProperty({ type: [EquipmentPhotoDto] })
   photos: EquipmentPhotoDto[];
+
+  @ApiPropertyOptional({ type: [EvaporatorResponseDto] })
+  evaporators?: EvaporatorResponseDto[];
+
+  @ApiPropertyOptional({ type: [CondenserResponseDto] })
+  condensers?: CondenserResponseDto[];
+
+  @ApiPropertyOptional({ type: PlanMantenimientoResponseDto })
+  planMantenimiento?: PlanMantenimientoResponseDto | null;
 }

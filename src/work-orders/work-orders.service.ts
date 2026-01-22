@@ -6,10 +6,11 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Between, DataSource } from 'typeorm';
+import { Repository, Between, DataSource, In } from 'typeorm';
 import { WorkOrder } from './entities/work-order.entity';
 import { SupplyDetail } from './entities/supply-detail.entity';
 import { ToolDetail } from './entities/tool-detail.entity';
+import { EquipmentWorkOrder } from './entities/equipment-work-order.entity';
 import { Service } from '../services/entities/service.entity';
 import { User } from '../users/entities/user.entity';
 import { Supply } from '../supplies/entities/supply.entity';
@@ -23,6 +24,9 @@ import { AddSupplyDetailDto } from './dto/add-supply-detail.dto';
 import { AddToolDetailDto } from './dto/add-tool-detail.dto';
 import { ToolStatus, SupplyStatus } from 'src/shared/enums';
 import { WorkOrderStatus } from './enums/work-order-status.enum';
+import { BillingStatus } from './enums/billing-status.enum';
+import { EventEmitter2 } from '@nestjs/event-emitter';
+import { ServiceCategory } from 'src/services/enums/service.enums';
 
 @Injectable()
 export class WorkOrdersService {
@@ -33,6 +37,8 @@ export class WorkOrdersService {
     private supplyDetailsRepository: Repository<SupplyDetail>,
     @InjectRepository(ToolDetail)
     private toolDetailsRepository: Repository<ToolDetail>,
+    @InjectRepository(EquipmentWorkOrder)
+    private equipmentWorkOrderRepository: Repository<EquipmentWorkOrder>,
     @InjectRepository(Service)
     private servicesRepository: Repository<Service>,
     @InjectRepository(User)
@@ -48,205 +54,204 @@ export class WorkOrdersService {
     @InjectRepository(Equipment)
     private equipmentRepository: Repository<Equipment>,
     private dataSource: DataSource,
+    private eventEmitter: EventEmitter2,
   ) {}
 
   private getRoleName(currentUser: any): string {
     return currentUser?.role?.nombreRol || currentUser?.role || '';
   }
 
-  /**
-   * Crea una orden de trabajo ajustando el cliente/empresa según el rol:
-   * - Cliente:
-   *    - No envía clienteEmpresaId.
-   *    - Se busca automáticamente la(s) empresa(s) donde idUsuarioContacto = userId.
-   *    - Si tiene una empresa, se usa esa.
-   *    - Si no tiene ninguna, se lanza Forbidden para que el frontend muestre botón "Crear empresa".
-   * - Administrador:
-   *    - Debe enviar clienteEmpresaId.
-   *    - Si no envía clienteId, se usa idUsuarioContacto del cliente empresa.
-   */
-  async create(
-    createWorkOrderDto: CreateWorkOrderDto,
-    currentUser: any,
-  ): Promise<WorkOrder> {
-    const service = await this.servicesRepository.findOne({
-      where: { servicioId: createWorkOrderDto.servicioId },
-    });
-    if (!service) {
-      throw new NotFoundException(
-        `Servicio con ID ${createWorkOrderDto.servicioId} no encontrado`,
-      );
-    }
+  async create(dto: CreateWorkOrderDto, currentUser: any): Promise<WorkOrder> {
+    const roleName = this.getRoleName(currentUser);
 
-    const currentRoleName = this.getRoleName(currentUser);
-
-    let clienteEmpresa: Client | null = null;
-
-    // === LÓGICA PARA CLIENTE ===
-    if (currentRoleName === 'Cliente') {
-      // Buscar empresas donde este usuario es el contacto
-      const companies = await this.clientsRepository.find({
+    if (roleName === 'Cliente') {
+      dto.clienteId = currentUser.userId;
+      const clienteEmpresa = await this.clientsRepository.findOne({
         where: { idUsuarioContacto: currentUser.userId },
       });
+      if (clienteEmpresa) {
+        dto.clienteEmpresaId = clienteEmpresa.idCliente;
+      }
+    } else if (roleName === 'Administrador' || roleName === 'Secretaria') {
+      if (dto.clienteEmpresaId && !dto.clienteId) {
+        const empresa = await this.clientsRepository.findOne({
+          where: { idCliente: dto.clienteEmpresaId },
+        });
+        if (!empresa)
+          throw new NotFoundException(
+            `Empresa con ID ${dto.clienteEmpresaId} no encontrada`,
+          );
+        if (!empresa.idUsuarioContacto)
+          throw new BadRequestException(
+            `La empresa ${empresa.nombre} no tiene un usuario contacto asignado`,
+          );
+        dto.clienteId = empresa.idUsuarioContacto;
+      } else if (dto.clienteId && !dto.clienteEmpresaId) {
+        const usuarioCliente = await this.usersRepository.findOne({
+          where: { usuarioId: dto.clienteId },
+        });
+        if (!usuarioCliente)
+          throw new BadRequestException(`El usuario no existe`);
 
-      if (!companies.length) {
-        // Aquí el frontend puede detectar este mensaje y mostrar el botón "Crear empresa"
-        throw new ForbiddenException(
-          'No tiene una empresa registrada. Debe crear una empresa antes de solicitar una orden de servicio.',
+        const empresaContacto = await this.clientsRepository.findOne({
+          where: { idUsuarioContacto: dto.clienteId },
+        });
+        if (empresaContacto) {
+          dto.clienteEmpresaId = empresaContacto.idCliente;
+        }
+      } else if (dto.clienteId && dto.clienteEmpresaId) {
+        const empresa = await this.clientsRepository.findOne({
+          where: { idCliente: dto.clienteEmpresaId },
+        });
+        if (!empresa)
+          throw new NotFoundException(
+            `Empresa con ID ${dto.clienteEmpresaId} no encontrada`,
+          );
+        if (empresa.idUsuarioContacto !== dto.clienteId) {
+          throw new BadRequestException(
+            `El usuario ${dto.clienteId} no es contacto de la empresa ${empresa.nombre}`,
+          );
+        }
+      } else {
+        throw new BadRequestException(
+          'Debe especificar al menos clienteId o clienteEmpresaId',
         );
       }
+    }
 
-      if (companies.length === 1) {
-        clienteEmpresa = companies[0];
-      } else {
-        // Si en tu modelo un cliente puede ser contacto de varias empresas,
-        // aquí podrías permitir que envíe clienteEmpresaId y validarlo.
-        if (createWorkOrderDto.clienteEmpresaId) {
-          const selected = companies.find(
-            (c) => c.idCliente === createWorkOrderDto.clienteEmpresaId,
-          );
-          if (!selected) {
-            throw new ForbiddenException(
-              'No tiene permiso para crear órdenes para esta empresa',
-            );
-          }
-          clienteEmpresa = selected;
-        } else {
-          throw new ForbiddenException(
-            'Tiene más de una empresa asociada. Debe seleccionar la empresa para la orden de servicio.',
+    if (!dto.clienteId) {
+      throw new BadRequestException('El campo cliente_id es requerido');
+    }
+
+    const usuarioCliente = await this.usersRepository.findOne({
+      where: { usuarioId: dto.clienteId },
+    });
+    if (!usuarioCliente)
+      throw new NotFoundException(
+        `Usuario con ID ${dto.clienteId} no encontrado`,
+      );
+
+    if (dto.servicioId) {
+      const servicio = await this.servicesRepository.findOne({
+        where: { servicioId: dto.servicioId },
+      });
+      if (!servicio)
+        throw new NotFoundException(
+          `Servicio con ID ${dto.servicioId} no encontrado`,
+        );
+    }
+
+    // Validar equipos si se envían
+    if (dto.equipmentIds && dto.equipmentIds.length > 0) {
+      const equipmentIds = dto.equipmentIds;
+      const equipments = await this.equipmentRepository.find({
+        where: { equipmentId: In(equipmentIds) },
+        relations: ['client'],
+      });
+
+      if (equipments.length !== equipmentIds.length) {
+        throw new NotFoundException('Uno o más equipos no fueron encontrados');
+      }
+
+      for (const equipment of equipments) {
+        if (equipment.clientId !== dto.clienteEmpresaId) {
+          throw new BadRequestException(
+            `El equipo ${equipment.code || equipment.equipmentId} no pertenece al cliente de la orden`,
           );
         }
       }
-
-      // Forzamos la empresa y el cliente en el DTO
-      createWorkOrderDto.clienteEmpresaId = clienteEmpresa.idCliente;
-      createWorkOrderDto.clienteId = currentUser.userId;
     }
 
-    // === LÓGICA PARA ADMIN (u otros roles con permiso futuro) ===
-    else {
-      if (!createWorkOrderDto.clienteEmpresaId) {
-        throw new BadRequestException(
-          'El ID del cliente empresa es requerido',
-        );
-      }
+    dto.estado = dto.estado || WorkOrderStatus.REQUESTED_UNASSIGNED;
+    dto.estadoFacturacion = dto.estadoFacturacion || BillingStatus.NOT_BILLED;
 
-      clienteEmpresa = await this.clientsRepository.findOne({
-        where: { idCliente: createWorkOrderDto.clienteEmpresaId },
-      });
-      if (!clienteEmpresa) {
-        throw new NotFoundException(
-          `Cliente empresa con ID ${createWorkOrderDto.clienteEmpresaId} no encontrado`,
-        );
-      }
+    const workOrder = this.workOrdersRepository.create(dto);
+    const savedWorkOrder = await this.workOrdersRepository.save(workOrder);
 
-      // Si no se envía clienteId, usar el usuarioContacto de la empresa
-      if (!createWorkOrderDto.clienteId) {
-        createWorkOrderDto.clienteId = clienteEmpresa.idUsuarioContacto;
-      }
-    }
-
-    // Validar cliente (usuario)
-    const cliente = await this.usersRepository.findOne({
-      where: { usuarioId: createWorkOrderDto.clienteId },
-    });
-    if (!cliente) {
-      throw new NotFoundException(
-        `Cliente (usuario) con ID ${createWorkOrderDto.clienteId} no encontrado`,
+    // Asociar equipos si se especificaron
+    if (dto.equipmentIds && dto.equipmentIds.length > 0) {
+      const equipmentWorkOrders = dto.equipmentIds.map((equipmentId) =>
+        this.equipmentWorkOrderRepository.create({
+          workOrderId: savedWorkOrder.ordenId,
+          equipmentId,
+        }),
       );
+      await this.equipmentWorkOrderRepository.save(equipmentWorkOrders);
     }
 
-    // Validar técnico si viene
-    if (createWorkOrderDto.tecnicoId) {
-      const tecnico = await this.usersRepository
-        .createQueryBuilder('user')
-        .leftJoinAndSelect('user.role', 'role')
-        .where('user.usuarioId = :id', { id: createWorkOrderDto.tecnicoId })
-        .andWhere('role.nombreRol = :rol', { rol: 'Técnico' })
-        .getOne();
-
-      if (!tecnico) {
-        throw new NotFoundException(
-          `Técnico con ID ${createWorkOrderDto.tecnicoId} no encontrado o no tiene rol Técnico`,
-        );
-      }
-    }
-
-    // Validar equipo si viene
-    if (createWorkOrderDto.equipoId) {
-      const equipment = await this.equipmentRepository.findOne({
-        where: { equipmentId: createWorkOrderDto.equipoId },
-      });
-      if (!equipment) {
-        throw new NotFoundException(
-          `Equipo con ID ${createWorkOrderDto.equipoId} no encontrado`,
-        );
-      }
-    }
-
-    const estadoInicial = createWorkOrderDto.tecnicoId
-      ? WorkOrderStatus.REQUESTED_ASSIGNED
-      : WorkOrderStatus.REQUESTED_UNASSIGNED;
-
-    const workOrder = this.workOrdersRepository.create({
-      ...createWorkOrderDto,
-      estado: estadoInicial,
+    this.eventEmitter.emit('work-order.created', {
+      workOrderId: savedWorkOrder.ordenId,
+      clienteId: savedWorkOrder.clienteId,
+      tecnicoId: savedWorkOrder.tecnicoId,
+      servicioId: savedWorkOrder.servicioId,
+      equipmentIds: dto.equipmentIds || [],
     });
 
-    const saved = await this.workOrdersRepository.save(workOrder);
-
-    // Recargar la orden con todas las relaciones
-    return await this.findOne(saved.ordenId);
+    return this.findOne(savedWorkOrder.ordenId);
   }
 
   async findAll(): Promise<WorkOrder[]> {
-    return await this.workOrdersRepository.find({
-      relations: [
-        'service',
-        'cliente',
-        'clienteEmpresa',
-        'tecnico',
-        'equipment',
-        'supplyDetails',
-        'supplyDetails.supply',
-        'toolDetails',
-        'toolDetails.tool',
-      ],
-      order: { fechaSolicitud: 'DESC' },
-    });
+    return this.workOrdersRepository
+      .createQueryBuilder('workOrder')
+      .leftJoinAndSelect('workOrder.service', 'service')
+      .leftJoinAndSelect('workOrder.cliente', 'cliente')
+      .leftJoinAndSelect('workOrder.clienteEmpresa', 'clienteEmpresa')
+      .leftJoinAndSelect('workOrder.tecnico', 'tecnico')
+      .leftJoinAndSelect('workOrder.equipmentWorkOrders', 'equipmentWorkOrders')
+      .leftJoinAndSelect('equipmentWorkOrders.equipment', 'equipment')
+      .leftJoinAndSelect('workOrder.supplyDetails', 'supplyDetails')
+      .leftJoinAndSelect('supplyDetails.supply', 'supply')
+      .leftJoinAndSelect('workOrder.toolDetails', 'toolDetails')
+      .leftJoinAndSelect('toolDetails.tool', 'tool')
+      .leftJoinAndSelect('workOrder.maintenanceType', 'maintenanceType')
+      .orderBy(
+        `
+        CASE
+          WHEN workOrder.estado = :unassigned THEN 1
+          WHEN workOrder.estado = :assigned THEN 2
+          WHEN workOrder.estado = :inProgress THEN 3
+          WHEN workOrder.estado = :completed THEN 4
+          WHEN workOrder.estado = :canceled THEN 5
+          ELSE 6
+        END
+      `,
+        'ASC',
+      )
+      .addOrderBy('workOrder.fechaSolicitud', 'DESC')
+      .setParameters({
+        unassigned: WorkOrderStatus.REQUESTED_UNASSIGNED,
+        assigned: WorkOrderStatus.REQUESTED_ASSIGNED,
+        inProgress: WorkOrderStatus.IN_PROGRESS,
+        completed: WorkOrderStatus.COMPLETED,
+        canceled: WorkOrderStatus.CANCELED,
+      })
+      .getMany();
   }
 
   async findOne(id: number): Promise<WorkOrder> {
-    const workOrder = await this.workOrdersRepository.findOne({
-      where: { ordenId: id },
-      relations: [
-        'service',
-        'cliente',
-        'clienteEmpresa',
-        'tecnico',
-        'equipment',
-        'supplyDetails',
-        'supplyDetails.supply',
-        'toolDetails',
-        'toolDetails.tool',
-      ],
-    });
+    const workOrder = await this.workOrdersRepository
+      .createQueryBuilder('workOrder')
+      .leftJoinAndSelect('workOrder.service', 'service')
+      .leftJoinAndSelect('workOrder.cliente', 'cliente')
+      .leftJoinAndSelect('workOrder.clienteEmpresa', 'clienteEmpresa')
+      .leftJoinAndSelect('workOrder.tecnico', 'tecnico')
+      .leftJoinAndSelect('workOrder.equipmentWorkOrders', 'equipmentWorkOrders')
+      .leftJoinAndSelect('equipmentWorkOrders.equipment', 'equipment')
+      .leftJoinAndSelect('workOrder.supplyDetails', 'supplyDetails')
+      .leftJoinAndSelect('supplyDetails.supply', 'supply')
+      .leftJoinAndSelect('workOrder.toolDetails', 'toolDetails')
+      .leftJoinAndSelect('toolDetails.tool', 'tool')
+      .leftJoinAndSelect('workOrder.maintenanceType', 'maintenanceType')
+      .where('workOrder.ordenId = :id', { id })
+      .getOne();
 
     if (!workOrder) {
-      throw new NotFoundException(
-        `Orden de trabajo con ID ${id} no encontrada`,
-      );
+      throw new NotFoundException(`Orden ${id} no encontrada`);
     }
 
     return workOrder;
   }
 
-  /**
-   * Actualiza una orden de trabajo.
-   * - Técnico solo puede actualizar órdenes asignadas a él.
-   * - Solo Administrador puede cambiar el técnico (tecnicoId).
-   * - Solo Administrador puede cancelar por este endpoint (clientes tienen su endpoint propio).
-   */
   async update(
     id: number,
     updateWorkOrderDto: UpdateWorkOrderDto,
@@ -255,7 +260,6 @@ export class WorkOrdersService {
     const workOrder = await this.findOne(id);
     const currentRoleName = this.getRoleName(currentUser);
 
-    // Técnico solo puede actualizar sus órdenes
     if (
       currentRoleName === 'Técnico' &&
       workOrder.tecnicoId !== currentUser.userId
@@ -265,12 +269,10 @@ export class WorkOrdersService {
       );
     }
 
-    // Solo Administrador puede cambiar el técnico de la orden
     if (currentRoleName !== 'Administrador') {
       updateWorkOrderDto.tecnicoId = undefined;
     }
 
-    // Solo Administrador puede cancelar por este endpoint
     if (
       updateWorkOrderDto.estado === WorkOrderStatus.CANCELED &&
       currentRoleName !== 'Administrador'
@@ -301,13 +303,33 @@ export class WorkOrdersService {
       updateWorkOrderDto.fechaInicio = new Date();
     }
 
+    // Manejar actualización de equipos si se envía
+    if (updateWorkOrderDto.equipmentIds !== undefined) {
+      await this.equipmentWorkOrderRepository.delete({
+        workOrderId: id,
+      });
+
+      if (updateWorkOrderDto.equipmentIds.length > 0) {
+        const equipmentWorkOrders = updateWorkOrderDto.equipmentIds.map(
+          (equipmentId) => ({
+            workOrderId: id,
+            equipmentId,
+          }),
+        );
+        await this.equipmentWorkOrderRepository.save(equipmentWorkOrders);
+      }
+    }
+
     await this.workOrdersRepository.update(id, updateWorkOrderDto);
+
+    this.eventEmitter.emit('work-order.updated', {
+      ordenId: id,
+      action: 'update',
+    });
+
     return await this.findOne(id);
   }
 
-  /**
-   * Cancelación por parte del CLIENTE (máx. 3 días hábiles).
-   */
   async cancelByClient(id: number, currentUser: any): Promise<WorkOrder> {
     const workOrder = await this.findOne(id);
     const roleName = this.getRoleName(currentUser);
@@ -317,9 +339,7 @@ export class WorkOrdersService {
     }
 
     if (workOrder.clienteId !== currentUser.userId) {
-      throw new ForbiddenException(
-        'No tiene permiso para cancelar esta orden',
-      );
+      throw new ForbiddenException('No tiene permiso para cancelar esta orden');
     }
 
     if (
@@ -331,7 +351,6 @@ export class WorkOrdersService {
       );
     }
 
-    // Validar ventana de 3 días hábiles
     const deadline = this.addBusinessDays(workOrder.fechaSolicitud, 3);
     const now = new Date();
     if (now > deadline) {
@@ -348,6 +367,12 @@ export class WorkOrdersService {
     }
 
     await this.workOrdersRepository.save(workOrder);
+
+    this.eventEmitter.emit('work-order.updated', {
+      ordenId: id,
+      action: 'cancel',
+    });
+
     return this.findOne(id);
   }
 
@@ -368,7 +393,6 @@ export class WorkOrdersService {
     await queryRunner.startTransaction();
 
     try {
-      // Restaurar stock de insumos usados
       const supplyDetails = await this.supplyDetailsRepository.find({
         where: { ordenId: id },
         relations: ['supply'],
@@ -380,7 +404,10 @@ export class WorkOrdersService {
         });
 
         if (inventory) {
-          inventory.cantidadActual += detail.cantidadUsada;
+          const cantidadUsada = Number(detail.cantidadUsada);
+          inventory.cantidadActual =
+            Number(inventory.cantidadActual) + cantidadUsada;
+
           await queryRunner.manager.save(inventory);
 
           const estado = this.calculateSupplyStatus(
@@ -395,7 +422,6 @@ export class WorkOrdersService {
         }
       }
 
-      // Restaurar estado de herramientas usadas
       const toolDetails = await this.toolDetailsRepository.find({
         where: { ordenId: id },
       });
@@ -408,11 +434,9 @@ export class WorkOrdersService {
         );
       }
 
-      // Eliminar detalles
       await queryRunner.manager.delete(SupplyDetail, { ordenId: id });
       await queryRunner.manager.delete(ToolDetail, { ordenId: id });
-
-      // Eliminar la orden
+      await queryRunner.manager.delete(EquipmentWorkOrder, { workOrderId: id });
       await queryRunner.manager.remove(workOrder);
 
       await queryRunner.commitTransaction();
@@ -428,8 +452,6 @@ export class WorkOrdersService {
     ordenId: number,
     tecnicoId: number,
   ): Promise<WorkOrder> {
-    const workOrder = await this.findOne(ordenId);
-
     const tecnico = await this.usersRepository
       .createQueryBuilder('user')
       .leftJoinAndSelect('user.role', 'role')
@@ -443,14 +465,148 @@ export class WorkOrdersService {
       );
     }
 
-    workOrder.tecnicoId = tecnicoId;
+    const workOrder = await this.findOne(ordenId);
+    const nuevoEstado =
+      workOrder.estado === WorkOrderStatus.REQUESTED_UNASSIGNED
+        ? WorkOrderStatus.REQUESTED_ASSIGNED
+        : workOrder.estado;
 
-    if (workOrder.estado === WorkOrderStatus.REQUESTED_UNASSIGNED) {
-      workOrder.estado = WorkOrderStatus.REQUESTED_ASSIGNED;
+    await this.workOrdersRepository.update(ordenId, {
+      tecnicoId,
+      estado: nuevoEstado,
+    });
+
+    const updated = await this.findOne(ordenId);
+    this.eventEmitter.emit('work-order.assigned', {
+      workOrderId: updated.ordenId,
+      tecnicoId: updated.tecnicoId,
+      clienteId: updated.clienteId,
+      servicioId: updated.servicioId,
+    });
+
+    this.eventEmitter.emit('work-order.updated', {
+      ordenId,
+      action: 'assignTechnician',
+    });
+
+    return updated;
+  }
+
+  async unassignTechnician(ordenId: number): Promise<WorkOrder> {
+    const workOrder = await this.findOne(ordenId);
+
+    if (!workOrder.tecnicoId) {
+      throw new ConflictException('La orden no tiene técnico asignado');
     }
 
-    await this.workOrdersRepository.save(workOrder);
-    return await this.findOne(ordenId);
+    if (
+      workOrder.estado === WorkOrderStatus.IN_PROGRESS ||
+      workOrder.estado === WorkOrderStatus.COMPLETED ||
+      workOrder.estado === WorkOrderStatus.CANCELED
+    ) {
+      throw new ConflictException(
+        'No se puede quitar el técnico de una orden en proceso, finalizada o cancelada',
+      );
+    }
+
+    const nuevoEstado =
+      workOrder.estado === WorkOrderStatus.REQUESTED_ASSIGNED
+        ? WorkOrderStatus.REQUESTED_UNASSIGNED
+        : workOrder.estado;
+
+    await this.workOrdersRepository.update(ordenId, {
+      tecnicoId: null as any,
+      estado: nuevoEstado,
+    });
+
+    this.eventEmitter.emit('work-order.updated', {
+      ordenId,
+      action: 'unassignTechnician',
+    });
+
+    return this.findOne(ordenId);
+  }
+
+  async addEquipmentToOrder(
+    ordenId: number,
+    equipmentId: number,
+    description?: string,
+  ): Promise<EquipmentWorkOrder> {
+    const workOrder = await this.findOne(ordenId);
+    const equipment = await this.equipmentRepository.findOne({
+      where: { equipmentId },
+      relations: ['client'],
+    });
+
+    if (!equipment) {
+      throw new NotFoundException(`Equipo ${equipmentId} no encontrado`);
+    }
+
+    if (equipment.clientId !== workOrder.clienteEmpresaId) {
+      throw new BadRequestException(
+        `El equipo ${equipment.code || equipmentId} no pertenece al cliente de la orden`,
+      );
+    }
+
+    const existing = await this.equipmentWorkOrderRepository.findOne({
+      where: { workOrderId: ordenId, equipmentId },
+    });
+
+    if (existing) {
+      throw new ConflictException('El equipo ya está asociado a esta orden');
+    }
+
+    const equipmentWorkOrder = this.equipmentWorkOrderRepository.create({
+      workOrderId: ordenId,
+      equipmentId,
+      description,
+    });
+
+    const saved =
+      await this.equipmentWorkOrderRepository.save(equipmentWorkOrder);
+
+    this.eventEmitter.emit('work-order.equipment-added', {
+      ordenId,
+      equipmentId,
+    });
+
+    return saved;
+  }
+
+  async removeEquipmentFromOrder(
+    ordenId: number,
+    equipmentId: number,
+  ): Promise<void> {
+    const result = await this.equipmentWorkOrderRepository.delete({
+      workOrderId: ordenId,
+      equipmentId,
+    });
+
+    if (result.affected === 0) {
+      throw new NotFoundException('La asociación no fue encontrada');
+    }
+
+    this.eventEmitter.emit('work-order.equipment-removed', {
+      ordenId,
+      equipmentId,
+    });
+  }
+
+  async getWorkOrdersByEquipment(equipmentId: number): Promise<WorkOrder[]> {
+    const equipmentWorkOrders = await this.equipmentWorkOrderRepository.find({
+      where: { equipmentId },
+      relations: [
+        'workOrder',
+        'workOrder.service',
+        'workOrder.cliente',
+        'workOrder.clienteEmpresa',
+        'workOrder.tecnico',
+        'workOrder.maintenanceType',
+      ],
+      order: { createdAt: 'DESC' },
+    });
+
+    return equipmentWorkOrders.map((ewo) => ewo.workOrder);
   }
 
   async addSupplyDetail(
@@ -460,6 +616,14 @@ export class WorkOrdersService {
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
     await queryRunner.startTransaction();
+
+    let shouldEmitStockBelowMin = false;
+    let belowMinEventPayload: {
+      insumoId: number;
+      nombre: string;
+      cantidadActual: number;
+      stockMin: number;
+    } | null = null;
 
     try {
       await this.findOne(ordenId);
@@ -481,9 +645,12 @@ export class WorkOrdersService {
         );
       }
 
-      if (supply.inventory.cantidadActual < addSupplyDetailDto.cantidadUsada) {
+      const cantidadActual = Number(supply.inventory.cantidadActual);
+      const cantidadSolicitada = Number(addSupplyDetailDto.cantidadUsada);
+
+      if (cantidadActual < cantidadSolicitada) {
         throw new ConflictException(
-          `Stock insuficiente. Disponible: ${supply.inventory.cantidadActual}, Solicitado: ${addSupplyDetailDto.cantidadUsada}`,
+          `Stock insuficiente. Disponible: ${cantidadActual}, Solicitado: ${cantidadSolicitada}`,
         );
       }
 
@@ -496,21 +663,44 @@ export class WorkOrdersService {
 
       const savedDetail = await queryRunner.manager.save(supplyDetail);
 
-      // Actualizar stock en inventario
-      supply.inventory.cantidadActual -= addSupplyDetailDto.cantidadUsada;
+      supply.inventory.cantidadActual = cantidadActual - cantidadSolicitada;
       supply.inventory.fechaUltimaActualizacion = new Date();
       await queryRunner.manager.save(supply.inventory);
 
-      // Actualizar estado del insumo
+      const estadoAnterior = supply.estado;
       const nuevoStock = supply.inventory.cantidadActual;
       const estado = this.calculateSupplyStatus(nuevoStock, supply.stockMin);
+
       await queryRunner.manager.update(
         Supply,
         { insumoId: supply.insumoId },
         { estado },
       );
 
+      if (
+        estado !== estadoAnterior &&
+        (estado === SupplyStatus.STOCK_BAJO || estado === SupplyStatus.AGOTADO)
+      ) {
+        shouldEmitStockBelowMin = true;
+        belowMinEventPayload = {
+          insumoId: supply.insumoId,
+          nombre: supply.nombre,
+          cantidadActual: Number(nuevoStock),
+          stockMin: supply.stockMin,
+        };
+      }
+
       await queryRunner.commitTransaction();
+
+      if (shouldEmitStockBelowMin && belowMinEventPayload) {
+        this.eventEmitter.emit('stock.below-min', belowMinEventPayload);
+      }
+
+      this.eventEmitter.emit('work-order.updated', {
+        ordenId,
+        action: 'addSupply',
+      });
+
       return savedDetail;
     } catch (error) {
       await queryRunner.rollbackTransaction();
@@ -561,6 +751,12 @@ export class WorkOrdersService {
       );
 
       await queryRunner.commitTransaction();
+
+      this.eventEmitter.emit('work-order.updated', {
+        ordenId,
+        action: 'addTool',
+      });
+
       return savedDetail;
     } catch (error) {
       await queryRunner.rollbackTransaction();
@@ -585,13 +781,21 @@ export class WorkOrdersService {
       });
 
       if (!supplyDetail) {
-        throw new NotFoundException('Detalle de insumo no encontrado');
+        throw new NotFoundException(
+          'Detalle de insumo no encontrado en esta orden',
+        );
       }
 
       if (supplyDetail.supply?.inventory) {
-        supplyDetail.supply.inventory.cantidadActual +=
-          supplyDetail.cantidadUsada;
+        const cantidadUsada = Number(supplyDetail.cantidadUsada);
+        const cantidadActual = Number(
+          supplyDetail.supply.inventory.cantidadActual,
+        );
+
+        supplyDetail.supply.inventory.cantidadActual =
+          cantidadActual + cantidadUsada;
         supplyDetail.supply.inventory.fechaUltimaActualizacion = new Date();
+
         await queryRunner.manager.save(supplyDetail.supply.inventory);
 
         const nuevoStock = supplyDetail.supply.inventory.cantidadActual;
@@ -609,6 +813,11 @@ export class WorkOrdersService {
       await queryRunner.manager.remove(supplyDetail);
 
       await queryRunner.commitTransaction();
+
+      this.eventEmitter.emit('work-order.updated', {
+        ordenId,
+        action: 'removeSupply',
+      });
     } catch (error) {
       await queryRunner.rollbackTransaction();
       throw error;
@@ -632,7 +841,9 @@ export class WorkOrdersService {
       });
 
       if (!toolDetail) {
-        throw new NotFoundException('Detalle de herramienta no encontrado');
+        throw new NotFoundException(
+          'Detalle de herramienta no encontrado en esta orden',
+        );
       }
 
       await queryRunner.manager.update(
@@ -644,6 +855,11 @@ export class WorkOrdersService {
       await queryRunner.manager.remove(toolDetail);
 
       await queryRunner.commitTransaction();
+
+      this.eventEmitter.emit('work-order.updated', {
+        ordenId,
+        action: 'removeTool',
+      });
     } catch (error) {
       await queryRunner.rollbackTransaction();
       throw error;
@@ -653,45 +869,102 @@ export class WorkOrdersService {
   }
 
   async getWorkOrdersByStatus(estado: string): Promise<WorkOrder[]> {
-    return await this.workOrdersRepository.find({
-      where: { estado: estado as WorkOrderStatus },
-      relations: [
-        'service',
-        'cliente',
-        'clienteEmpresa',
-        'tecnico',
-        'equipment',
-      ],
-      order: { fechaSolicitud: 'DESC' },
-    });
+    return await this.workOrdersRepository
+      .createQueryBuilder('workOrder')
+      .leftJoinAndSelect('workOrder.service', 'service')
+      .leftJoinAndSelect('workOrder.cliente', 'cliente')
+      .leftJoinAndSelect('workOrder.clienteEmpresa', 'clienteEmpresa')
+      .leftJoinAndSelect('workOrder.tecnico', 'tecnico')
+      .leftJoinAndSelect('workOrder.equipmentWorkOrders', 'equipmentWorkOrders')
+      .leftJoinAndSelect('equipmentWorkOrders.equipment', 'equipment')
+      .leftJoinAndSelect('workOrder.supplyDetails', 'supplyDetails')
+      .leftJoinAndSelect('supplyDetails.supply', 'supply')
+      .leftJoinAndSelect('workOrder.toolDetails', 'toolDetails')
+      .leftJoinAndSelect('toolDetails.tool', 'tool')
+      .leftJoinAndSelect('workOrder.maintenanceType', 'maintenanceType')
+      .where('workOrder.estado = :estado', {
+        estado: estado as WorkOrderStatus,
+      })
+      .orderBy('workOrder.fechaSolicitud', 'DESC')
+      .getMany();
   }
 
   async getWorkOrdersByClient(clienteId: number): Promise<WorkOrder[]> {
-    return await this.workOrdersRepository.find({
-      where: { clienteId },
-      relations: [
-        'service',
-        'cliente',
-        'tecnico',
-        'clienteEmpresa',
-        'equipment',
-      ],
-      order: { fechaSolicitud: 'DESC' },
-    });
+    return await this.workOrdersRepository
+      .createQueryBuilder('workOrder')
+      .leftJoinAndSelect('workOrder.service', 'service')
+      .leftJoinAndSelect('workOrder.cliente', 'cliente')
+      .leftJoinAndSelect('workOrder.clienteEmpresa', 'clienteEmpresa')
+      .leftJoinAndSelect('workOrder.tecnico', 'tecnico')
+      .leftJoinAndSelect('workOrder.equipmentWorkOrders', 'equipmentWorkOrders')
+      .leftJoinAndSelect('equipmentWorkOrders.equipment', 'equipment')
+      .leftJoinAndSelect('workOrder.supplyDetails', 'supplyDetails')
+      .leftJoinAndSelect('supplyDetails.supply', 'supply')
+      .leftJoinAndSelect('workOrder.toolDetails', 'toolDetails')
+      .leftJoinAndSelect('toolDetails.tool', 'tool')
+      .leftJoinAndSelect('workOrder.maintenanceType', 'maintenanceType')
+      .where('workOrder.clienteId = :clienteId', { clienteId })
+      .orderBy(
+        `
+        CASE
+          WHEN workOrder.estado = :unassigned THEN 1
+          WHEN workOrder.estado = :assigned THEN 2
+          WHEN workOrder.estado = :inProgress THEN 3
+          WHEN workOrder.estado = :completed THEN 4
+          WHEN workOrder.estado = :canceled THEN 5
+          ELSE 6
+        END
+      `,
+        'ASC',
+      )
+      .addOrderBy('workOrder.fechaSolicitud', 'DESC')
+      .setParameters({
+        unassigned: WorkOrderStatus.REQUESTED_UNASSIGNED,
+        assigned: WorkOrderStatus.REQUESTED_ASSIGNED,
+        inProgress: WorkOrderStatus.IN_PROGRESS,
+        completed: WorkOrderStatus.COMPLETED,
+        canceled: WorkOrderStatus.CANCELED,
+      })
+      .getMany();
   }
 
   async getWorkOrdersByTechnician(tecnicoId: number): Promise<WorkOrder[]> {
-    return await this.workOrdersRepository.find({
-      where: { tecnicoId },
-      relations: [
-        'service',
-        'cliente',
-        'clienteEmpresa',
-        'tecnico',
-        'equipment',
-      ],
-      order: { fechaSolicitud: 'DESC' },
-    });
+    return await this.workOrdersRepository
+      .createQueryBuilder('workOrder')
+      .leftJoinAndSelect('workOrder.service', 'service')
+      .leftJoinAndSelect('workOrder.cliente', 'cliente')
+      .leftJoinAndSelect('workOrder.clienteEmpresa', 'clienteEmpresa')
+      .leftJoinAndSelect('workOrder.tecnico', 'tecnico')
+      .leftJoinAndSelect('workOrder.equipmentWorkOrders', 'equipmentWorkOrders')
+      .leftJoinAndSelect('equipmentWorkOrders.equipment', 'equipment')
+      .leftJoinAndSelect('workOrder.supplyDetails', 'supplyDetails')
+      .leftJoinAndSelect('supplyDetails.supply', 'supply')
+      .leftJoinAndSelect('workOrder.toolDetails', 'toolDetails')
+      .leftJoinAndSelect('toolDetails.tool', 'tool')
+      .leftJoinAndSelect('workOrder.maintenanceType', 'maintenanceType')
+      .where('workOrder.tecnicoId = :tecnicoId', { tecnicoId })
+      .orderBy(
+        `
+        CASE
+          WHEN workOrder.estado = :unassigned THEN 1
+          WHEN workOrder.estado = :assigned THEN 2
+          WHEN workOrder.estado = :inProgress THEN 3
+          WHEN workOrder.estado = :completed THEN 4
+          WHEN workOrder.estado = :canceled THEN 5
+          ELSE 6
+        END
+      `,
+        'ASC',
+      )
+      .addOrderBy('workOrder.fechaSolicitud', 'DESC')
+      .setParameters({
+        unassigned: WorkOrderStatus.REQUESTED_UNASSIGNED,
+        assigned: WorkOrderStatus.REQUESTED_ASSIGNED,
+        inProgress: WorkOrderStatus.IN_PROGRESS,
+        completed: WorkOrderStatus.COMPLETED,
+        canceled: WorkOrderStatus.CANCELED,
+      })
+      .getMany();
   }
 
   async getWorkOrdersByDateRange(
@@ -707,10 +980,49 @@ export class WorkOrdersService {
         'cliente',
         'clienteEmpresa',
         'tecnico',
-        'equipment',
+        'equipmentWorkOrders',
+        'equipmentWorkOrders.equipment',
+        'supplyDetails',
+        'supplyDetails.supply',
+        'toolDetails',
+        'toolDetails.tool',
+        'maintenanceType',
       ],
       order: { fechaSolicitud: 'DESC' },
     });
+  }
+
+  // Añadir este nuevo método en WorkOrdersService:
+  async getWorkOrdersByClientAndCategory(
+    clienteEmpresaId: number,
+    category: string,
+  ): Promise<WorkOrder[]> {
+    // Primero, verifica si hay servicios con esa categoría
+    const serviciosConCategoria = await this.servicesRepository.find({
+      where: { categoriaServicio: category as ServiceCategory },
+    });
+
+    // Luego haz la consulta principal
+    const workOrders = await this.workOrdersRepository
+      .createQueryBuilder('workOrder')
+      .leftJoinAndSelect('workOrder.service', 'service')
+      .leftJoinAndSelect('workOrder.clienteEmpresa', 'clienteEmpresa')
+      .where('workOrder.clienteEmpresaId = :clienteEmpresaId', {
+        clienteEmpresaId,
+      })
+      .andWhere('workOrder.estado IN (:...estadosValidos)', {
+        estadosValidos: [
+          WorkOrderStatus.REQUESTED_UNASSIGNED,
+          WorkOrderStatus.REQUESTED_ASSIGNED,
+        ],
+      })
+      .andWhere('service.categoriaServicio = :category', {
+        category: category as ServiceCategory,
+      })
+      .orderBy('workOrder.fechaSolicitud', 'DESC')
+      .getMany();
+
+    return workOrders;
   }
 
   async getWorkOrderStats(): Promise<any> {
@@ -740,10 +1052,6 @@ export class WorkOrdersService {
       .createQueryBuilder('workOrder')
       .leftJoin('workOrder.service', 'service')
       .leftJoin('workOrder.supplyDetails', 'supplyDetails')
-      .select(
-        'SUM(service.precio_base + COALESCE(supplyDetails.cantidad_usada * supplyDetails.costo_unitario_al_momento, 0))',
-        'total',
-      )
       .where('workOrder.estado = :estado', {
         estado: WorkOrderStatus.COMPLETED,
       })
@@ -757,7 +1065,7 @@ export class WorkOrdersService {
     };
   }
 
-  private validateEstadoTransition(
+  public validateEstadoTransition(
     currentEstado: WorkOrderStatus,
     newEstado: WorkOrderStatus,
   ): void {
@@ -769,6 +1077,7 @@ export class WorkOrdersService {
       [WorkOrderStatus.REQUESTED_ASSIGNED]: [
         WorkOrderStatus.IN_PROGRESS,
         WorkOrderStatus.CANCELED,
+        WorkOrderStatus.REQUESTED_UNASSIGNED,
       ],
       [WorkOrderStatus.IN_PROGRESS]: [
         WorkOrderStatus.COMPLETED,
@@ -787,24 +1096,22 @@ export class WorkOrdersService {
 
   async calculateTotalCost(
     ordenId: number,
-  ): Promise<{ costoTotalInsumos: number; costoTotalEstimado: number }> {
+  ): Promise<{ costoTotalInsumos: number }> {
     const workOrder = await this.findOne(ordenId);
 
     let costoTotalInsumos = 0;
     if (workOrder.supplyDetails) {
       costoTotalInsumos = workOrder.supplyDetails.reduce((total, detail) => {
         return (
-          total + detail.cantidadUsada * (detail.costoUnitarioAlMomento || 0)
+          total +
+          Number(detail.cantidadUsada) *
+            Number(detail.costoUnitarioAlMomento || 0)
         );
       }, 0);
     }
 
-    const costoTotalEstimado =
-      (workOrder.service?.precioBase || 0) + costoTotalInsumos;
-
     return {
       costoTotalInsumos,
-      costoTotalEstimado,
     };
   }
 
@@ -821,20 +1128,39 @@ export class WorkOrdersService {
     }
   }
 
-  /**
-   * Suma días hábiles (sin contar sábados ni domingos).
-   */
   private addBusinessDays(date: Date, businessDays: number): Date {
     const result = new Date(date);
     let added = 0;
-
     while (added < businessDays) {
       result.setDate(result.getDate() + 1);
-      const day = result.getDay(); // 0=Domingo, 6=Sábado
+      const day = result.getDay();
       if (day !== 0 && day !== 6) {
         added++;
       }
     }
     return result;
+  }
+
+  async uploadInvoice(
+    ordenId: number,
+    file: Express.Multer.File,
+  ): Promise<WorkOrder> {
+    const workOrder = await this.findOne(ordenId);
+
+    if (workOrder.estado !== WorkOrderStatus.COMPLETED) {
+      throw new BadRequestException(
+        'Solo se puede facturar una orden que esté Finalizada',
+      );
+    }
+
+    if (workOrder.estadoFacturacion === BillingStatus.BILLED) {
+      throw new BadRequestException('La orden ya está facturada');
+    }
+
+    workOrder.facturaPdfUrl = `/api/uploads/invoices/${file.filename}`;
+    workOrder.estadoFacturacion = BillingStatus.BILLED;
+
+    await this.workOrdersRepository.save(workOrder);
+    return this.findOne(ordenId);
   }
 }

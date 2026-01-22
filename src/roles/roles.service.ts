@@ -1,7 +1,14 @@
-import { Injectable, NotFoundException, ConflictException, BadRequestException, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ConflictException,
+  BadRequestException,
+  Logger,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, In } from 'typeorm';
 import { Role } from './entities/role.entity';
+import { Module as ModuleEntity } from '../modules/entities/module.entity';
 import { CreateRoleDto } from './dto/create-role.dto';
 import { UpdateRoleDto } from './dto/update-role.dto';
 
@@ -12,10 +19,16 @@ export class RolesService {
   constructor(
     @InjectRepository(Role)
     private rolesRepository: Repository<Role>,
+
+    // Repositorio de módulos para manejar las asociaciones sin necesidad de usar ModulesService
+    @InjectRepository(ModuleEntity)
+    private modulesRepository: Repository<ModuleEntity>,
   ) {
     // Verificar y corregir la secuencia al inicializar el servicio
-    this.initializeSequence().catch(error => {
-      this.logger.warn(`No se pudo inicializar la secuencia de roles: ${error.message}`);
+    this.initializeSequence().catch((error) => {
+      this.logger.warn(
+        `No se pudo inicializar la secuencia de roles: ${error.message}`,
+      );
     });
   }
 
@@ -30,17 +43,24 @@ export class RolesService {
           true
         ) as last_value;
       `);
-      
-      this.logger.log(`✅ Secuencia de roles inicializada correctamente. Último valor: ${result[0]?.last_value || 'N/A'}`);
+
+      this.logger.log(
+        `✅ Secuencia de roles inicializada correctamente. Último valor: ${result[0]?.last_value || 'N/A'}`,
+      );
     } catch (error) {
-      this.logger.warn(`⚠️ No se pudo inicializar la secuencia de roles: ${error.message}`);
+      this.logger.warn(
+        `⚠️ No se pudo inicializar la secuencia de roles: ${error.message}`,
+      );
     }
   }
 
   /**
    * Corrige la secuencia si está desincronizada
    */
-  async fixSequenceIfNeeded(): Promise<{ corrected: boolean; message: string }> {
+  async fixSequenceIfNeeded(): Promise<{
+    corrected: boolean;
+    message: string;
+  }> {
     try {
       // Obtener el máximo ID actual en la tabla
       const maxIdResult = await this.rolesRepository.query(`
@@ -54,20 +74,28 @@ export class RolesService {
       `);
       const lastSequenceValue = sequenceResult[0]?.last_value || 0;
 
-      this.logger.debug(`🔍 Verificando secuencia de roles: Max ID=${maxId}, Secuencia=${lastSequenceValue}`);
+      this.logger.debug(
+        `🔍 Verificando secuencia de roles: Max ID=${maxId}, Secuencia=${lastSequenceValue}`,
+      );
 
       // Si la secuencia está detrás del máximo ID, corregirla
       if (lastSequenceValue <= maxId) {
-        await this.rolesRepository.query(`
+        await this.rolesRepository.query(
+          `
           SELECT setval('roles_rol_id_seq', $1, true)
-        `, [maxId]);
-        
+        `,
+          [maxId],
+        );
+
         const message = `✅ Secuencia de roles corregida: ${lastSequenceValue} → ${maxId}`;
         this.logger.log(message);
         return { corrected: true, message };
       }
 
-      return { corrected: false, message: 'Secuencia de roles ya está actualizada' };
+      return {
+        corrected: false,
+        message: 'Secuencia de roles ya está actualizada',
+      };
     } catch (error) {
       const errorMessage = `❌ Error corrigiendo secuencia de roles: ${error.message}`;
       this.logger.error(errorMessage);
@@ -84,7 +112,7 @@ export class RolesService {
 
     // Verificar si el nombre del rol ya existe
     const existingRole = await this.rolesRepository.findOne({
-      where: { nombreRol: createRoleDto.nombreRol }
+      where: { nombreRol: createRoleDto.nombreRol },
     });
 
     if (existingRole) {
@@ -92,18 +120,22 @@ export class RolesService {
     }
 
     const role = this.rolesRepository.create(createRoleDto);
-    
+
     let savedRole: Role;
-    
+
     try {
       savedRole = await this.rolesRepository.save(role);
-      this.logger.log(`🎭 Rol creado exitosamente: ${savedRole.rolId} - ${savedRole.nombreRol}`);
+      this.logger.log(
+        `🎭 Rol creado exitosamente: ${savedRole.rolId} - ${savedRole.nombreRol}`,
+      );
     } catch (error) {
       // Si hay error de duplicado, verificar y corregir secuencia
       if (error.code === '23505' && error.constraint === 'roles_pkey') {
-        this.logger.warn('⚠️ Error de duplicado en PK de roles, corrigiendo secuencia...');
+        this.logger.warn(
+          '⚠️ Error de duplicado en PK de roles, corrigiendo secuencia...',
+        );
         await this.fixSequenceIfNeeded();
-        
+
         // Reintentar la inserción
         savedRole = await this.rolesRepository.save(role);
       } else {
@@ -128,7 +160,7 @@ export class RolesService {
    */
   async findOne(id: number): Promise<Role> {
     const role = await this.rolesRepository.findOne({
-      where: { rolId: id }
+      where: { rolId: id },
     });
 
     if (!role) {
@@ -143,7 +175,7 @@ export class RolesService {
    */
   async findByName(nombreRol: string): Promise<Role | null> {
     return await this.rolesRepository.findOne({
-      where: { nombreRol }
+      where: { nombreRol },
     });
   }
 
@@ -163,7 +195,7 @@ export class RolesService {
 
     await this.rolesRepository.update(id, updateRoleDto);
     const updatedRole = await this.findOne(id);
-    
+
     this.logger.log(`🎭 Rol actualizado: ${id}`);
     return updatedRole;
   }
@@ -174,7 +206,7 @@ export class RolesService {
   async remove(id: number): Promise<void> {
     const role = await this.rolesRepository.findOne({
       where: { rolId: id },
-      relations: ['users']
+      relations: ['users'],
     });
 
     if (!role) {
@@ -183,7 +215,9 @@ export class RolesService {
 
     // Verificar si el rol tiene usuarios asignados
     if (role.users && role.users.length > 0) {
-      throw new BadRequestException('No se puede eliminar un rol que tiene usuarios asignados');
+      throw new BadRequestException(
+        'No se puede eliminar un rol que tiene usuarios asignados',
+      );
     }
 
     await this.rolesRepository.remove(role);
@@ -197,7 +231,9 @@ export class RolesService {
     const queryBuilder = this.rolesRepository.createQueryBuilder('role');
 
     if (nombre) {
-      queryBuilder.where('role.nombreRol ILIKE :nombre', { nombre: `%${nombre}%` });
+      queryBuilder.where('role.nombreRol ILIKE :nombre', {
+        nombre: `%${nombre}%`,
+      });
     }
 
     return await queryBuilder.orderBy('role.rolId', 'ASC').getMany();
@@ -210,7 +246,7 @@ export class RolesService {
     try {
       const [maxIdResult, sequenceResult] = await Promise.all([
         this.rolesRepository.query('SELECT MAX(rol_id) as max_id FROM roles'),
-        this.rolesRepository.query('SELECT last_value FROM roles_rol_id_seq')
+        this.rolesRepository.query('SELECT last_value FROM roles_rol_id_seq'),
       ]);
 
       const maxId = maxIdResult[0]?.max_id || 0;
@@ -221,10 +257,12 @@ export class RolesService {
         lastSequenceValue,
         synchronized: lastSequenceValue >= maxId,
         needsCorrection: lastSequenceValue < maxId,
-        difference: maxId - lastSequenceValue
+        difference: maxId - lastSequenceValue,
       };
     } catch (error) {
-      throw new Error(`Error en diagnóstico de secuencia de roles: ${error.message}`);
+      throw new Error(
+        `Error en diagnóstico de secuencia de roles: ${error.message}`,
+      );
     }
   }
 
@@ -239,7 +277,10 @@ export class RolesService {
         .select('role.rolId', 'rolId')
         .addSelect('role.nombreRol', 'nombreRol')
         .addSelect('COUNT(user.usuarioId)', 'totalUsuarios')
-        .addSelect('SUM(CASE WHEN user.activo = true THEN 1 ELSE 0 END)', 'usuariosActivos')
+        .addSelect(
+          'SUM(CASE WHEN user.activo = true THEN 1 ELSE 0 END)',
+          'usuariosActivos',
+        )
         .groupBy('role.rolId')
         .addGroupBy('role.nombreRol')
         .orderBy('role.rolId', 'ASC')
@@ -250,5 +291,97 @@ export class RolesService {
       this.logger.error('Error obteniendo estadísticas de roles:', error);
       throw new BadRequestException('Error al obtener estadísticas de roles');
     }
+  }
+
+  /**
+   * Busca roles por una lista de IDs
+   */
+  async findManyByIds(ids: number[]): Promise<Role[]> {
+    if (!ids || ids.length === 0) {
+      return [];
+    }
+    return await this.rolesRepository.findBy({ rolId: In(ids) });
+  }
+
+  /**
+   * Obtiene módulos asociados a un rol
+   */
+  async findModulesByRole(id: number): Promise<ModuleEntity[]> {
+    const role = await this.rolesRepository.findOne({
+      where: { rolId: id },
+      relations: ['modules'],
+    });
+
+    if (!role) {
+      throw new NotFoundException(`Rol con ID ${id} no encontrado`);
+    }
+
+    return role.modules || [];
+  }
+
+  /**
+   * Reemplaza los módulos asociados a un rol (bulk)
+   */
+  async setModulesForRole(id: number, moduloIds: number[]): Promise<Role> {
+    const role = await this.findOne(id);
+
+    const modules = moduloIds && moduloIds.length
+      ? await this.modulesRepository.findBy({ moduloId: In(moduloIds) })
+      : [];
+
+    if (moduloIds && moduloIds.length && modules.length !== moduloIds.length) {
+      const foundIds = new Set(modules.map(m => m.moduloId));
+      const notFound = moduloIds.filter(mid => !foundIds.has(mid));
+      throw new NotFoundException(`Algunos módulos no fueron encontrados: IDs ${notFound.join(', ')}`);
+    }
+
+    role.modules = modules;
+    const saved = await this.rolesRepository.save(role);
+    this.logger.log(`🔗 Módulos actualizados para rol ${id}`);
+    return saved;
+  }
+
+  /**
+   * Añade un módulo a un rol (idempotente)
+   */
+  async addModuleToRole(rolId: number, moduloId: number): Promise<Role> {
+    const role = await this.rolesRepository.findOne({
+      where: { rolId },
+      relations: ['modules'],
+    });
+    if (!role) throw new NotFoundException(`Rol con ID ${rolId} no encontrado`);
+
+    const module = await this.modulesRepository.findOne({
+      where: { moduloId },
+    });
+    if (!module) throw new NotFoundException(`Módulo con ID ${moduloId} no encontrado`);
+
+    role.modules = role.modules || [];
+
+    const already = role.modules.some(m => m.moduloId === moduloId);
+    if (already) {
+      return role;
+    }
+
+    role.modules.push(module);
+    const saved = await this.rolesRepository.save(role);
+    this.logger.log(`🔗 Módulo ${moduloId} asignado al rol ${rolId}`);
+    return saved;
+  }
+
+  /**
+   * Remueve la asociación de un módulo a un rol
+   */
+  async removeModuleFromRole(rolId: number, moduloId: number): Promise<Role> {
+    const role = await this.rolesRepository.findOne({
+      where: { rolId },
+      relations: ['modules'],
+    });
+    if (!role) throw new NotFoundException(`Rol con ID ${rolId} no encontrado`);
+
+    role.modules = (role.modules || []).filter(m => m.moduloId !== moduloId);
+    const saved = await this.rolesRepository.save(role);
+    this.logger.log(`❌ Módulo ${moduloId} removido del rol ${rolId}`);
+    return saved;
   }
 }

@@ -8,6 +8,7 @@ import { HeightWork } from './entities/height-work.entity';
 import { PreoperationalCheck } from './entities/preoperational-check.entity';
 import { Signature } from './entities/signature.entity';
 import { GeneratedPdf } from './entities/generated-pdf.entity';
+import { WorkOrder } from '../work-orders/entities/work-order.entity';
 
 @Module({
   imports: [
@@ -17,11 +18,12 @@ import { GeneratedPdf } from './entities/generated-pdf.entity';
       HeightWork,
       PreoperationalCheck,
       Signature,
-      GeneratedPdf
-    ])
+      GeneratedPdf,
+      WorkOrder,
+    ]),
   ],
   controllers: [SgSstController],
   providers: [SgSstService],
-  exports: [SgSstService]
+  exports: [SgSstService],
 })
 export class SgSstModule {}

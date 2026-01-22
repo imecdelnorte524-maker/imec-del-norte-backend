@@ -1,25 +1,38 @@
-import { IsNotEmpty, IsNumber, IsOptional, IsString, Min, ValidateIf } from 'class-validator';
+// src/inventory/dto/create-inventory.dto.ts
+import {
+  IsNotEmpty,
+  IsNumber,
+  IsOptional,
+  IsString,
+  Min,
+  ValidateIf,
+} from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
 
 export class CreateInventoryDto {
   @ApiProperty({
     example: 1,
-    description: 'ID del insumo (debe ser null si se proporciona herraminetaId)',
+    description:
+      'ID del insumo (debe ser null si se proporciona herramientaId)',
     required: false,
   })
-  @ValidateIf(o => !o.herramientaId)
+  @ValidateIf((o) => !o.herramientaId)
   @IsNumber({}, { message: 'El ID del insumo debe ser un número' })
   @Min(1, { message: 'El ID del insumo debe ser mayor a 0' })
+  @Type(() => Number)
   insumoId?: number;
 
   @ApiProperty({
     example: 1,
-    description: 'ID del herramienta (debe ser null si se proporciona insumoId)',
+    description:
+      'ID de la herramienta (debe ser null si se proporciona insumoId)',
     required: false,
   })
-  @ValidateIf(o => !o.insumoId)
-  @IsNumber({}, { message: 'El ID del herramienta debe ser un número' })
-  @Min(1, { message: 'El ID del herramienta debe ser mayor a 0' })
+  @ValidateIf((o) => !o.insumoId)
+  @IsNumber({}, { message: 'El ID de la herramienta debe ser un número' })
+  @Min(1, { message: 'El ID de la herramienta debe ser mayor a 0' })
+  @Type(() => Number)
   herramientaId?: number;
 
   @ApiProperty({
@@ -30,11 +43,23 @@ export class CreateInventoryDto {
   @IsOptional()
   @IsNumber({}, { message: 'La cantidad actual debe ser un número' })
   @Min(0, { message: 'La cantidad actual no puede ser negativa' })
+  @Type(() => Number)
   cantidadActual?: number;
 
   @ApiProperty({
-    example: 'Almacén Principal - Estante A',
-    description: 'Ubicación del item en el inventario',
+    example: 1,
+    description: 'ID de la bodega donde se almacena',
+    required: false,
+  })
+  @IsOptional()
+  @IsNumber({}, { message: 'El ID de la bodega debe ser un número' })
+  @Min(1, { message: 'El ID de la bodega debe ser mayor a 0' })
+  @Type(() => Number)
+  bodegaId?: number;
+
+  @ApiProperty({
+    example: 'Estante A, Caja 3, Piso 2',
+    description: 'Ubicación dentro de la bodega',
     required: false,
   })
   @IsOptional()

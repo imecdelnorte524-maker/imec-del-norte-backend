@@ -1,8 +1,9 @@
+// src/supplies/dto/update-supply.dto.ts
 import { PartialType } from '@nestjs/swagger';
 import { CreateSupplyDto } from './create-supply.dto';
-import { IsOptional, IsString, IsNumber, Min, IsUrl, IsEnum } from 'class-validator';
+import { IsOptional, IsString, IsNumber, Min, IsEnum } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
-import { SupplyCategory, SupplyStatus, UnitOfMeasure } from '../../shared/enums/inventory.enum';
+import { SupplyCategory, SupplyStatus } from '../../shared/enums/inventory.enum';
 
 export class UpdateSupplyDto extends PartialType(CreateSupplyDto) {
   @ApiProperty({
@@ -27,12 +28,11 @@ export class UpdateSupplyDto extends PartialType(CreateSupplyDto) {
   @ApiProperty({
     example: 'Par',
     description: 'Unidad de medida del insumo',
-    enum: UnitOfMeasure,
     required: false,
   })
   @IsOptional()
-  @IsEnum(UnitOfMeasure, { message: 'La unidad de medida debe ser un valor válido' })
-  unidadMedida?: UnitOfMeasure;
+  @IsString({ message: 'La unidad de medida debe ser una cadena de texto' })
+  unidadMedida?: string;
 
   @ApiProperty({
     example: 'Disponible',
@@ -66,16 +66,6 @@ export class UpdateSupplyDto extends PartialType(CreateSupplyDto) {
   valorUnitario?: number;
 
   @ApiProperty({
-    example: 'https://example.com/nueva-foto-insumo.jpg',
-    description: 'URL de la foto del insumo',
-    required: false,
-  })
-  @IsOptional()
-  @IsString({ message: 'La URL de la foto debe ser una cadena de texto' })
-  fotoUrl?: string;
-
-  // Campos para actualizar inventario
-  @ApiProperty({
     example: 75,
     description: 'Cantidad en inventario',
     required: false,
@@ -86,14 +76,11 @@ export class UpdateSupplyDto extends PartialType(CreateSupplyDto) {
   cantidadActual?: number;
 
   @ApiProperty({
-    example: 'Almacén Principal - Estante B',
-    description: 'Ubicación en inventario',
+    example: 2,
+    description: 'ID de la bodega',
     required: false,
   })
   @IsOptional()
-  @IsString({ message: 'La ubicación debe ser una cadena de texto' })
-  ubicacion?: string;
-
-  // Asegurar que cantidadInicial tenga valor por defecto
-  cantidadInicial?: number = 0;
+  @IsNumber({}, { message: 'El ID de la bodega debe ser un número' })
+  bodegaId?: number;
 }

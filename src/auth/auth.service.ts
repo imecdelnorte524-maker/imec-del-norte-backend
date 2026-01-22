@@ -1,23 +1,35 @@
-import { Injectable, UnauthorizedException, ConflictException, NotFoundException, BadRequestException } from '@nestjs/common';
+// src/auth/auth.service.ts
+import {
+  Injectable,
+  UnauthorizedException,
+  ConflictException,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { UsersService } from '../users/users.service';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
-import { RequestPasswordResetDto, ResetPasswordDto } from './dto/recovery-password';
+import {
+  RequestPasswordResetDto,
+  ResetPasswordDto,
+} from './dto/recovery-password.dto';
+import { ChangePasswordDto } from './dto/change-password.dto';
+import { MailService } from 'src/mail/mail.service';
 
 @Injectable()
 export class AuthService {
   constructor(
     private usersService: UsersService,
-    private jwtService: JwtService,
-  ) { }
+    public jwtService: JwtService,
+    private readonly mailService: MailService,
+  ) {}
 
   async validateUser(username: string, password: string): Promise<any> {
-
     const user = await this.usersService.findByUsername(username);
 
-    if (user) {
+    if (user && user.passwordHash) {
       const isPasswordValid = await bcrypt.compare(password, user.passwordHash);
 
       if (isPasswordValid && user.activo) {
@@ -29,8 +41,8 @@ export class AuthService {
     return null;
   }
 
+  // src/auth/auth.service.ts (solo el método login, el resto igual)
   async login(user: any) {
-
     if (!user.activo) {
       throw new UnauthorizedException('Usuario inactivo');
     }
@@ -40,6 +52,8 @@ export class AuthService {
       sub: user.usuarioId,
       email: user.email,
       role: user.role?.nombreRol,
+      // opcional: también en el payload
+      mustChangePassword: user.mustChangePassword,
     };
 
     return {
@@ -52,19 +66,24 @@ export class AuthService {
         apellido: user.apellido,
         role: user.role?.nombreRol,
         telefono: user.telefono,
+        mustChangePassword: user.mustChangePassword, // ← NUEVO
       },
     };
   }
 
   async register(registerDto: RegisterDto) {
     // Verificar si el email ya existe
-    const existingUserByEmail = await this.usersService.findByEmail(registerDto.email);
+    const existingUserByEmail = await this.usersService.findByEmail(
+      registerDto.email,
+    );
     if (existingUserByEmail) {
       throw new ConflictException('El correo electrónico ya está registrado');
     }
 
     // Verificar si el username ya existe
-    const existingUserByUsername = await this.usersService.findByUsername(registerDto.username);
+    const existingUserByUsername = await this.usersService.findByUsername(
+      registerDto.username,
+    );
     if (existingUserByUsername) {
       throw new ConflictException('El nombre de usuario ya está registrado');
     }
@@ -97,15 +116,24 @@ export class AuthService {
     return userWithoutPassword;
   }
 
-  async requestPasswordReset(requestPasswordResetDto: RequestPasswordResetDto): Promise<{ message: string }> {
+  /**
+   * Solicitar reseteo de contraseña
+   * - Genera un JWT con type=password_reset
+   * - Envía correo con enlace al FRONTEND (/reset-password?token=...)
+   * - En desarrollo puede devolver resetToken y resetUrl para debug
+   */
+  async requestPasswordReset(
+    requestPasswordResetDto: RequestPasswordResetDto,
+  ): Promise<{ message: string; resetToken?: string; resetUrl?: string }> {
     const { email } = requestPasswordResetDto;
 
     const user = await this.usersService.findByEmail(email);
 
-    // Por seguridad, no revelamos si el email existe o no
+    // Por seguridad, misma respuesta exista o no el usuario
     if (!user) {
       return {
-        message: 'Si el email existe en nuestro sistema, recibirás un enlace para resetear tu contraseña'
+        message:
+          'Si el email existe en nuestro sistema, recibirás un enlace para resetear tu contraseña',
       };
     }
 
@@ -114,26 +142,49 @@ export class AuthService {
       {
         sub: user.usuarioId,
         email: user.email,
-        type: 'password_reset'
+        type: 'password_reset',
       },
       {
         secret: process.env.JWT_SECRET + '_RESET',
-        expiresIn: '1h'
-      }
+        expiresIn: '1h',
+      },
     );
 
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3032';
+    const resetUrl = `${frontendUrl}/reset-password?token=${resetToken}`;
+
+    // Enviar correo usando MailService
+    try {
+      await this.mailService.sendPasswordResetEmail({
+        to: user.email,
+        resetUrl,
+        nameuser: user.nombre,
+      });
+    } catch (err) {
+      // No exponemos el error al cliente por seguridad, solo log
+      console.error('❌ Error enviando correo de recuperación:', err);
+    }
+
+    // En desarrollo puede ser útil devolver token/url
+    const isDev =
+      !process.env.NODE_ENV || process.env.NODE_ENV === 'development';
+
     return {
-      message: 'Si el email existe en nuestro sistema, recibirás un enlace para resetear tu contraseña'
+      message:
+        'Si el email existe en nuestro sistema, recibirás un enlace para resetear tu contraseña',
+      ...(isDev ? { resetToken, resetUrl } : {}),
     };
   }
 
-  async resetPassword(resetPasswordDto: ResetPasswordDto): Promise<{ message: string }> {
+  async resetPassword(
+    resetPasswordDto: ResetPasswordDto,
+  ): Promise<{ message: string }> {
     const { token, password } = resetPasswordDto;
 
     try {
       // Verificar el JWT token
       const payload = this.jwtService.verify(token, {
-        secret: process.env.JWT_SECRET + '_RESET'
+        secret: process.env.JWT_SECRET + '_RESET',
       });
 
       // Verificar que es un token de password reset
@@ -149,17 +200,13 @@ export class AuthService {
         throw new BadRequestException('Usuario no encontrado');
       }
 
-      // Hash de la nueva contraseña
-      const passwordHash = await bcrypt.hash(password, 10);
-
-      // Actualizar contraseña usando el método público
+      // Aquí se aplica también historial de contraseñas
       await this.usersService.updatePassword(userId, password);
 
       return {
-        message: 'Contraseña actualizada exitosamente'
+        message: 'Contraseña actualizada exitosamente',
       };
-
-    } catch (error) {
+    } catch (error: any) {
       if (error.name === 'TokenExpiredError') {
         throw new BadRequestException('Token expirado');
       }
@@ -170,22 +217,54 @@ export class AuthService {
     }
   }
 
-  // Método temporal para resetear admin
-  async resetAdminPassword(): Promise<{ message: string; newPassword?: string }> {
+  async changePassword(
+    userId: number,
+    dto: ChangePasswordDto,
+  ): Promise<{ message: string }> {
+    const { currentPassword, newPassword } = dto;
+
+    const user = await this.usersService.findOne(userId);
+    if (!user) {
+      throw new NotFoundException('Usuario no encontrado');
+    }
+
+    // Validar contraseña actual
+    if (!user.passwordHash) {
+      throw new BadRequestException('Usuario no tiene contraseña configurada');
+    }
+
+    const isCurrentValid = await bcrypt.compare(
+      currentPassword,
+      user.passwordHash,
+    );
+    if (!isCurrentValid) {
+      throw new BadRequestException('La contraseña actual no es correcta');
+    }
+
+    // Validación de complejidad ya se hace en el DTO (class-validator)
+    // Aquí delegamos actualización + historial a UsersService
+    await this.usersService.updatePassword(userId, newPassword);
+
+    return {
+      message: 'Contraseña actualizada exitosamente',
+    };
+  }
+
+  async resetAdminPassword(): Promise<{
+    message: string;
+    newPassword?: string;
+  }> {
     const admin = await this.usersService.findByUsername('admin');
     if (!admin) {
       throw new NotFoundException('Usuario admin no encontrado');
     }
 
     const newPassword = 'Admin123!';
-    const passwordHash = await bcrypt.hash(newPassword, 10);
-
-    // Usar el método público para actualizar
     await this.usersService.updatePassword(admin.usuarioId, newPassword);
 
     return {
       message: 'Contraseña de admin reseteada exitosamente',
-      newPassword: newPassword // Solo para desarrollo
+      newPassword,
     };
   }
 }

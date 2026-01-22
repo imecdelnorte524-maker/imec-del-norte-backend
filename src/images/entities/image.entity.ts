@@ -9,6 +9,8 @@ import {
 import { Tool } from '../../tools/entities/tool.entity';
 import { Supply } from '../../supplies/entities/supply.entity';
 import { User } from 'src/users/entities/user.entity';
+import { Equipment } from 'src/equipment/entities/equipment.entity';
+import { Client } from 'src/client/entities/client.entity';
 
 @Entity('images')
 export class Image {
@@ -19,31 +21,54 @@ export class Image {
   url: string;
 
   @Column()
-  publicId: string;
+  public_id: string;
 
   @Column()
   folder: string;
 
   @CreateDateColumn()
-  createdAt: Date;
+  created_at: Date;
 
-  // Relaciones (nullable para reutilizar la tabla)
+  @Column({ name: 'is_logo', type: 'boolean', default: false })
+  isLogo: boolean;
+
+  // Herramienta
   @ManyToOne(() => Tool, (tool) => tool.images, {
     onDelete: 'CASCADE',
     nullable: true,
   })
+  @JoinColumn({ name: 'tool_id' })
   tool?: Tool;
 
+  // Insumo
   @ManyToOne(() => Supply, (supply) => supply.images, {
     onDelete: 'CASCADE',
     nullable: true,
   })
+  @JoinColumn({ name: 'supply_id' })
   supply?: Supply;
 
+  // Usuario
   @ManyToOne(() => User, (user) => user.images, {
     nullable: true,
     onDelete: 'CASCADE',
   })
   @JoinColumn({ name: 'user_id' })
   user?: User;
+
+  // Equipo (hoja de vida)
+  @ManyToOne(() => Equipment, {
+    nullable: true,
+    onDelete: 'CASCADE',
+  })
+  @JoinColumn({ name: 'equipment_id' })
+  equipment?: Equipment;
+
+  // Cliente
+  @ManyToOne(() => Client, (client) => client.images, {
+    nullable: true,
+    onDelete: 'CASCADE',
+  })
+  @JoinColumn({ name: 'client_id' })
+  client?: Client;
 }

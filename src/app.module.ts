@@ -7,7 +7,7 @@ import databaseConfig from './config/database.config';
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
 import { ServicesModule } from './services/services.module';
-import { ToolModule } from './tools/tool.module';
+import { ToolsModule } from './tools/tool.module';
 import { SuppliesModule } from './supplies/supplies.module';
 import { InventoryModule } from './inventory/inventory.module';
 import { WorkOrdersModule } from './work-orders/work-orders.module';
@@ -21,10 +21,19 @@ import { MailModule } from './mail/mail.module';
 import { TasksModule } from './tasks/tasks.module';
 import { EquipmentModule } from './equipment/equipment.module';
 import { ImagesModule } from './images/images.module';
+import { DashboardModule } from './dashboard/dashboard.module';
+import { EventEmitterModule } from '@nestjs/event-emitter';
+import { NotificationsModule } from './notifications/notifications.module';
+import { AirConditionerTypesModule } from './air-conditioner-types/air-conditioner-type.module';
+import { ModulesModule } from './modules/modules.module';
+import { WarehousesModule } from './warehouses/warehouses.module';
+import { UnitMeasureModule } from './unit-measure/unit-measure.module';
+import { MaintenanceTypesModule } from './maintenance-types/maintenance-types.module';
 
 @Module({
   imports: [
     ScheduleModule.forRoot(),
+    EventEmitterModule.forRoot(),
 
     ConfigModule.forRoot({
       isGlobal: true,
@@ -45,7 +54,7 @@ import { ImagesModule } from './images/images.module';
     UsersModule,
     RolesModule,
     ServicesModule,
-    ToolModule,
+    ToolsModule,
     SuppliesModule,
     InventoryModule,
     WorkOrdersModule,
@@ -57,6 +66,13 @@ import { ImagesModule } from './images/images.module';
     TasksModule,
     EquipmentModule,
     ImagesModule,
+    DashboardModule,
+    NotificationsModule,
+    AirConditionerTypesModule,
+    ModulesModule,
+    WarehousesModule,
+    UnitMeasureModule,
+    MaintenanceTypesModule,
   ],
 })
 export class AppModule {}

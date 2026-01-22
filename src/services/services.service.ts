@@ -1,9 +1,11 @@
+// src/services/services.service.ts
 import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, ILike } from 'typeorm';
+import { Repository } from 'typeorm';
 import { Service } from './entities/service.entity';
 import { CreateServiceDto } from './dto/create-service.dto';
 import { UpdateServiceDto } from './dto/update-service.dto';
+import { ServiceCategory } from './enums/service.enums';
 
 @Injectable()
 export class ServicesService {
@@ -41,9 +43,9 @@ export class ServicesService {
     return service;
   }
 
-  async findByName(nombreServicio: string): Promise<Service | null> { // ✅ Cambiado a Service | null
+  async findByName(nombreServicio: string): Promise<Service | null> {
     return await this.servicesRepository.findOne({
-      where: { nombreServicio },
+      where: { nombreServicio: nombreServicio },
     });
   }
 
@@ -96,12 +98,20 @@ export class ServicesService {
         'service.servicioId',
         'service.nombreServicio',
         'service.descripcion',
-        'service.precioBase',
         'service.duracionEstimada',
+        'service.categoriaServicio',
         'COUNT(workOrder.orden_id) as totalOrdenes',
       ])
       .groupBy('service.servicioId')
       .orderBy('service.nombreServicio', 'ASC')
       .getRawMany();
+  }
+
+  // Nuevo método: Obtener servicios por categoría
+  async findByCategory(category: ServiceCategory): Promise<Service[]> {
+    return await this.servicesRepository.find({
+      where: { categoriaServicio: category },
+      order: { nombreServicio: 'ASC' },
+    });
   }
 }
