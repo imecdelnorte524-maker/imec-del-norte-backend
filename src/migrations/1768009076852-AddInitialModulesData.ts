@@ -1,10 +1,157 @@
-import { MigrationInterface, QueryRunner } from 'typeorm';
+import { MigrationInterface, QueryRunner, Table } from 'typeorm';
 
 export class AddInitialModulesAndRolesData1707000000000 implements MigrationInterface {
 
+  private async ensureModulosTableExists(queryRunner: QueryRunner): Promise<void> {
+    const tableExists = await queryRunner.hasTable('modulos');
+    
+    if (!tableExists) {
+      console.log('⚠️ Tabla modulos no existe, creándola...');
+      
+      await queryRunner.createTable(
+        new Table({
+          name: 'modulos',
+          columns: [
+            {
+              name: 'modulo_id',
+              type: 'serial',
+              isPrimary: true,
+            },
+            {
+              name: 'nombre_modulo',
+              type: 'varchar',
+              length: '100',
+              isNullable: false,
+              isUnique: true,
+            },
+            {
+              name: 'descripcion',
+              type: 'text',
+              isNullable: true,
+            },
+            {
+              name: 'activo',
+              type: 'boolean',
+              default: true,
+              isNullable: false,
+            },
+            {
+              name: 'orden',
+              type: 'int',
+              default: 0,
+              isNullable: false,
+            },
+            {
+              name: 'ruta_frontend',
+              type: 'varchar',
+              length: '255',
+              isNullable: true,
+            },
+            {
+              name: 'icono',
+              type: 'varchar',
+              length: '50',
+              isNullable: true,
+            },
+            {
+              name: 'codigo_interno',
+              type: 'varchar',
+              length: '50',
+              isNullable: true,
+              isUnique: true,
+            },
+            {
+              name: 'fecha_creacion',
+              type: 'timestamp',
+              default: 'CURRENT_TIMESTAMP',
+              isNullable: false,
+            },
+            {
+              name: 'fecha_actualizacion',
+              type: 'timestamp',
+              default: 'CURRENT_TIMESTAMP',
+              isNullable: false,
+            },
+          ],
+        }),
+        true // skipIfExists: true
+      );
+      
+      console.log('✅ Tabla modulos creada');
+    } else {
+      console.log('ℹ️ Tabla modulos ya existe');
+    }
+  }
+
+  private async ensureModuloRolesTableExists(queryRunner: QueryRunner): Promise<void> {
+    const tableExists = await queryRunner.hasTable('modulo_roles');
+    
+    if (!tableExists) {
+      console.log('⚠️ Tabla modulo_roles no existe, creándola...');
+      
+      await queryRunner.createTable(
+        new Table({
+          name: 'modulo_roles',
+          columns: [
+            {
+              name: 'modulo_rol_id',
+              type: 'serial',
+              isPrimary: true,
+            },
+            {
+              name: 'modulo_id',
+              type: 'int',
+              isNullable: false,
+            },
+            {
+              name: 'rol_id',
+              type: 'int',
+              isNullable: false,
+            },
+            {
+              name: 'fecha_asignacion',
+              type: 'timestamp',
+              default: 'CURRENT_TIMESTAMP',
+              isNullable: false,
+            },
+          ],
+          foreignKeys: [
+            {
+              columnNames: ['modulo_id'],
+              referencedTableName: 'modulos',
+              referencedColumnNames: ['modulo_id'],
+              onDelete: 'CASCADE',
+            },
+            {
+              columnNames: ['rol_id'],
+              referencedTableName: 'roles',
+              referencedColumnNames: ['rol_id'],
+              onDelete: 'CASCADE',
+            },
+          ],
+          uniques: [
+            {
+              columnNames: ['modulo_id', 'rol_id'],
+            }
+          ]
+        }),
+        true // skipIfExists: true
+      );
+      
+      console.log('✅ Tabla modulo_roles creada');
+    } else {
+      console.log('ℹ️ Tabla modulo_roles ya existe');
+    }
+  }
+
   public async up(queryRunner: QueryRunner): Promise<void> {
-    // ... (el método up permanece EXACTAMENTE igual que en la última versión) ...
     console.log('Iniciando migración de datos iniciales: AddInitialModulesAndRolesData');
+
+    // =========================================================================
+    // 0. PRIMERO: Asegurar que las tablas existan
+    // =========================================================================
+    await this.ensureModulosTableExists(queryRunner);
+    await this.ensureModuloRolesTableExists(queryRunner);
 
     // =========================================================================
     // 1. Insertar/Actualizar Roles (si no existen por nombre)
@@ -22,8 +169,8 @@ export class AddInitialModulesAndRolesData1707000000000 implements MigrationInte
 
     for (const role of initialRoles) {
       await queryRunner.query(`
-        INSERT INTO roles (nombre_rol, descripcion, fecha_creacion)
-        VALUES ($1, $2, CURRENT_TIMESTAMP)
+        INSERT INTO roles (nombre_rol, descripcion)
+        VALUES ($1, $2)
         ON CONFLICT (nombre_rol) DO NOTHING;
       `, [role.nombreRol, role.descripcion]);
     }

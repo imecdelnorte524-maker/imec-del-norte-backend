@@ -1,3 +1,4 @@
+// src/database/seed/database.seed.ts
 import { DataSource } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 import { Role } from '../../roles/entities/role.entity';
