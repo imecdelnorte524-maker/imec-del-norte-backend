@@ -1,3 +1,7 @@
+run:
+
+	make down-volumes && make build && make start
+
 dev:
 	docker-compose up --build -d 
 

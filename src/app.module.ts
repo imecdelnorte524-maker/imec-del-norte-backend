@@ -2,9 +2,11 @@ import { Module } from '@nestjs/common';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { EventEmitterModule } from '@nestjs/event-emitter';
 
 import databaseConfig from './config/database.config';
-import { DatabaseModule } from './database/database.module';
+// No importamos dataSource aquí para evitar que cargue las migraciones conflictivas
+
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
 import { ServicesModule } from './services/services.module';
@@ -23,7 +25,6 @@ import { TasksModule } from './tasks/tasks.module';
 import { EquipmentModule } from './equipment/equipment.module';
 import { ImagesModule } from './images/images.module';
 import { DashboardModule } from './dashboard/dashboard.module';
-import { EventEmitterModule } from '@nestjs/event-emitter';
 import { NotificationsModule } from './notifications/notifications.module';
 import { AirConditionerTypesModule } from './air-conditioner-types/air-conditioner-type.module';
 import { ModulesModule } from './modules/modules.module';
@@ -45,12 +46,25 @@ import { MaintenanceTypesModule } from './maintenance-types/maintenance-types.mo
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
-      useFactory: (configService: ConfigService) => ({
-        ...configService.get('database'),
-      }),
+      useFactory: (configService: ConfigService) => {
+        const dbConfig = configService.get('database');
+        
+        return {
+          ...dbConfig,
+          // IMPORTANTE: Dejamos el arreglo vacío para que NO cargue migraciones al bootear
+          migrations: [], 
+          // Desactivamos la ejecución automática
+          migrationsRun: false,
+          // ACTIVAMOS synchronize para que cree las tablas solo basándose en las @Entity()
+          synchronize: true,
+          autoLoadEntities: true,
+          // Cambiamos el nombre de la tabla de control para evitar colisiones
+          migrationsTableName: 'migrations_manual_log',
+          logging: ['error', 'warn'], 
+        };
+      },
     }),
 
-    DatabaseModule,
     HealthModule,
     AuthModule,
     UsersModule,
