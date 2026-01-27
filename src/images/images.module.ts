@@ -6,9 +6,9 @@ import { ImagesController } from './images.controller';
 import { CloudinaryService } from './cloudinary.service';
 import { Tool } from '../tools/entities/tool.entity';
 import { Supply } from '../supplies/entities/supply.entity';
-import { User } from 'src/users/entities/user.entity';
-import { Equipment } from 'src/equipment/entities/equipment.entity';
-import { Client } from 'src/client/entities/client.entity';
+import { User } from '../users/entities/user.entity';
+import { Equipment } from '../equipment/entities/equipment.entity';
+import { Client } from '../client/entities/client.entity';
 
 @Module({
   imports: [

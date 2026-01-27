@@ -5,6 +5,8 @@ import {
   ManyToOne,
   JoinColumn,
   OneToMany,
+  CreateDateColumn,
+  UpdateDateColumn,
 } from 'typeorm';
 import { Equipment } from './equipment.entity';
 import { EquipmentMotor } from './motor.entity';
@@ -23,7 +25,7 @@ export class EquipmentEvaporator {
   @JoinColumn({ name: 'equipment_id' })
   equipment: Equipment;
 
-  // Campos nuevos / ajustados (todos opcionales)
+  // Campos
   @Column({ name: 'marca', type: 'varchar', length: 150, nullable: true })
   marca?: string;
 
@@ -34,30 +36,27 @@ export class EquipmentEvaporator {
   serial?: string;
 
   @Column({ name: 'capacidad', type: 'varchar', length: 150, nullable: true })
-  capacidad?: string; // ej: '12000 BTU', '18000 BTU'
+  capacidad?: string;
 
-  @Column({ name: 'tipo_refrigerante', type: 'varchar', length: 100, nullable: true })
+  @Column({
+    name: 'tipo_refrigerante',
+    type: 'varchar',
+    length: 100,
+    nullable: true,
+  })
   tipoRefrigerante?: string;
 
-  @Column({
-    name: 'created_at',
-    type: 'timestamp',
-    default: () => 'CURRENT_TIMESTAMP',
-  })
+  @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 
-  @Column({
-    name: 'updated_at',
-    type: 'timestamp',
-    default: () => 'CURRENT_TIMESTAMP',
-    onUpdate: 'CURRENT_TIMESTAMP',
-  })
+  @UpdateDateColumn({ name: 'updated_at' })
   updatedAt: Date;
 
-  // Nueva relación: un evaporador puede tener varios motores
-  @OneToMany(() => EquipmentMotor, (motor) => motor.evaporator, {
+  // ⚠️ CORREGIR ESTA RELACIÓN - estaba mal referenciada
+  @OneToMany(() => EquipmentMotor, (motor) => motor.evaporator, { // ← Cambiar 'condenser' por 'evaporator'
     cascade: true,
     nullable: true,
+    eager: true,
   })
   motors?: EquipmentMotor[];
 }

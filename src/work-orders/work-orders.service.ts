@@ -1,3 +1,4 @@
+// src/work-orders/work-orders.service.ts
 import {
   Injectable,
   NotFoundException,
@@ -22,11 +23,11 @@ import { CreateWorkOrderDto } from './dto/create-work-order.dto';
 import { UpdateWorkOrderDto } from './dto/update-work-order.dto';
 import { AddSupplyDetailDto } from './dto/add-supply-detail.dto';
 import { AddToolDetailDto } from './dto/add-tool-detail.dto';
-import { ToolStatus, SupplyStatus } from 'src/shared/enums';
+import { ToolStatus, SupplyStatus } from '../shared/enums';
 import { WorkOrderStatus } from './enums/work-order-status.enum';
 import { BillingStatus } from './enums/billing-status.enum';
 import { EventEmitter2 } from '@nestjs/event-emitter';
-import { ServiceCategory } from 'src/services/enums/service.enums';
+import { ServiceCategory } from '../services/enums/service.enums';
 
 @Injectable()
 export class WorkOrdersService {
@@ -61,53 +62,100 @@ export class WorkOrdersService {
     return currentUser?.role?.nombreRol || currentUser?.role || '';
   }
 
+  // Helper para verificar si un usuario es contacto de un cliente
+  private async isUserContactoOfCliente(
+    userId: number,
+    clienteId: number,
+  ): Promise<boolean> {
+    const cliente = await this.clientsRepository.findOne({
+      where: { idCliente: clienteId },
+      relations: ['usuariosContacto'],
+    });
+
+    if (!cliente || !cliente.usuariosContacto) return false;
+
+    return cliente.usuariosContacto.some((user) => user.usuarioId === userId);
+  }
+
+  // Helper para obtener el primer usuario contacto de un cliente
+  private getPrimerUsuarioContacto(cliente: Client): User | null {
+    return cliente.usuariosContacto?.[0] || null;
+  }
+
   async create(dto: CreateWorkOrderDto, currentUser: any): Promise<WorkOrder> {
     const roleName = this.getRoleName(currentUser);
 
     if (roleName === 'Cliente') {
       dto.clienteId = currentUser.userId;
-      const clienteEmpresa = await this.clientsRepository.findOne({
-        where: { idUsuarioContacto: currentUser.userId },
-      });
-      if (clienteEmpresa) {
-        dto.clienteEmpresaId = clienteEmpresa.idCliente;
+
+      // Buscar empresas donde el usuario es contacto
+      const empresasCliente = await this.clientsRepository
+        .createQueryBuilder('cliente')
+        .innerJoinAndSelect('cliente.usuariosContacto', 'usuario')
+        .where('usuario.usuarioId = :userId', { userId: currentUser.userId })
+        .getMany();
+
+      if (empresasCliente.length > 0) {
+        // Tomar la primera empresa (o puedes implementar lógica para elegir)
+        dto.clienteEmpresaId = empresasCliente[0].idCliente;
       }
     } else if (roleName === 'Administrador' || roleName === 'Secretaria') {
       if (dto.clienteEmpresaId && !dto.clienteId) {
         const empresa = await this.clientsRepository.findOne({
           where: { idCliente: dto.clienteEmpresaId },
+          relations: ['usuariosContacto'],
         });
-        if (!empresa)
+
+        if (!empresa) {
           throw new NotFoundException(
             `Empresa con ID ${dto.clienteEmpresaId} no encontrada`,
           );
-        if (!empresa.idUsuarioContacto)
+        }
+
+        const primerUsuarioContacto = this.getPrimerUsuarioContacto(empresa);
+        if (!primerUsuarioContacto) {
           throw new BadRequestException(
-            `La empresa ${empresa.nombre} no tiene un usuario contacto asignado`,
+            `La empresa ${empresa.nombre} no tiene usuarios contacto asignados`,
           );
-        dto.clienteId = empresa.idUsuarioContacto;
+        }
+
+        dto.clienteId = primerUsuarioContacto.usuarioId;
       } else if (dto.clienteId && !dto.clienteEmpresaId) {
         const usuarioCliente = await this.usersRepository.findOne({
           where: { usuarioId: dto.clienteId },
         });
-        if (!usuarioCliente)
-          throw new BadRequestException(`El usuario no existe`);
 
-        const empresaContacto = await this.clientsRepository.findOne({
-          where: { idUsuarioContacto: dto.clienteId },
-        });
-        if (empresaContacto) {
-          dto.clienteEmpresaId = empresaContacto.idCliente;
+        if (!usuarioCliente) {
+          throw new BadRequestException(`El usuario no existe`);
+        }
+
+        // Buscar empresas donde el usuario es contacto
+        const empresasContacto = await this.clientsRepository
+          .createQueryBuilder('cliente')
+          .innerJoinAndSelect('cliente.usuariosContacto', 'usuario')
+          .where('usuario.usuarioId = :userId', { userId: dto.clienteId })
+          .getMany();
+
+        if (empresasContacto.length > 0) {
+          dto.clienteEmpresaId = empresasContacto[0].idCliente;
         }
       } else if (dto.clienteId && dto.clienteEmpresaId) {
         const empresa = await this.clientsRepository.findOne({
           where: { idCliente: dto.clienteEmpresaId },
+          relations: ['usuariosContacto'],
         });
-        if (!empresa)
+
+        if (!empresa) {
           throw new NotFoundException(
             `Empresa con ID ${dto.clienteEmpresaId} no encontrada`,
           );
-        if (empresa.idUsuarioContacto !== dto.clienteId) {
+        }
+
+        const isContacto = await this.isUserContactoOfCliente(
+          dto.clienteId,
+          dto.clienteEmpresaId,
+        );
+        if (!isContacto) {
           throw new BadRequestException(
             `El usuario ${dto.clienteId} no es contacto de la empresa ${empresa.nombre}`,
           );
@@ -126,19 +174,23 @@ export class WorkOrdersService {
     const usuarioCliente = await this.usersRepository.findOne({
       where: { usuarioId: dto.clienteId },
     });
-    if (!usuarioCliente)
+
+    if (!usuarioCliente) {
       throw new NotFoundException(
         `Usuario con ID ${dto.clienteId} no encontrado`,
       );
+    }
 
     if (dto.servicioId) {
       const servicio = await this.servicesRepository.findOne({
         where: { servicioId: dto.servicioId },
       });
-      if (!servicio)
+
+      if (!servicio) {
         throw new NotFoundException(
           `Servicio con ID ${dto.servicioId} no encontrado`,
         );
+      }
     }
 
     // Validar equipos si se envían
@@ -190,22 +242,33 @@ export class WorkOrdersService {
     return this.findOne(savedWorkOrder.ordenId);
   }
 
+  // ... (el resto del código permanece igual excepto las relaciones que cargan usuarioContacto)
+
   async findAll(): Promise<WorkOrder[]> {
-    return this.workOrdersRepository
-      .createQueryBuilder('workOrder')
-      .leftJoinAndSelect('workOrder.service', 'service')
-      .leftJoinAndSelect('workOrder.cliente', 'cliente')
-      .leftJoinAndSelect('workOrder.clienteEmpresa', 'clienteEmpresa')
-      .leftJoinAndSelect('workOrder.tecnico', 'tecnico')
-      .leftJoinAndSelect('workOrder.equipmentWorkOrders', 'equipmentWorkOrders')
-      .leftJoinAndSelect('equipmentWorkOrders.equipment', 'equipment')
-      .leftJoinAndSelect('workOrder.supplyDetails', 'supplyDetails')
-      .leftJoinAndSelect('supplyDetails.supply', 'supply')
-      .leftJoinAndSelect('workOrder.toolDetails', 'toolDetails')
-      .leftJoinAndSelect('toolDetails.tool', 'tool')
-      .leftJoinAndSelect('workOrder.maintenanceType', 'maintenanceType')
-      .orderBy(
-        `
+    return (
+      this.workOrdersRepository
+        .createQueryBuilder('workOrder')
+        .leftJoinAndSelect('workOrder.service', 'service')
+        .leftJoinAndSelect('workOrder.cliente', 'cliente')
+        .leftJoinAndSelect('workOrder.clienteEmpresa', 'clienteEmpresa')
+        .leftJoinAndSelect('workOrder.tecnico', 'tecnico')
+        .leftJoinAndSelect(
+          'workOrder.equipmentWorkOrders',
+          'equipmentWorkOrders',
+        )
+        .leftJoinAndSelect('equipmentWorkOrders.equipment', 'equipment')
+        .leftJoinAndSelect('workOrder.supplyDetails', 'supplyDetails')
+        .leftJoinAndSelect('supplyDetails.supply', 'supply')
+        .leftJoinAndSelect('workOrder.toolDetails', 'toolDetails')
+        .leftJoinAndSelect('toolDetails.tool', 'tool')
+        .leftJoinAndSelect('workOrder.maintenanceType', 'maintenanceType')
+        // Actualizar para cargar usuariosContacto en lugar de usuarioContacto
+        .leftJoinAndSelect(
+          'clienteEmpresa.usuariosContacto',
+          'usuariosContacto',
+        )
+        .orderBy(
+          `
         CASE
           WHEN workOrder.estado = :unassigned THEN 1
           WHEN workOrder.estado = :assigned THEN 2
@@ -215,17 +278,18 @@ export class WorkOrdersService {
           ELSE 6
         END
       `,
-        'ASC',
-      )
-      .addOrderBy('workOrder.fechaSolicitud', 'DESC')
-      .setParameters({
-        unassigned: WorkOrderStatus.REQUESTED_UNASSIGNED,
-        assigned: WorkOrderStatus.REQUESTED_ASSIGNED,
-        inProgress: WorkOrderStatus.IN_PROGRESS,
-        completed: WorkOrderStatus.COMPLETED,
-        canceled: WorkOrderStatus.CANCELED,
-      })
-      .getMany();
+          'ASC',
+        )
+        .addOrderBy('workOrder.fechaSolicitud', 'DESC')
+        .setParameters({
+          unassigned: WorkOrderStatus.REQUESTED_UNASSIGNED,
+          assigned: WorkOrderStatus.REQUESTED_ASSIGNED,
+          inProgress: WorkOrderStatus.IN_PROGRESS,
+          completed: WorkOrderStatus.COMPLETED,
+          canceled: WorkOrderStatus.CANCELED,
+        })
+        .getMany()
+    );
   }
 
   async findOne(id: number): Promise<WorkOrder> {
@@ -242,6 +306,8 @@ export class WorkOrdersService {
       .leftJoinAndSelect('workOrder.toolDetails', 'toolDetails')
       .leftJoinAndSelect('toolDetails.tool', 'tool')
       .leftJoinAndSelect('workOrder.maintenanceType', 'maintenanceType')
+      // Actualizar para cargar usuariosContacto
+      .leftJoinAndSelect('clienteEmpresa.usuariosContacto', 'usuariosContacto')
       .where('workOrder.ordenId = :id', { id })
       .getOne();
 
@@ -903,6 +969,7 @@ export class WorkOrdersService {
       .leftJoinAndSelect('workOrder.toolDetails', 'toolDetails')
       .leftJoinAndSelect('toolDetails.tool', 'tool')
       .leftJoinAndSelect('workOrder.maintenanceType', 'maintenanceType')
+      .leftJoinAndSelect('clienteEmpresa.usuariosContacto', 'usuariosContacto')
       .where('workOrder.clienteId = :clienteId', { clienteId })
       .orderBy(
         `

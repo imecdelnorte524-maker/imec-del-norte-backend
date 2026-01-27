@@ -1,5 +1,27 @@
-// src/client/dto/client-response.dto.ts
 import { ApiProperty } from '@nestjs/swagger';
+
+export class UserResponseDto {
+  @ApiProperty({ example: 1, description: 'ID del usuario' })
+  usuarioId: number;
+
+  @ApiProperty({ example: 'juan.perez', description: 'Nombre de usuario' })
+  username: string;
+
+  @ApiProperty({ example: 'Juan', description: 'Nombre' })
+  nombre: string;
+
+  @ApiProperty({ example: 'Pérez', description: 'Apellido' })
+  apellido: string;
+
+  @ApiProperty({ example: 'juan.perez@email.com', description: 'Email' })
+  email: string;
+
+  @ApiProperty({ example: '3001234567', description: 'Teléfono' })
+  telefono: string;
+
+  @ApiProperty({ example: 'Administrador', description: 'Nombre del rol' })
+  role: string;
+}
 
 export class ClientResponseDto {
   @ApiProperty({ example: 1, description: 'ID del cliente' })
@@ -63,16 +85,10 @@ export class ClientResponseDto {
   fechaCreacionEmpresa: string;
 
   @ApiProperty({
-    example: 1,
-    description: 'ID del usuario contacto',
+    description: 'Usuarios contacto del cliente',
+    type: () => [UserResponseDto],
   })
-  idUsuarioContacto: number;
-
-  @ApiProperty({
-    description: 'Información del usuario contacto',
-    type: () => UserResponseDto,
-  })
-  usuarioContacto: UserResponseDto;
+  usuariosContacto: UserResponseDto[];
 
   @ApiProperty({
     example: '2024-01-01T00:00:00.000Z',
@@ -87,31 +103,6 @@ export class ClientResponseDto {
   updatedAt: Date;
 }
 
-// También necesitamos el DTO de usuario para la respuesta
-export class UserResponseDto {
-  @ApiProperty({ example: 1, description: 'ID del usuario' })
-  usuarioId: number;
-
-  @ApiProperty({ example: 'juan.perez', description: 'Nombre de usuario' })
-  usuario: string;
-
-  @ApiProperty({ example: 'Juan', description: 'Nombre' })
-  nombre: string;
-
-  @ApiProperty({ example: 'Pérez', description: 'Apellido' })
-  apellido: string;
-
-  @ApiProperty({ example: 'juan.perez@email.com', description: 'Email' })
-  email: string;
-
-  @ApiProperty({ example: '3001234567', description: 'Teléfono' })
-  telefono: string;
-
-  @ApiProperty({ example: 'Administrador', description: 'Rol' })
-  role: string;
-}
-
-// Si necesitas una respuesta simplificada para listados
 export class ClientSimpleResponseDto {
   @ApiProperty({ example: 1, description: 'ID del cliente' })
   idCliente: number;
@@ -142,4 +133,10 @@ export class ClientSimpleResponseDto {
     description: 'Teléfono del cliente',
   })
   telefono: string;
+
+  @ApiProperty({
+    example: ['Juan Pérez', 'María Gómez'],
+    description: 'Nombres de usuarios contacto',
+  })
+  usuariosContactoNombres: string[];
 }

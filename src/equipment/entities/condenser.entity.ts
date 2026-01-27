@@ -5,6 +5,8 @@ import {
   ManyToOne,
   JoinColumn,
   OneToMany,
+  CreateDateColumn,
+  UpdateDateColumn,
 } from 'typeorm';
 import { Equipment } from './equipment.entity';
 import { EquipmentMotor } from './motor.entity';
@@ -24,7 +26,7 @@ export class EquipmentCondenser {
   @JoinColumn({ name: 'equipment_id' })
   equipment: Equipment;
 
-  // Campos actuales (mantenerlos, todos opcionales)
+  // Campos
   @Column({ name: 'marca', type: 'varchar', length: 150, nullable: true })
   marca?: string;
 
@@ -43,46 +45,60 @@ export class EquipmentCondenser {
   @Column({ name: 'voltaje', type: 'varchar', length: 50, nullable: true })
   voltaje?: string;
 
-  @Column({ name: 'tipo_refrigerante', type: 'varchar', length: 100, nullable: true })
+  @Column({
+    name: 'tipo_refrigerante',
+    type: 'varchar',
+    length: 100,
+    nullable: true,
+  })
   tipoRefrigerante?: string;
 
-  @Column({ name: 'numero_fases', type: 'varchar', length: 50, nullable: true })
+  @Column({
+    name: 'numero_fases',
+    type: 'varchar',
+    length: 50,
+    nullable: true,
+  })
   numeroFases?: string;
 
-  @Column({ name: 'presion_alta', type: 'varchar', length: 50, nullable: true })
+  @Column({
+    name: 'presion_alta',
+    type: 'varchar',
+    length: 50,
+    nullable: true,
+  })
   presionAlta?: string;
 
-  @Column({ name: 'presion_baja', type: 'varchar', length: 50, nullable: true })
+  @Column({
+    name: 'presion_baja',
+    type: 'varchar',
+    length: 50,
+    nullable: true,
+  })
   presionBaja?: string;
 
   @Column({ name: 'hp', type: 'varchar', length: 50, nullable: true })
   hp?: string;
 
-  @Column({
-    name: 'created_at',
-    type: 'timestamp',
-    default: () => 'CURRENT_TIMESTAMP',
-  })
+  @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 
-  @Column({
-    name: 'updated_at',
-    type: 'timestamp',
-    default: () => 'CURRENT_TIMESTAMP',
-    onUpdate: 'CURRENT_TIMESTAMP',
-  })
+  @UpdateDateColumn({ name: 'updated_at' })
   updatedAt: Date;
 
-  // Nuevas relaciones
+  // Relación con motores del condensador
   @OneToMany(() => EquipmentMotor, (motor) => motor.condenser, {
     cascade: true,
     nullable: true,
+    eager: true,
   })
   motors?: EquipmentMotor[];
 
+  // Relación con compresores del condensador
   @OneToMany(() => EquipmentCompressor, (comp) => comp.condenser, {
     cascade: true,
     nullable: true,
+    eager: true,
   })
   compressors?: EquipmentCompressor[];
 }

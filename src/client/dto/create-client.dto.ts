@@ -1,4 +1,3 @@
-// src/client/dto/create-client.dto.ts
 import {
   IsEmail,
   IsNotEmpty,
@@ -8,6 +7,8 @@ import {
   IsOptional,
   IsUrl,
   IsDateString,
+  IsArray,
+  ArrayMinSize,
 } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
@@ -23,7 +24,6 @@ export class CreateClientDto {
   @Length(5, 20, { message: 'El NIT debe tener entre 5 y 20 caracteres' })
   nit: string;
 
-  // --- NUEVOS CAMPOS DE DIRECCIÓN DESGLOSADA ---
   @ApiProperty({
     example: 'Calle 123 #45-67',
     description: 'Dirección base (calle, carrera, número)',
@@ -51,18 +51,16 @@ export class CreateClientDto {
   @IsNotEmpty({ message: 'El país es requerido' })
   @IsString({ message: 'El país debe ser una cadena de texto' })
   pais: string;
-  // --- FIN NUEVOS CAMPOS DE DIRECCIÓN DESGLOSADA ---
 
   @ApiProperty({
     example: 'Calle 123 #45-67, El Poblado, Medellín, Antioquia, Colombia',
-    description:
-      'Dirección completa (autogenerada a partir de los campos desglosados)',
-    readOnly: true, // Indica que este campo no debe ser enviado por el cliente
+    description: 'Dirección completa (autogenerada)',
+    readOnly: true,
     required: false,
   })
   @IsOptional()
   @IsString()
-  direccionCompleta?: string; // Este campo será autogenerado en el backend
+  direccionCompleta?: string;
 
   @ApiProperty({ example: 'Juan Pérez', description: 'Persona de contacto' })
   @IsString({ message: 'El contacto debe ser una cadena de texto' })
@@ -110,11 +108,13 @@ export class CreateClientDto {
   fechaCreacionEmpresa: string;
 
   @ApiProperty({
-    example: 1,
-    description: 'ID del usuario contacto',
+    example: [1, 2, 3],
+    description: 'IDs de los usuarios contacto',
     required: false,
   })
   @IsOptional()
-  @IsNumber({}, { message: 'El ID de usuario debe ser un número' })
-  idUsuarioContacto?: number;
+  @IsArray({ message: 'Los IDs de usuarios contacto deben ser un array' })
+  @IsNumber({}, { each: true, message: 'Cada ID debe ser un número' })
+  @ArrayMinSize(1, { message: 'Debe haber al menos un usuario contacto' })
+  usuariosContactoIds?: number[];
 }

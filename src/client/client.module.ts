@@ -5,9 +5,13 @@ import { ClientController } from './client.controller';
 import { ClientService } from './client.service';
 import { Client } from './entities/client.entity';
 import { User } from '../users/entities/user.entity';
+import { UsersModule } from '../users/users.module'; // Importar UserModule
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Client, User])],
+  imports: [
+    TypeOrmModule.forFeature([Client, User]),
+    UsersModule,
+  ],
   controllers: [ClientController],
   providers: [ClientService],
   exports: [ClientService],
