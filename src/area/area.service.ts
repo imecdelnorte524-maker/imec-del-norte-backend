@@ -54,7 +54,7 @@ export class AreaService {
 
   async findAll(): Promise<Area[]> {
     return await this.areaRepository.find({
-      relations: ['cliente', 'cliente.usuarioContacto', 'subAreas'],
+      relations: ['cliente', 'subAreas'],
       order: { nombreArea: 'ASC' },
     });
   }
@@ -62,7 +62,7 @@ export class AreaService {
   async findOne(id: number): Promise<Area> {
     const area = await this.areaRepository.findOne({
       where: { idArea: id },
-      relations: ['cliente', 'cliente.usuarioContacto', 'subAreas'],
+      relations: ['cliente', 'subAreas'],
     });
     
     if (!area) {
@@ -75,7 +75,7 @@ export class AreaService {
   async findByClientId(clientId: number): Promise<Area[]> {
     return await this.areaRepository.find({
       where: { clienteId: clientId },
-      relations: ['cliente', 'cliente.usuarioContacto', 'subAreas'],
+      relations: ['cliente', 'subAreas'],
       order: { nombreArea: 'ASC' },
     });
   }
@@ -121,7 +121,7 @@ export class AreaService {
   async getAreaWithSubAreas(id: number): Promise<Area> {
     const area = await this.areaRepository.findOne({
       where: { idArea: id },
-      relations: ['cliente', 'cliente.usuarioContacto', 'subAreas'],
+      relations: ['cliente', 'subAreas'],
     });
     
     if (!area) {
