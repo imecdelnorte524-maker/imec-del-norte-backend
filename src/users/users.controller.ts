@@ -32,9 +32,9 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { User } from './entities/user.entity';
-import { UploadImageSwaggerDto } from 'src/images/dto/upload-image.dto';
+import { UploadImageSwaggerDto } from '../images/dto/upload-image.dto';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { ImagesService } from 'src/images/images.service';
+import { ImagesService } from '../images/images.service';
 import { Request } from 'express';
 
 @ApiTags('users')

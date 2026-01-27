@@ -17,8 +17,14 @@ async function bootstrap() {
 
   const config = new DocumentBuilder()
     .setTitle('IMEC del Norte API')
-    .setDescription('Sistema de gestión para IMEC del Norte')
+    .setDescription(
+      'Sistema de gestión para IMEC del Norte\n\n**Utilidades:**\n- [Gestión de Secuencias](/api/docs#/Database%20Sequences) - Para corregir problemas de IDs duplicados',
+    )
     .setVersion('1.0')
+    .addTag(
+      'Database Sequences',
+      'Endpoints para gestión y corrección de secuencias de base de datos',
+    )
     .addBearerAuth()
     .build();
 

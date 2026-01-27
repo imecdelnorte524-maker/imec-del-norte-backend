@@ -293,6 +293,34 @@ export class ToolController {
     };
   }
 
+  @Get('diagnose/sequence')
+  @Roles('Administrador')
+  @ApiOperation({
+    summary: 'Diagnóstico de secuencia de herramientas',
+    description: 'Verifica el estado de la secuencia de ID de herramientas',
+  })
+  async diagnoseSequence() {
+    const result = await this.toolService.fixSequenceIfNeeded();
+    return {
+      message: result.message,
+      corrected: result.corrected,
+    };
+  }
+
+  @Get('diagnose/table')
+  @Roles('Administrador')
+  @ApiOperation({
+    summary: 'Diagnóstico completo de tabla de herramientas',
+    description: 'Verifica secuencia, constraints y datos duplicados',
+  })
+  async diagnoseTable() {
+    const diagnosis = await this.toolService.diagnoseTable();
+    return {
+      message: 'Diagnóstico de tabla de herramientas completado',
+      data: diagnosis,
+    };
+  }
+
   private mapToResponseDto(tool: Tool): ToolResponseDto {
     const response: ToolResponseDto = {
       herramientaId: tool.herramientaId,

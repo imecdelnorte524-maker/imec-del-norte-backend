@@ -16,10 +16,8 @@ import { EquipmentStatus } from '../enums/equipment-status.enum';
 import { ServiceCategory } from '../../services/enums/service.enums';
 import { Image } from '../../images/entities/image.entity';
 import { AirConditionerType } from '../../air-conditioner-types/entities/air-conditioner-type.entity';
-import { EquipmentMotor } from './motor.entity';
 import { EquipmentEvaporator } from './evaporator.entity';
 import { EquipmentCondenser } from './condenser.entity';
-import { EquipmentCompressor } from './compressor.entity';
 import { PlanMantenimiento } from './plan-mantenimiento.entity';
 import { EquipmentWorkOrder } from '../../work-orders/entities/equipment-work-order.entity';
 

@@ -1,12 +1,11 @@
+// src/app.module.ts (VERSIÓN CORREGIDA)
 import { Module } from '@nestjs/common';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { EventEmitterModule } from '@nestjs/event-emitter';
-
 import databaseConfig from './config/database.config';
-// No importamos dataSource aquí para evitar que cargue las migraciones conflictivas
-
+import { DatabaseModule } from './database/database.module';
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
 import { ServicesModule } from './services/services.module';
@@ -31,12 +30,15 @@ import { ModulesModule } from './modules/modules.module';
 import { WarehousesModule } from './warehouses/warehouses.module';
 import { UnitMeasureModule } from './unit-measure/unit-measure.module';
 import { MaintenanceTypesModule } from './maintenance-types/maintenance-types.module';
-
+import { SequencesModule } from './database/sequences.module';
+import { CommonModule } from './common/common.module';
 @Module({
   imports: [
     ScheduleModule.forRoot(),
     EventEmitterModule.forRoot(),
-
+    DatabaseModule,
+    SequencesModule,
+    
     ConfigModule.forRoot({
       isGlobal: true,
       load: [databaseConfig],
@@ -51,15 +53,11 @@ import { MaintenanceTypesModule } from './maintenance-types/maintenance-types.mo
         
         return {
           ...dbConfig,
-          // IMPORTANTE: Dejamos el arreglo vacío para que NO cargue migraciones al bootear
-          migrations: [], 
-          // Desactivamos la ejecución automática
-          migrationsRun: false,
-          // ACTIVAMOS synchronize para que cree las tablas solo basándose en las @Entity()
+          // migrations: [], 
+          migrations: ['dist/src/migrations/*js'], 
+          migrationsRun: true,
           synchronize: true,
           autoLoadEntities: true,
-          // Cambiamos el nombre de la tabla de control para evitar colisiones
-          migrationsTableName: 'migrations_manual_log',
           logging: ['error', 'warn'], 
         };
       },
@@ -89,6 +87,7 @@ import { MaintenanceTypesModule } from './maintenance-types/maintenance-types.mo
     WarehousesModule,
     UnitMeasureModule,
     MaintenanceTypesModule,
+    CommonModule,
   ],
 })
 export class AppModule {}

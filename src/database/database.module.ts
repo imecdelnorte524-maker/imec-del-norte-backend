@@ -1,10 +1,10 @@
-import { Module } from '@nestjs/common';
-import { TypeOrmModule } from '@nestjs/typeorm';
-import { DatabaseSeedService } from './database-seed.service';
+import { Module, Global } from '@nestjs/common';
+import { SequenceCheckerService } from './sequence-checker';
 
+@Global()
 @Module({
-  imports: [TypeOrmModule.forFeature([])],
-  providers: [DatabaseSeedService],
-  exports: [DatabaseSeedService],
+  imports: [],
+  providers: [SequenceCheckerService],
+  exports: [SequenceCheckerService],
 })
 export class DatabaseModule {}

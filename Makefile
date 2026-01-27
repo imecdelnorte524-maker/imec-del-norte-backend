@@ -23,28 +23,17 @@ logs:
 test:
 	npm run build && rm -rf dist
 
-# MIGRACIONES CON DATA-SOURCE (FORMA CORRECTA)
 migrate:
-	npm run typeorm -- migration:run -d src/data-source.ts
+	npx cross-env DB_HOST=localhost NODE_ENV=development npm run typeorm -- migration:run -d src/data-source.ts
 
 revert:
-	npm run typeorm -- migration:revert -d src/data-source.ts
+	npx cross-env DB_HOST=localhost NODE_ENV=development npm run typeorm -- migration:revert -d src/data-source.ts
 
 migration-generate:
-	npm run typeorm -- migration:generate -d src/data-source.ts -n
+	npm cross-env DB_HOST=localhost NODE_ENV=development npx ts-node -r tsconfig-paths/register ./node_modules/typeorm/cli-ts-node-commonjs.js migration:generate src/migrations/$(name) -d src/data-source.ts
 
-migration-create:
-	npm run typeorm -- migration:create -d src/data-source.ts
-
-# PARA DOCKER
 db-migrate:
-	docker-compose exec backend npm run typeorm -- migration:run -d src/data-source.ts
+	docker-compose exec backend npm run migration:run
 
 db-revert:
-	docker-compose exec backend npm run typeorm -- migration:revert -d src/data-source.ts
-
-add:
-	git add .
-
-push:
-	git push origin main
+	docker-compose exec backend npm run migration:revert

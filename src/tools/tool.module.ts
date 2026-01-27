@@ -7,11 +7,13 @@ import { Tool } from './entities/tool.entity';
 import { Inventory } from '../inventory/entities/inventory.entity';
 import { Warehouse } from '../warehouses/entities/warehouse.entity';
 import { ImagesModule } from '../images/images.module';
+import { CommonModule } from '../common/common.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([Tool, Inventory, Warehouse]),
     ImagesModule,
+    CommonModule
   ],
   controllers: [ToolController],
   providers: [ToolService],

@@ -1,4 +1,3 @@
-// src/client/client.service.ts
 import {
   Injectable,
   NotFoundException,
@@ -7,7 +6,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, In } from 'typeorm';
 import { Client } from './entities/client.entity';
 import { User } from '../users/entities/user.entity';
 import { CreateClientDto } from './dto/create-client.dto';
@@ -28,9 +27,6 @@ export class ClientService {
     return currentUser?.role?.nombreRol || currentUser?.role || '';
   }
 
-  /**
-   * Helper para generar la dirección completa a partir de los campos desglosados.
-   */
   private _generateFullAddress(clientData: Partial<Client>): string {
     const parts = [
       clientData.direccionBase,
@@ -38,16 +34,10 @@ export class ClientService {
       clientData.ciudad,
       clientData.departamento,
       clientData.pais,
-    ].filter(Boolean); // Elimina valores nulos o vacíos/undefined
-
+    ].filter(Boolean);
     return parts.join(', ');
   }
 
-  /**
-   * Crea un cliente empresa.
-   * - Si el rol es Cliente: usa su propio usuario como contacto.
-   * - Si es Admin/Secretaria: debe enviar idUsuarioContacto.
-   */
   async create(
     createClientDto: CreateClientDto,
     currentUser: any,
@@ -70,55 +60,59 @@ export class ClientService {
       throw new ConflictException('Ya existe un cliente con este email');
     }
 
-    let usuarioContacto: User;
+    let usuariosContacto: User[] = [];
 
     if (roleName === 'Cliente') {
-      const uc = await this.userRepository.findOne({
+      // Para usuarios Cliente, se agrega automáticamente como contacto
+      const user = await this.userRepository.findOne({
         where: { usuarioId: currentUser.userId },
       });
 
-      if (!uc) {
+      if (!user) {
         throw new NotFoundException(
           `Usuario autenticado con ID ${currentUser.userId} no encontrado`,
         );
       }
 
-      usuarioContacto = uc;
-      createClientDto.idUsuarioContacto = currentUser.userId;
+      usuariosContacto = [user];
 
       // Opcionalmente forzamos algunos campos si vienen vacíos
       if (!createClientDto.contacto) {
-        createClientDto.contacto = `${uc.nombre} ${uc.apellido || ''}`.trim();
+        createClientDto.contacto = `${user.nombre} ${user.apellido || ''}`.trim();
       }
       if (!createClientDto.email) {
-        createClientDto.email = uc.email;
+        createClientDto.email = user.email;
       }
-      if (!createClientDto.telefono && uc.telefono) {
-        createClientDto.telefono = uc.telefono;
+      if (!createClientDto.telefono && user.telefono) {
+        createClientDto.telefono = user.telefono;
       }
     } else {
-      const uc = await this.userRepository.findOne({
-        where: { usuarioId: createClientDto.idUsuarioContacto },
-      });
+      // Para Administrador/Secretaria, usar los IDs proporcionados
+      if (createClientDto.usuariosContactoIds && createClientDto.usuariosContactoIds.length > 0) {
+        usuariosContacto = await this.userRepository.find({
+          where: { usuarioId: In(createClientDto.usuariosContactoIds) },
+        });
 
-      if (!uc) {
-        throw new NotFoundException(
-          `Usuario contacto con ID ${createClientDto.idUsuarioContacto} no encontrado`,
-        );
+        if (usuariosContacto.length !== createClientDto.usuariosContactoIds.length) {
+          const foundIds = usuariosContacto.map(u => u.usuarioId);
+          const missingIds = createClientDto.usuariosContactoIds.filter(id => !foundIds.includes(id));
+          throw new NotFoundException(
+            `Los siguientes usuarios contacto no existen: ${missingIds.join(', ')}`,
+          );
+        }
+      } else {
+        throw new BadRequestException('Debe proporcionar al menos un usuario contacto');
       }
-
-      usuarioContacto = uc;
     }
 
-    // Crear la instancia del cliente con los datos recibidos
+    // Crear la instancia del cliente
     const client = this.clientRepository.create({
       ...createClientDto,
-      usuarioContacto,
+      usuariosContacto,
     });
 
-    // --- AUTOGENERAR direccionCompleta ANTES DE GUARDAR ---
+    // Autogenerar dirección completa
     client.direccionCompleta = this._generateFullAddress(client);
-    // --- FIN AUTOGENERAR ---
 
     const savedClient = await this.clientRepository.save(client);
     this.logger.log(
@@ -129,7 +123,7 @@ export class ClientService {
 
   async findAll(): Promise<Client[]> {
     return await this.clientRepository.find({
-      relations: ['usuarioContacto', 'areas', 'areas.subAreas', 'images'],
+      relations: ['usuariosContacto', 'areas', 'areas.subAreas', 'images'],
       order: { nombre: 'ASC' },
     });
   }
@@ -137,7 +131,7 @@ export class ClientService {
   async findOne(id: number): Promise<Client> {
     const client = await this.clientRepository.findOne({
       where: { idCliente: id },
-      relations: ['usuarioContacto', 'areas', 'areas.subAreas', 'images', 'bodegas'],
+      relations: ['usuariosContacto', 'areas', 'areas.subAreas', 'images', 'bodegas'],
     });
 
     if (!client) {
@@ -150,7 +144,7 @@ export class ClientService {
   async findByNit(nit: string): Promise<Client | null> {
     return await this.clientRepository.findOne({
       where: { nit },
-      relations: ['usuarioContacto', 'areas', 'areas.subAreas', 'images', 'bodegas'],
+      relations: ['usuariosContacto', 'areas', 'areas.subAreas', 'images', 'bodegas'],
     });
   }
 
@@ -173,28 +167,30 @@ export class ClientService {
       }
     }
 
-    // Cambiar usuario contacto si viene un ID nuevo
-    if (
-      updateClientDto.idUsuarioContacto &&
-      updateClientDto.idUsuarioContacto !== client.idUsuarioContacto
-    ) {
-      const usuarioContacto = await this.userRepository.findOne({
-        where: { usuarioId: updateClientDto.idUsuarioContacto },
+    // Actualizar usuarios contacto si vienen IDs nuevos
+    if (updateClientDto.usuariosContactoIds !== undefined) {
+      if (updateClientDto.usuariosContactoIds.length === 0) {
+        throw new BadRequestException('Debe haber al menos un usuario contacto');
+      }
+
+      const usuariosContacto = await this.userRepository.find({
+        where: { usuarioId: In(updateClientDto.usuariosContactoIds) },
       });
 
-      if (!usuarioContacto) {
+      if (usuariosContacto.length !== updateClientDto.usuariosContactoIds.length) {
+        const foundIds = usuariosContacto.map(u => u.usuarioId);
+        const missingIds = updateClientDto.usuariosContactoIds.filter(id => !foundIds.includes(id));
         throw new NotFoundException(
-          `Usuario contacto con ID ${updateClientDto.idUsuarioContacto} no encontrado`,
+          `Los siguientes usuarios contacto no existen: ${missingIds.join(', ')}`,
         );
       }
 
-      client.usuarioContacto = usuarioContacto;
+      client.usuariosContacto = usuariosContacto;
     }
 
     Object.assign(client, updateClientDto);
 
-    // --- RE-AUTOGENERAR direccionCompleta DESPUÉS DE ASIGNAR LOS CAMBIOS ---
-    // Esto asegura que si se actualiza cualquier parte de la dirección, la completa se recalcule.
+    // Re-autogenerar dirección completa si hay cambios
     const hasAddressChanges =
       updateClientDto.direccionBase !== undefined ||
       updateClientDto.barrio !== undefined ||
@@ -205,7 +201,6 @@ export class ClientService {
     if (hasAddressChanges) {
       client.direccionCompleta = this._generateFullAddress(client);
     }
-    // --- FIN RE-AUTOGENERAR ---
 
     return await this.clientRepository.save(client);
   }
@@ -217,10 +212,81 @@ export class ClientService {
   }
 
   async findByUsuarioContacto(usuarioId: number): Promise<Client[]> {
-    return await this.clientRepository.find({
-      where: { idUsuarioContacto: usuarioId },
-      relations: ['usuarioContacto', 'areas', 'areas.subAreas', 'images'],
-      order: { nombre: 'ASC' },
+    return await this.clientRepository
+      .createQueryBuilder('client')
+      .innerJoin('client.usuariosContacto', 'usuario')
+      .where('usuario.usuarioId = :usuarioId', { usuarioId })
+      .leftJoinAndSelect('client.areas', 'areas')
+      .leftJoinAndSelect('areas.subAreas', 'subAreas')
+      .leftJoinAndSelect('client.images', 'images')
+      .orderBy('client.nombre', 'ASC')
+      .getMany();
+  }
+
+  async addUsuarioContacto(idCliente: number, usuarioId: number): Promise<Client> {
+    const client = await this.clientRepository.findOne({
+      where: { idCliente },
+      relations: ['usuariosContacto'],
     });
+
+    if (!client) {
+      throw new NotFoundException(`Cliente con ID ${idCliente} no encontrado`);
+    }
+
+    const user = await this.userRepository.findOne({
+      where: { usuarioId },
+    });
+
+    if (!user) {
+      throw new NotFoundException(`Usuario con ID ${usuarioId} no encontrado`);
+    }
+
+    // Verificar si el usuario ya es contacto
+    if (client.usuariosContacto.some(u => u.usuarioId === usuarioId)) {
+      throw new ConflictException('El usuario ya es contacto de este cliente');
+    }
+
+    client.usuariosContacto.push(user);
+    return this.clientRepository.save(client);
+  }
+
+  async removeUsuarioContacto(idCliente: number, usuarioId: number): Promise<Client> {
+    const client = await this.clientRepository.findOne({
+      where: { idCliente },
+      relations: ['usuariosContacto'],
+    });
+
+    if (!client) {
+      throw new NotFoundException(`Cliente con ID ${idCliente} no encontrado`);
+    }
+
+    // Verificar que haya al menos un usuario contacto
+    if (client.usuariosContacto.length <= 1) {
+      throw new BadRequestException('El cliente debe tener al menos un usuario contacto');
+    }
+
+    // Filtrar el usuario a remover
+    const initialCount = client.usuariosContacto.length;
+    client.usuariosContacto = client.usuariosContacto.filter(
+      u => u.usuarioId !== usuarioId,
+    );
+
+    if (client.usuariosContacto.length === initialCount) {
+      throw new NotFoundException('El usuario no es contacto de este cliente');
+    }
+
+    return this.clientRepository.save(client);
+  }
+
+  async getClientesByUsuario(usuarioId: number): Promise<Client[]> {
+    return this.clientRepository
+      .createQueryBuilder('client')
+      .innerJoin('client.usuariosContacto', 'usuario')
+      .where('usuario.usuarioId = :usuarioId', { usuarioId })
+      .leftJoinAndSelect('client.areas', 'areas')
+      .leftJoinAndSelect('areas.subAreas', 'subAreas')
+      .leftJoinAndSelect('client.images', 'images')
+      .orderBy('client.nombre', 'ASC')
+      .getMany();
   }
 }

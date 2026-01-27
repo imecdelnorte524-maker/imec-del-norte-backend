@@ -16,10 +16,14 @@ import { UpdateToolDto } from './dto/update-tools.dto';
 import { DeleteToolDto } from './dto/delete-tool.dto';
 import { ToolStatus, ToolType } from '../shared/enums/inventory.enum';
 import { ImagesService } from '../images/images.service';
+import { SequenceHelperService } from '../common/services/sequence-helper.service';
 
 @Injectable()
 export class ToolService {
   private readonly logger = new Logger(ToolService.name);
+  private readonly tableName = 'herramientas';
+  private readonly idColumn = 'herramienta_id';
+  private readonly sequenceName = 'tools_herramienta_id_seq';
 
   constructor(
     @InjectRepository(Tool)
@@ -30,7 +34,104 @@ export class ToolService {
     private warehouseRepository: Repository<Warehouse>,
     private dataSource: DataSource,
     private readonly imagesService: ImagesService,
-  ) {}
+    private readonly sequenceHelper: SequenceHelperService,
+  ) {
+    // Verificar secuencia al inicializar
+    this.initializeSequence().catch((error) => {
+      this.logger.warn(
+        `No se pudo inicializar secuencia de herramientas: ${error.message}`,
+      );
+    });
+  }
+
+  /**
+   * Inicializa y corrige la secuencia de herramienta_id
+   */
+  private async initializeSequence(): Promise<void> {
+    try {
+      const sequenceInfo = await this.sequenceHelper.checkAndFixSequence(
+        this.tableName,
+        this.idColumn,
+        this.sequenceName,
+      );
+
+      if (sequenceInfo.corrected) {
+        this.logger.log(
+          `✅ Secuencia de herramientas corregida: ${sequenceInfo.lastValue - 1} → ${sequenceInfo.maxId}`,
+        );
+      } else {
+        this.logger.log(
+          `✓ Secuencia de herramientas OK. Último valor: ${sequenceInfo.lastValue}`,
+        );
+      }
+    } catch (error) {
+      this.logger.warn(
+        `⚠️ No se pudo inicializar secuencia de herramientas: ${error.message}`,
+      );
+    }
+  }
+
+  /**
+   * Corrige la secuencia si está desincronizada
+   */
+  async fixSequenceIfNeeded(): Promise<{
+    corrected: boolean;
+    message: string;
+  }> {
+    try {
+      const sequenceInfo = await this.sequenceHelper.checkAndFixSequence(
+        this.tableName,
+        this.idColumn,
+        this.sequenceName,
+      );
+
+      if (sequenceInfo.corrected) {
+        return {
+          corrected: true,
+          message: `✅ Secuencia de herramientas corregida: ${sequenceInfo.lastValue - 1} → ${sequenceInfo.maxId}`,
+        };
+      }
+
+      return {
+        corrected: false,
+        message: 'Secuencia de herramientas ya está actualizada',
+      };
+    } catch (error) {
+      const errorMessage = `❌ Error corrigiendo secuencia de herramientas: ${error.message}`;
+      this.logger.error(errorMessage);
+      throw new Error(errorMessage);
+    }
+  }
+
+  /**
+   * Diagnóstico completo de la tabla de herramientas
+   */
+  async diagnoseTable(): Promise<any> {
+    try {
+      const diagnosis = await this.sequenceHelper.diagnoseTable(
+        this.tableName,
+        this.idColumn,
+        this.sequenceName,
+        ['serial'], // columnas que deberían ser únicas
+      );
+
+      // Información adicional específica de herramientas
+      const stats = await this.getEquipmentStats();
+      
+      return {
+        sequence: diagnosis.sequence,
+        uniqueConstraints: diagnosis.uniqueConstraints,
+        duplicateData: diagnosis.duplicateData,
+        stats,
+        recommendations: diagnosis.duplicateData.length > 0
+          ? ['Existen valores duplicados que podrían violar constraints']
+          : [],
+      };
+    } catch (error) {
+      this.logger.error('Error en diagnóstico de herramientas:', error);
+      throw error;
+    }
+  }
 
   async create(createToolDto: CreateToolDto): Promise<Tool> {
     const queryRunner = this.dataSource.createQueryRunner();
@@ -38,6 +139,9 @@ export class ToolService {
     await queryRunner.startTransaction();
 
     try {
+      // Verificar secuencia antes de crear
+      await this.fixSequenceIfNeeded();
+
       // Validar serial único
       if (createToolDto.serial) {
         const existing = await queryRunner.manager.findOne(Tool, {
@@ -96,8 +200,30 @@ export class ToolService {
       this.logger.log(`Herramienta creada: ${savedTool.herramientaId} - ${savedTool.nombre}`);
       
       return this.findOne(savedTool.herramientaId);
-    } catch (error) {
+    } catch (error: any) {
       await queryRunner.rollbackTransaction();
+      
+      // Manejar errores de duplicado en PK
+      if (error.code === '23505' && error.constraint === 'tools_pkey') {
+        this.logger.warn(
+          '⚠️ Error de duplicado en PK de herramientas, corrigiendo secuencia...',
+        );
+        await this.fixSequenceIfNeeded();
+        
+        throw new ConflictException(
+          'Error de duplicación en ID. La secuencia ha sido corregida. Intente nuevamente.',
+        );
+      }
+      
+      // Manejar errores de constraint UNIQUE
+      if (error.code === '23505') {
+        const uniqueError = await this.sequenceHelper.handleUniqueConstraintError(error);
+        if (uniqueError.suggestion) {
+          throw new ConflictException(`${uniqueError.message}. ${uniqueError.suggestion}`);
+        }
+        throw new ConflictException(uniqueError.message);
+      }
+      
       throw error;
     } finally {
       await queryRunner.release();
@@ -206,8 +332,18 @@ export class ToolService {
       this.logger.log(`Herramienta actualizada: ${id}`);
       
       return this.findOne(id);
-    } catch (error) {
+    } catch (error: any) {
       await queryRunner.rollbackTransaction();
+      
+      // Manejar errores de constraint UNIQUE
+      if (error.code === '23505') {
+        const uniqueError = await this.sequenceHelper.handleUniqueConstraintError(error);
+        if (uniqueError.suggestion) {
+          throw new ConflictException(`${uniqueError.message}. ${uniqueError.suggestion}`);
+        }
+        throw new ConflictException(uniqueError.message);
+      }
+      
       throw error;
     } finally {
       await queryRunner.release();

@@ -1,3 +1,4 @@
+// src/sub-area/sub-area.service.ts
 import {
   Injectable,
   NotFoundException,
@@ -26,7 +27,7 @@ export class SubAreaService {
   async create(createSubAreaDto: CreateSubAreaDto): Promise<SubArea> {
     const area = await this.areaRepository.findOne({
       where: { idArea: createSubAreaDto.areaId },
-      relations: ['cliente', 'cliente.usuarioContacto'],
+      relations: ['cliente', 'cliente.usuariosContacto'],
     });
 
     if (!area) {
@@ -92,7 +93,7 @@ export class SubAreaService {
 
   async findAll(): Promise<SubArea[]> {
     return await this.subAreaRepository.find({
-      relations: ['area', 'area.cliente', 'area.cliente.usuarioContacto'],
+      relations: ['area', 'area.cliente', 'area.cliente.usuariosContacto'],
       order: { nombreSubArea: 'ASC' },
     });
   }
@@ -100,7 +101,7 @@ export class SubAreaService {
   async findOne(id: number): Promise<SubArea> {
     const subArea = await this.subAreaRepository.findOne({
       where: { idSubArea: id },
-      relations: ['area', 'area.cliente', 'area.cliente.usuarioContacto'],
+      relations: ['area', 'area.cliente', 'area.cliente.usuariosContacto'],
     });
 
     if (!subArea) {
@@ -113,7 +114,7 @@ export class SubAreaService {
   async findByAreaId(areaId: number): Promise<SubArea[]> {
     return await this.subAreaRepository.find({
       where: { areaId: areaId },
-      relations: ['area', 'area.cliente', 'area.cliente.usuarioContacto'],
+      relations: ['area', 'area.cliente', 'area.cliente.usuariosContacto'],
       order: { nombreSubArea: 'ASC' },
     });
   }
@@ -123,7 +124,7 @@ export class SubAreaService {
       .createQueryBuilder('subArea')
       .leftJoinAndSelect('subArea.area', 'area')
       .leftJoinAndSelect('area.cliente', 'cliente')
-      .leftJoinAndSelect('cliente.usuarioContacto', 'usuarioContacto')
+      .leftJoinAndSelect('cliente.usuariosContacto', 'usuariosContacto')
       .where('cliente.idCliente = :clientId', { clientId })
       .orderBy('subArea.nombreSubArea', 'ASC')
       .getMany();
@@ -135,7 +136,7 @@ export class SubAreaService {
     if (updateSubAreaDto.areaId && updateSubAreaDto.areaId !== subArea.areaId) {
       const area = await this.areaRepository.findOne({
         where: { idArea: updateSubAreaDto.areaId },
-        relations: ['area', 'area.cliente', 'area.cliente.usuarioContacto'],
+        relations: ['cliente', 'cliente.usuariosContacto'],
       });
 
       if (!area) {
@@ -227,7 +228,7 @@ export class SubAreaService {
   async getHierarchy(subAreaId: number): Promise<any> {
     const subArea = await this.subAreaRepository.findOne({
       where: { idSubArea: subAreaId },
-      relations: ['area', 'area.cliente', 'area.cliente.usuarioContacto'],
+      relations: ['area', 'area.cliente', 'area.cliente.usuariosContacto'],
     });
 
     if (!subArea) {
@@ -235,6 +236,9 @@ export class SubAreaService {
         `Subárea con ID ${subAreaId} no encontrada`,
       );
     }
+
+    // Tomar el primer usuario contacto (o puedes ajustar según tu lógica)
+    const primerUsuarioContacto = subArea.area.cliente.usuariosContacto?.[0] || null;
 
     return {
       subArea: {
@@ -250,11 +254,11 @@ export class SubAreaService {
         nombre: subArea.area.cliente.nombre,
         nit: subArea.area.cliente.nit,
       },
-      usuarioContacto: {
-        usuarioId: subArea.area.cliente.usuarioContacto.usuarioId,
-        nombre: subArea.area.cliente.usuarioContacto.nombre,
-        email: subArea.area.cliente.usuarioContacto.email,
-      },
+      usuarioContacto: primerUsuarioContacto ? {
+        usuarioId: primerUsuarioContacto.usuarioId,
+        nombre: primerUsuarioContacto.nombre,
+        email: primerUsuarioContacto.email,
+      } : null,
     };
   }
 
@@ -264,7 +268,7 @@ export class SubAreaService {
     return await this.subAreaRepository.find({
       where: { parentSubAreaId },
       relations: ['area', 'area.cliente'],
-      order: { createdAt: 'ASC' }, // orden por creación para los índices
+      order: { createdAt: 'ASC' },
     });
   }
 

@@ -1,4 +1,3 @@
-// src/users/entities/user.entity.ts
 import {
   Entity,
   PrimaryGeneratedColumn,
@@ -7,13 +6,15 @@ import {
   JoinColumn,
   CreateDateColumn,
   OneToMany,
+  ManyToMany,
 } from 'typeorm';
 import { Role } from '../../roles/entities/role.entity';
 import { TipoCedula } from '../enums/Type-cedula.enum';
 import { Form } from '../../sg-sst/entities/form.entity';
-import { Image } from 'src/images/entities/image.entity';
+import { Image } from '../../images/entities/image.entity';
 import { UserPasswordHistory } from './user-password-history.entity';
 import { Genero } from '../enums/genero.enum';
+import { Client } from '../../client/entities/client.entity';
 
 @Entity('usuarios')
 export class User {
@@ -36,7 +37,6 @@ export class User {
   })
   tipoCedula?: TipoCedula | null;
 
-  // <-- explícito type: 'varchar' para evitar que TypeORM use la metadata "Object"
   @Column({ name: 'cedula', type: 'varchar', length: 10, nullable: true })
   cedula?: string | null;
 
@@ -87,7 +87,6 @@ export class User {
   @OneToMany(() => Image, (image) => image.user)
   images: Image[];
 
-  // Historial de contraseñas
   @OneToMany(() => UserPasswordHistory, (history) => history.user)
   passwordHistory: UserPasswordHistory[];
 
@@ -98,7 +97,6 @@ export class User {
   })
   mustChangePassword: boolean;
 
-  // --- NUEVOS CAMPOS DE PERFIL (con type explícito) ---
   @Column({
     name: 'ubicacion_residencia',
     type: 'varchar',
@@ -154,4 +152,8 @@ export class User {
     nullable: true,
   })
   contactoEmergenciaParentesco?: string | null;
+
+  // RELACIÓN BIDIRECCIONAL CON CLIENTES
+  @ManyToMany(() => Client, (client) => client.usuariosContacto)
+  clientesContacto: Client[];
 }
