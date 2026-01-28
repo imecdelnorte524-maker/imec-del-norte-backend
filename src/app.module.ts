@@ -53,9 +53,9 @@ import { CommonModule } from './common/common.module';
         
         return {
           ...dbConfig,
-          // migrations: [], 
-          migrations: ['dist/src/migrations/*js'], 
-          migrationsRun: true,
+          migrations: [], 
+          // migrations: ['dist/src/migrations/*js'], 
+          migrationsRun: false,
           synchronize: true,
           autoLoadEntities: true,
           logging: ['error', 'warn'], 
