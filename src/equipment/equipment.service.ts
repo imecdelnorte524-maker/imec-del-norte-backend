@@ -53,7 +53,10 @@ interface FullDiagnosis {
 }
 
 @Injectable()
-export class EquipmentService extends BaseSequenceService implements OnModuleInit {
+export class EquipmentService
+  extends BaseSequenceService
+  implements OnModuleInit
+{
   // Usar protected para que sea accesible desde la clase base
   protected readonly logger = new Logger(EquipmentService.name);
 
@@ -83,7 +86,7 @@ export class EquipmentService extends BaseSequenceService implements OnModuleIni
     private readonly dataSource: DataSource,
   ) {
     super(sequenceHelper);
-    
+
     // Configurar secuencia principal para equipos
     this.tableName = 'equipos';
     this.idColumn = 'equipo_id';
@@ -101,17 +104,37 @@ export class EquipmentService extends BaseSequenceService implements OnModuleIni
   private async initializeAllSequences(): Promise<void> {
     try {
       this.logger.log('🔧 Inicializando secuencias de equipos...');
-      
+
       // Inicializar secuencia principal de equipos
       await this.initializeSequence();
-      
+
       // Inicializar secuencias de tablas relacionadas
       const relatedSequences = [
-        { table: 'equipment_evaporators', idColumn: 'id', sequence: 'equipment_evaporators_id_seq' },
-        { table: 'equipment_condensers', idColumn: 'id', sequence: 'equipment_condensers_id_seq' },
-        { table: 'equipment_motors', idColumn: 'id', sequence: 'equipment_motors_id_seq' },
-        { table: 'equipment_compressors', idColumn: 'id', sequence: 'equipment_compressors_id_seq' },
-        { table: 'plan_mantenimiento', idColumn: 'id', sequence: 'plan_mantenimiento_id_seq' },
+        {
+          table: 'equipment_evaporators',
+          idColumn: 'id',
+          sequence: 'equipment_evaporators_id_seq',
+        },
+        {
+          table: 'equipment_condensers',
+          idColumn: 'id',
+          sequence: 'equipment_condensers_id_seq',
+        },
+        {
+          table: 'equipment_motors',
+          idColumn: 'id',
+          sequence: 'equipment_motors_id_seq',
+        },
+        {
+          table: 'equipment_compressors',
+          idColumn: 'id',
+          sequence: 'equipment_compressors_id_seq',
+        },
+        {
+          table: 'plan_mantenimiento',
+          idColumn: 'id',
+          sequence: 'plan_mantenimiento_id_seq',
+        },
       ];
 
       for (const seq of relatedSequences) {
@@ -119,17 +142,19 @@ export class EquipmentService extends BaseSequenceService implements OnModuleIni
           const result = await this.sequenceHelper.checkAndFixSequence(
             seq.table,
             seq.idColumn,
-            seq.sequence
+            seq.sequence,
           );
-          
+
           if (result.corrected) {
             this.logger.log(`✅ Secuencia ${seq.sequence} corregida`);
           }
         } catch (error) {
-          this.logger.warn(`⚠️ No se pudo inicializar secuencia ${seq.sequence}: ${error.message}`);
+          this.logger.warn(
+            `⚠️ No se pudo inicializar secuencia ${seq.sequence}: ${error.message}`,
+          );
         }
       }
-      
+
       this.logger.log('✅ Secuencias de equipos inicializadas correctamente');
     } catch (error) {
       this.logger.error('❌ Error inicializando secuencias de equipos:', error);
@@ -142,36 +167,36 @@ export class EquipmentService extends BaseSequenceService implements OnModuleIni
   async getFullDiagnosis(): Promise<FullDiagnosis> {
     try {
       this.logger.log('🔍 Ejecutando diagnóstico completo de equipos...');
-      
+
       // Diagnóstico de tablas principales
       const equipmentDiagnosis = await this.diagnoseTable(['code']);
       const evaporatorsDiagnosis = await this.sequenceHelper.diagnoseTable(
         'equipment_evaporators',
         'id',
         'equipment_evaporators_id_seq',
-        ['serial']
+        ['serial'],
       );
       const condensersDiagnosis = await this.sequenceHelper.diagnoseTable(
         'equipment_condensers',
         'id',
         'equipment_condensers_id_seq',
-        ['serial']
+        ['serial'],
       );
       const motorsDiagnosis = await this.sequenceHelper.diagnoseTable(
         'equipment_motors',
         'id',
-        'equipment_motors_id_seq'
+        'equipment_motors_id_seq',
       );
       const compressorsDiagnosis = await this.sequenceHelper.diagnoseTable(
         'equipment_compressors',
         'id',
         'equipment_compressors_id_seq',
-        ['serial']
+        ['serial'],
       );
       const planDiagnosis = await this.sequenceHelper.diagnoseTable(
         'plan_mantenimiento',
         'id',
-        'plan_mantenimiento_id_seq'
+        'plan_mantenimiento_id_seq',
       );
 
       // Verificar integridad de relaciones
@@ -247,7 +272,6 @@ export class EquipmentService extends BaseSequenceService implements OnModuleIni
           severity: 'HIGH',
         });
       }
-
     } catch (error) {
       this.logger.warn('Error verificando registros huérfanos:', error);
     }
@@ -270,7 +294,9 @@ export class EquipmentService extends BaseSequenceService implements OnModuleIni
       .getRawMany();
 
     if (duplicateCodes.length > 0) {
-      recommendations.push(`Se encontraron ${duplicateCodes.length} códigos de equipo duplicados.`);
+      recommendations.push(
+        `Se encontraron ${duplicateCodes.length} códigos de equipo duplicados.`,
+      );
     }
 
     // Verificar equipos sin ubicación
@@ -280,7 +306,9 @@ export class EquipmentService extends BaseSequenceService implements OnModuleIni
       .getCount();
 
     if (equipmentWithoutLocation > 0) {
-      recommendations.push(`${equipmentWithoutLocation} equipos no tienen ubicación asignada.`);
+      recommendations.push(
+        `${equipmentWithoutLocation} equipos no tienen ubicación asignada.`,
+      );
     }
 
     return recommendations;
@@ -292,15 +320,15 @@ export class EquipmentService extends BaseSequenceService implements OnModuleIni
 
   private getClientInitials(clientName: string): string {
     if (!clientName?.trim()) return 'XX';
-    
+
     const ignore = new Set(['de', 'del', 'la', 'el', 'los', 'las', 'y']);
     const words = clientName
       .split(/\s+/)
       .map((w) => w.trim())
       .filter((w) => w.length > 0 && !ignore.has(w.toLowerCase()));
-    
+
     if (words.length === 0) return 'XX';
-    
+
     return words
       .slice(0, 2)
       .map((w) => w[0].toUpperCase())
@@ -325,12 +353,12 @@ export class EquipmentService extends BaseSequenceService implements OnModuleIni
       where: { clienteId: clientId },
       order: { createdAt: 'ASC' },
     });
-    
+
     const index = areas.findIndex((a) => a.idArea === areaId);
     if (index === -1) {
       throw new BadRequestException('Área no pertenece al cliente');
     }
-    
+
     return (index + 1).toString().padStart(2, '0');
   }
 
@@ -338,7 +366,7 @@ export class EquipmentService extends BaseSequenceService implements OnModuleIni
     const subArea = await this.subAreaRepository.findOne({
       where: { idSubArea: subAreaId },
     });
-    
+
     if (!subArea) {
       throw new BadRequestException('Subárea no encontrada');
     }
@@ -356,7 +384,7 @@ export class EquipmentService extends BaseSequenceService implements OnModuleIni
     if (index === -1) {
       throw new BadRequestException('Error calculando índice de subárea');
     }
-    
+
     return (index + 1).toString().padStart(2, '0');
   }
 
@@ -388,7 +416,7 @@ export class EquipmentService extends BaseSequenceService implements OnModuleIni
 
     let subAreasPath = '';
     let current = subAreaId ?? null;
-    
+
     while (current) {
       const index = await this.getSubAreaIndex(current);
       subAreasPath = index + subAreasPath;
@@ -397,7 +425,7 @@ export class EquipmentService extends BaseSequenceService implements OnModuleIni
       });
       current = sub?.parentSubAreaId ?? null;
     }
-    
+
     if (!subAreasPath) {
       subAreasPath = '00';
     }
@@ -417,7 +445,7 @@ export class EquipmentService extends BaseSequenceService implements OnModuleIni
 
   async create(dto: CreateEquipmentDto): Promise<Equipment> {
     this.logger.log(`Creando equipo para cliente: ${dto.clientId}`);
-    
+
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
     await queryRunner.startTransaction();
@@ -430,7 +458,7 @@ export class EquipmentService extends BaseSequenceService implements OnModuleIni
       const client = await this.clientRepository.findOne({
         where: { idCliente: dto.clientId },
       });
-      
+
       if (!client) {
         throw new NotFoundException(`Cliente ${dto.clientId} no encontrado`);
       }
@@ -447,21 +475,23 @@ export class EquipmentService extends BaseSequenceService implements OnModuleIni
         const sub = await this.subAreaRepository.findOne({
           where: { idSubArea: finalSubAreaId },
         });
-        
+
         if (!sub) {
-          throw new NotFoundException(`Subárea ${finalSubAreaId} no encontrada`);
+          throw new NotFoundException(
+            `Subárea ${finalSubAreaId} no encontrada`,
+          );
         }
-        
+
         if (finalAreaId && finalAreaId !== sub.areaId) {
           throw new BadRequestException('Área no coincide con subárea');
         }
-        
+
         finalAreaId = sub.areaId;
       } else if (finalAreaId) {
         const area = await this.areaRepository.findOne({
           where: { idArea: finalAreaId },
         });
-        
+
         if (!area) {
           throw new NotFoundException(`Área ${finalAreaId} no encontrada`);
         }
@@ -474,7 +504,7 @@ export class EquipmentService extends BaseSequenceService implements OnModuleIni
       if (!finalAreaId) {
         throw new BadRequestException('Área requerida para generar código');
       }
-      
+
       const code = await this.generateEquipmentCode(
         client,
         finalAreaId,
@@ -488,7 +518,9 @@ export class EquipmentService extends BaseSequenceService implements OnModuleIni
       });
 
       if (existingWithCode) {
-        throw new BadRequestException(`Ya existe un equipo con el código ${code}`);
+        throw new BadRequestException(
+          `Ya existe un equipo con el código ${code}`,
+        );
       }
 
       // Crear equipo base
@@ -511,26 +543,31 @@ export class EquipmentService extends BaseSequenceService implements OnModuleIni
       );
 
       await queryRunner.commitTransaction();
-      this.logger.log(`Equipo creado exitosamente: ${savedEquipment.equipmentId} con código ${code}`);
+      this.logger.log(
+        `Equipo creado exitosamente: ${savedEquipment.equipmentId} con código ${code}`,
+      );
 
       return this.findOne(savedEquipment.equipmentId);
     } catch (error) {
       await queryRunner.rollbackTransaction();
       this.logger.error(`Error creando equipo: ${error.message}`, error.stack);
-      
+
       // Manejar errores de constraint UNIQUE
-      const constraintResult = await this.sequenceHelper.handleUniqueConstraintError(error);
+      const constraintResult =
+        await this.sequenceHelper.handleUniqueConstraintError(error);
       if (!constraintResult.handled && constraintResult.suggestion) {
-        throw new BadRequestException(`${constraintResult.message}. ${constraintResult.suggestion}`);
+        throw new BadRequestException(
+          `${constraintResult.message}. ${constraintResult.suggestion}`,
+        );
       }
-      
+
       if (
         error instanceof NotFoundException ||
         error instanceof BadRequestException
       ) {
         throw error;
       }
-      
+
       throw new InternalServerErrorException(
         'Error al crear el equipo. Por favor, intente nuevamente.',
       );
@@ -552,20 +589,35 @@ export class EquipmentService extends BaseSequenceService implements OnModuleIni
 
   private async validateCategoryAndAirConditionerType(
     dto: CreateEquipmentDto | UpdateEquipmentDto,
+    currentCategory?: ServiceCategory,
   ): Promise<void> {
-    if (dto.category === ServiceCategory.AIRES_ACONDICIONADOS) {
-      if (!dto.airConditionerTypeId) {
-        throw new BadRequestException('Tipo de aire requerido para equipos de aire acondicionado');
+    const finalCategory =
+      dto.category !== undefined ? dto.category : currentCategory;
+
+    if (!finalCategory) {
+      throw new BadRequestException('Categoria es requerida');
+    }
+
+    if (finalCategory === ServiceCategory.AIRES_ACONDICIONADOS) {
+      const acTypeId = dto.airConditionerTypeId;
+
+      if (!acTypeId) {
+        throw new BadRequestException(
+          'Tipo de aire requerido para equipos de aire acondicionado',
+        );
       }
-      
+
       const acType = await this.acTypeRepository.findOne({
-        where: { id: dto.airConditionerTypeId },
+        where: { id: acTypeId },
       });
-      
+
       if (!acType) {
         throw new BadRequestException('Tipo de aire no existe');
       }
-    } else if (dto.airConditionerTypeId) {
+
+      return;
+    }
+    if (dto.airConditionerTypeId != null) {
       throw new BadRequestException(
         'Solo aires acondicionados pueden tener tipo de aire',
       );
@@ -589,7 +641,11 @@ export class EquipmentService extends BaseSequenceService implements OnModuleIni
 
     // Crear plan de mantenimiento si existe
     if (dto.planMantenimiento) {
-      await this.createMaintenancePlan(queryRunner, equipmentId, dto.planMantenimiento);
+      await this.createMaintenancePlan(
+        queryRunner,
+        equipmentId,
+        dto.planMantenimiento,
+      );
     }
   }
 
@@ -600,12 +656,12 @@ export class EquipmentService extends BaseSequenceService implements OnModuleIni
   ): Promise<void> {
     for (const evapDto of evaporators) {
       const { motors, ...evapData } = evapDto;
-      
+
       const evaporator = this.evaporatorRepository.create({
         ...evapData,
         equipmentId,
       });
-      
+
       const savedEvaporator = await queryRunner.manager.save(evaporator);
 
       if (motors?.length) {
@@ -616,7 +672,7 @@ export class EquipmentService extends BaseSequenceService implements OnModuleIni
             evaporator: savedEvaporator,
           }),
         );
-        
+
         await queryRunner.manager.save(EquipmentMotor, evaporatorMotors);
       }
     }
@@ -629,12 +685,12 @@ export class EquipmentService extends BaseSequenceService implements OnModuleIni
   ): Promise<void> {
     for (const condDto of condensers) {
       const { motors, compressors, ...condData } = condDto;
-      
+
       const condenser = this.condenserRepository.create({
         ...condData,
         equipmentId,
       });
-      
+
       const savedCondenser = await queryRunner.manager.save(condenser);
 
       if (motors?.length) {
@@ -645,7 +701,7 @@ export class EquipmentService extends BaseSequenceService implements OnModuleIni
             condenser: savedCondenser,
           }),
         );
-        
+
         await queryRunner.manager.save(EquipmentMotor, condenserMotors);
       }
 
@@ -657,8 +713,11 @@ export class EquipmentService extends BaseSequenceService implements OnModuleIni
             condenser: savedCondenser,
           }),
         );
-        
-        await queryRunner.manager.save(EquipmentCompressor, condenserCompressors);
+
+        await queryRunner.manager.save(
+          EquipmentCompressor,
+          condenserCompressors,
+        );
       }
     }
   }
@@ -668,12 +727,39 @@ export class EquipmentService extends BaseSequenceService implements OnModuleIni
     equipmentId: number,
     planData: any,
   ): Promise<void> {
+    const existing = await queryRunner.manager.findOne(PlanMantenimiento, {
+      where: { equipmentId },
+    });
+
+    if (existing) {
+      const merged = this.planMantenimientoRepository.merge(existing, planData);
+      await queryRunner.manager.save(merged);
+      return;
+    }
+
     const planMantenimiento = this.planMantenimientoRepository.create({
       ...planData,
       equipmentId,
     });
-    
-    await queryRunner.manager.save(planMantenimiento);
+
+    try {
+      await queryRunner.manager.save(planMantenimiento);
+    } catch (error) {
+      this.logger.error(
+        `Error guardadnod plan para equipo ${equipmentId}: ${error.message}`,
+        error.stack,
+      );
+
+      const existing = await queryRunner.manager.query(
+        'SELECT * FROM plan_mantenimiento WHERE equipment_id = $1',
+        [equipmentId],
+      );
+      this.logger.warn(
+        `Planes existentes para equipment_id=${equipmentId}: ${JSON.stringify(existing)}`,
+      );
+
+      throw error;
+    }
   }
 
   // ────────────────────────────────────────────────────────────────
@@ -708,23 +794,23 @@ export class EquipmentService extends BaseSequenceService implements OnModuleIni
     if (params?.clientId) {
       qb.andWhere('e.clientId = :clientId', { clientId: params.clientId });
     }
-    
+
     if (params?.areaId) {
       qb.andWhere('e.areaId = :areaId', { areaId: params.areaId });
     }
-    
+
     if (params?.subAreaId) {
       qb.andWhere('e.subAreaId = :subAreaId', { subAreaId: params.subAreaId });
     }
-    
+
     if (params?.category) {
       qb.andWhere('e.category = :category', { category: params.category });
     }
-    
+
     if (params?.status) {
       qb.andWhere('e.status = :status', { status: params.status });
     }
-    
+
     if (params?.search) {
       qb.andWhere('(e.code ILIKE :search OR e.notes ILIKE :search)', {
         search: `%${params.search}%`,
@@ -757,7 +843,7 @@ export class EquipmentService extends BaseSequenceService implements OnModuleIni
     if (!eq) {
       throw new NotFoundException(`Equipo ${id} no encontrado`);
     }
-    
+
     return eq;
   }
 
@@ -765,7 +851,7 @@ export class EquipmentService extends BaseSequenceService implements OnModuleIni
     if (!ids || ids.length === 0) {
       return [];
     }
-    
+
     return await this.equipmentRepository.find({
       where: { equipmentId: In(ids) },
       relations: ['client', 'area', 'subArea'],
@@ -778,7 +864,7 @@ export class EquipmentService extends BaseSequenceService implements OnModuleIni
 
   async update(id: number, dto: UpdateEquipmentDto): Promise<Equipment> {
     this.logger.log(`Actualizando equipo: ${id}`);
-    
+
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
     await queryRunner.startTransaction();
@@ -800,7 +886,7 @@ export class EquipmentService extends BaseSequenceService implements OnModuleIni
       );
 
       // Validar categoría y tipo de aire
-      await this.validateCategoryAndAirConditionerType(dto);
+      await this.validateCategoryAndAirConditionerType(dto, equipment.category);
       await this.handleCategoryUpdate(equipment, dto);
 
       // Actualizar campos simples
@@ -816,11 +902,7 @@ export class EquipmentService extends BaseSequenceService implements OnModuleIni
         condensers !== undefined ||
         planMantenimiento !== undefined
       ) {
-        await this.updateComponentsWithQueryRunner(
-          queryRunner,
-          id,
-          dto,
-        );
+        await this.updateComponentsWithQueryRunner(queryRunner, id, dto);
       }
 
       await queryRunner.commitTransaction();
@@ -829,14 +911,20 @@ export class EquipmentService extends BaseSequenceService implements OnModuleIni
       return this.findOne(id);
     } catch (error) {
       await queryRunner.rollbackTransaction();
-      this.logger.error(`Error actualizando equipo ${id}: ${error.message}`, error.stack);
-      
+      this.logger.error(
+        `Error actualizando equipo ${id}: ${error.message}`,
+        error.stack,
+      );
+
       // Manejar errores de constraint UNIQUE
-      const constraintResult = await this.sequenceHelper.handleUniqueConstraintError(error);
+      const constraintResult =
+        await this.sequenceHelper.handleUniqueConstraintError(error);
       if (!constraintResult.handled && constraintResult.suggestion) {
-        throw new BadRequestException(`${constraintResult.message}. ${constraintResult.suggestion}`);
+        throw new BadRequestException(
+          `${constraintResult.message}. ${constraintResult.suggestion}`,
+        );
       }
-      
+
       throw error;
     } finally {
       await queryRunner.release();
@@ -850,11 +938,11 @@ export class EquipmentService extends BaseSequenceService implements OnModuleIni
     const client = await this.clientRepository.findOne({
       where: { idCliente: clientId },
     });
-    
+
     if (!client) {
       throw new NotFoundException(`Cliente ${clientId} no encontrado`);
     }
-    
+
     equipment.clientId = clientId;
     equipment.client = client;
   }
@@ -879,21 +967,21 @@ export class EquipmentService extends BaseSequenceService implements OnModuleIni
       const sub = await this.subAreaRepository.findOne({
         where: { idSubArea: finalSub },
       });
-      
+
       if (!sub) {
         throw new NotFoundException('Subárea no encontrada');
       }
-      
+
       if (finalArea != null && finalArea !== sub.areaId) {
         throw new BadRequestException('Área no coincide con subárea');
       }
-      
+
       finalArea = sub.areaId;
     } else if (finalArea != null) {
       const area = await this.areaRepository.findOne({
         where: { idArea: finalArea },
       });
-      
+
       if (!area) {
         throw new NotFoundException('Área no encontrada');
       }
@@ -914,16 +1002,18 @@ export class EquipmentService extends BaseSequenceService implements OnModuleIni
           finalSub,
           equipment.category,
         );
-        
+
         // Verificar que el nuevo código no exista
         const existingWithCode = await this.equipmentRepository.findOne({
           where: { code: newCode, equipmentId: Not(equipment.equipmentId) },
         });
 
         if (existingWithCode) {
-          throw new BadRequestException(`Ya existe un equipo con el código ${newCode}`);
+          throw new BadRequestException(
+            `Ya existe un equipo con el código ${newCode}`,
+          );
         }
-        
+
         equipment.code = newCode;
       }
     }
@@ -942,7 +1032,7 @@ export class EquipmentService extends BaseSequenceService implements OnModuleIni
         if (dto.airConditionerTypeId == null) {
           throw new BadRequestException('Tipo de aire requerido');
         }
-        
+
         equipment.airConditionerTypeId = dto.airConditionerTypeId;
       } else {
         equipment.airConditionerTypeId = undefined;
@@ -953,7 +1043,7 @@ export class EquipmentService extends BaseSequenceService implements OnModuleIni
           'Solo aires acondicionados pueden tener tipo de aire',
         );
       }
-      
+
       equipment.airConditionerTypeId = dto.airConditionerTypeId;
     }
   }
@@ -968,7 +1058,7 @@ export class EquipmentService extends BaseSequenceService implements OnModuleIni
       where: { equipmentId },
       select: ['id'],
     });
-    
+
     const existingCondensers = await this.condenserRepository.find({
       where: { equipmentId },
       select: ['id'],
@@ -976,14 +1066,14 @@ export class EquipmentService extends BaseSequenceService implements OnModuleIni
 
     // Eliminar motores asociados a los componentes que se van a eliminar
     if (existingEvaporators.length > 0) {
-      const evaporatorIds = existingEvaporators.map(ev => ev.id);
+      const evaporatorIds = existingEvaporators.map((ev) => ev.id);
       await queryRunner.manager.delete(EquipmentMotor, {
         evaporatorId: In(evaporatorIds),
       });
     }
 
     if (existingCondensers.length > 0) {
-      const condenserIds = existingCondensers.map(cond => cond.id);
+      const condenserIds = existingCondensers.map((cond) => cond.id);
       await queryRunner.manager.delete(EquipmentMotor, {
         condenserId: In(condenserIds),
       });
@@ -1007,7 +1097,11 @@ export class EquipmentService extends BaseSequenceService implements OnModuleIni
     }
 
     if (dto.planMantenimiento) {
-      await this.createMaintenancePlan(queryRunner, equipmentId, dto.planMantenimiento);
+      await this.createMaintenancePlan(
+        queryRunner,
+        equipmentId,
+        dto.planMantenimiento,
+      );
     }
   }
 
@@ -1017,7 +1111,7 @@ export class EquipmentService extends BaseSequenceService implements OnModuleIni
 
   async remove(id: number): Promise<void> {
     this.logger.log(`Eliminando equipo: ${id}`);
-    
+
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
     await queryRunner.startTransaction();
@@ -1025,18 +1119,21 @@ export class EquipmentService extends BaseSequenceService implements OnModuleIni
     try {
       // Verificar que el equipo existe
       const eq = await this.findOne(id);
-      
+
       // Eliminar imágenes asociadas
       await this.imagesService.deleteByEquipment(id);
-      
+
       // Eliminar equipo (las relaciones cascade deberían eliminar el resto)
       await queryRunner.manager.remove(Equipment, eq);
-      
+
       await queryRunner.commitTransaction();
       this.logger.log(`Equipo ${id} eliminado exitosamente`);
     } catch (error) {
       await queryRunner.rollbackTransaction();
-      this.logger.error(`Error eliminando equipo ${id}: ${error.message}`, error.stack);
+      this.logger.error(
+        `Error eliminando equipo ${id}: ${error.message}`,
+        error.stack,
+      );
       throw error;
     } finally {
       await queryRunner.release();
@@ -1121,39 +1218,39 @@ export class EquipmentService extends BaseSequenceService implements OnModuleIni
     notes?: string,
   ): Promise<Equipment> {
     const equipment = await this.findOne(id);
-    
+
     equipment.status = status;
-    
+
     if (notes) {
-      equipment.notes = equipment.notes 
+      equipment.notes = equipment.notes
         ? `${equipment.notes}\n${new Date().toISOString()}: ${notes}`
         : `${new Date().toISOString()}: ${notes}`;
     }
-    
+
     return await this.equipmentRepository.save(equipment);
   }
 
   async getStatistics(clientId?: number): Promise<any> {
     const query = this.equipmentRepository.createQueryBuilder('e');
-    
+
     if (clientId) {
       query.where('e.clientId = :clientId', { clientId });
     }
-    
+
     const total = await query.getCount();
-    
+
     const byCategory = await query
       .select('e.category', 'category')
       .addSelect('COUNT(*)', 'count')
       .groupBy('e.category')
       .getRawMany();
-    
+
     const byStatus = await query
       .select('e.status', 'status')
       .addSelect('COUNT(*)', 'count')
       .groupBy('e.status')
       .getRawMany();
-    
+
     return {
       total,
       byCategory: byCategory.reduce((acc, curr) => {
@@ -1170,9 +1267,12 @@ export class EquipmentService extends BaseSequenceService implements OnModuleIni
   /**
    * Método público para corregir secuencias manualmente
    */
-  async fixSequences(): Promise<{ corrected: boolean; details: SequenceCorrection[] }> {
+  async fixSequences(): Promise<{
+    corrected: boolean;
+    details: SequenceCorrection[];
+  }> {
     const corrections: SequenceCorrection[] = [];
-    
+
     try {
       // Corregir secuencia principal
       const mainSequence = await this.fixSequenceIfNeeded();
@@ -1185,11 +1285,31 @@ export class EquipmentService extends BaseSequenceService implements OnModuleIni
 
       // Corregir secuencias relacionadas
       const relatedSequences = [
-        { table: 'equipment_evaporators', idColumn: 'id', sequence: 'equipment_evaporators_id_seq' },
-        { table: 'equipment_condensers', idColumn: 'id', sequence: 'equipment_condensers_id_seq' },
-        { table: 'equipment_motors', idColumn: 'id', sequence: 'equipment_motors_id_seq' },
-        { table: 'equipment_compressors', idColumn: 'id', sequence: 'equipment_compressors_id_seq' },
-        { table: 'plan_mantenimiento', idColumn: 'id', sequence: 'plan_mantenimiento_id_seq' },
+        {
+          table: 'equipment_evaporators',
+          idColumn: 'id',
+          sequence: 'equipment_evaporators_id_seq',
+        },
+        {
+          table: 'equipment_condensers',
+          idColumn: 'id',
+          sequence: 'equipment_condensers_id_seq',
+        },
+        {
+          table: 'equipment_motors',
+          idColumn: 'id',
+          sequence: 'equipment_motors_id_seq',
+        },
+        {
+          table: 'equipment_compressors',
+          idColumn: 'id',
+          sequence: 'equipment_compressors_id_seq',
+        },
+        {
+          table: 'plan_mantenimiento',
+          idColumn: 'id',
+          sequence: 'plan_mantenimiento_id_seq',
+        },
       ];
 
       for (const seq of relatedSequences) {
@@ -1197,14 +1317,16 @@ export class EquipmentService extends BaseSequenceService implements OnModuleIni
           const result = await this.sequenceHelper.checkAndFixSequence(
             seq.table,
             seq.idColumn,
-            seq.sequence
+            seq.sequence,
           );
-          
+
           corrections.push({
             table: seq.table,
             sequence: seq.sequence,
             corrected: result.corrected,
-            message: result.corrected ? `Corregida de ${result.lastValue - 1} a ${result.maxId}` : 'Ya estaba sincronizada',
+            message: result.corrected
+              ? `Corregida de ${result.lastValue - 1} a ${result.maxId}`
+              : 'Ya estaba sincronizada',
           });
         } catch (error: any) {
           corrections.push({
@@ -1216,8 +1338,8 @@ export class EquipmentService extends BaseSequenceService implements OnModuleIni
         }
       }
 
-      const anyCorrected = corrections.some(c => c.corrected);
-      
+      const anyCorrected = corrections.some((c) => c.corrected);
+
       return {
         corrected: anyCorrected,
         details: corrections,
