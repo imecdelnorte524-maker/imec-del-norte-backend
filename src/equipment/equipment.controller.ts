@@ -233,7 +233,8 @@ export class EquipmentController {
 
       planMantenimiento: equipment.planMantenimiento
         ? {
-            frecuencia: equipment.planMantenimiento.frecuencia,
+            unidadFrecuencia: equipment.planMantenimiento.unidadFrecuencia,
+            diaDelMes: equipment.planMantenimiento.diaDelMes,
             fechaProgramada: equipment.planMantenimiento.fechaProgramada,
             notas: equipment.planMantenimiento.notas,
           }

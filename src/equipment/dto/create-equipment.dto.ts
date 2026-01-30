@@ -62,13 +62,6 @@ export class CreateEquipmentDto {
   @IsString()
   notes?: string;
 
-  // ⚠️ ELIMINADO: workOrderId (ahora es relación N:M a través de equipment_work_order)
-  // @ApiPropertyOptional({ example: 15 })
-  // @IsOptional()
-  // @IsNumber()
-  // workOrderId?: number;
-
-  // Nuevos campos anidados
   @ApiPropertyOptional({ type: [CreateEvaporatorDto] })
   @IsOptional()
   @ValidateNested({ each: true })

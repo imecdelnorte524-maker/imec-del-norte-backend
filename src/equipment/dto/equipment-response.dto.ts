@@ -210,8 +210,11 @@ class CondenserResponseDto {
 }
 
 class PlanMantenimientoResponseDto {
-  @ApiPropertyOptional({ example: 'trimestral' })
-  frecuencia?: string;
+  @ApiPropertyOptional({ example: 'MES' })
+  unidadFrecuencia?: string;
+
+  @ApiPropertyOptional({ example: 20 })
+  diaDelMes?: number;
 
   @ApiPropertyOptional({ example: '2026-04-15' })
   fechaProgramada?: Date;

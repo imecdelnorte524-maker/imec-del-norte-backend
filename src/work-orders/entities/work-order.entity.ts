@@ -17,6 +17,7 @@ import { WorkOrderStatus } from '../enums/work-order-status.enum';
 import { BillingStatus } from '../enums/billing-status.enum';
 import { ServiceRequestType } from '../enums/service-request-type.enum';
 import { EquipmentWorkOrder } from './equipment-work-order.entity';
+import { PlanMantenimiento } from '../../equipment/entities/plan-mantenimiento.entity';
 
 @Entity('ordenes_trabajo')
 export class WorkOrder {
@@ -53,6 +54,10 @@ export class WorkOrder {
 
   @CreateDateColumn({ name: 'fecha_solicitud' })
   fechaSolicitud!: Date;
+
+  // NUEVO: fecha programada del mantenimiento
+  @Column({ name: 'fecha_programada', type: 'date', nullable: true })
+  fechaProgramada?: Date;
 
   @Column({ name: 'fecha_inicio', type: 'timestamp', nullable: true })
   fechaInicio?: Date;
@@ -97,13 +102,20 @@ export class WorkOrder {
   @JoinColumn({ name: 'tipo_mantenimiento_id' })
   maintenanceType?: MaintenanceType;
 
+  // NUEVO: relación con PlanMantenimiento (opcional)
+  @Column({ name: 'plan_mantenimiento_id', nullable: true })
+  planMantenimientoId?: number;
+
+  @ManyToOne(() => PlanMantenimiento, { nullable: true })
+  @JoinColumn({ name: 'plan_mantenimiento_id' })
+  planMantenimiento?: PlanMantenimiento;
+
   @OneToMany(() => SupplyDetail, (detail) => detail.workOrder)
   supplyDetails!: SupplyDetail[];
 
   @OneToMany(() => ToolDetail, (detail) => detail.workOrder)
   toolDetails!: ToolDetail[];
 
-  // ✅ RELACIÓN CORREGIDA: Tabla intermedia
   @OneToMany(() => EquipmentWorkOrder, (ewo) => ewo.workOrder, {
     cascade: true,
   })
