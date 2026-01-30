@@ -24,13 +24,13 @@ test:
 	npm run build && rm -rf dist
 
 migrate:
-	npx cross-env DB_HOST=localhost NODE_ENV=development npm run typeorm -- migration:run -d src/data-source.ts
+	npx cross-env DB_HOST=localhost NODE_ENV=development DB_NAME=imec_del_norte npm run typeorm -- migration:run -d src/data-source.ts
 
 revert:
-	npx cross-env DB_HOST=localhost NODE_ENV=development npm run typeorm -- migration:revert -d src/data-source.ts
+	npx cross-env DB_HOST=localhost NODE_ENV=development DB_NAME=imec_del_norte npm run typeorm -- migration:revert -d src/data-source.ts
 
 migration-generate:
-	npm cross-env DB_HOST=localhost NODE_ENV=development npx ts-node -r tsconfig-paths/register ./node_modules/typeorm/cli-ts-node-commonjs.js migration:generate src/migrations/$(name) -d src/data-source.ts
+	npm cross-env DB_HOST=localhost NODE_ENV=development DB_NAME=imec_del_norte npx ts-node -r tsconfig-paths/register ./node_modules/typeorm/cli-ts-node-commonjs.js migration:generate src/migrations/$(name) -d src/data-source.ts
 
 db-migrate:
 	docker-compose exec backend npm run migration:run

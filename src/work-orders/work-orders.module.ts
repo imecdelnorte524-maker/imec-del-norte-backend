@@ -13,6 +13,9 @@ import { Tool } from '../tools/entities/tool.entity';
 import { Inventory } from '../inventory/entities/inventory.entity';
 import { Client } from '../client/entities/client.entity';
 import { Equipment } from '../equipment/entities/equipment.entity';
+import { PlanMantenimiento } from '../equipment/entities/plan-mantenimiento.entity';
+import { MailModule } from '../mail/mail.module';
+import { MaintenanceSchedulerService } from './maintenance-scheduler.service';
 
 @Module({
   imports: [
@@ -28,10 +31,12 @@ import { Equipment } from '../equipment/entities/equipment.entity';
       Inventory,
       Client,
       Equipment,
+      PlanMantenimiento,
     ]),
+    MailModule,
   ],
   controllers: [WorkOrdersController],
-  providers: [WorkOrdersService], 
-  exports: [WorkOrdersService],
+  providers: [WorkOrdersService, MaintenanceSchedulerService],
+  exports: [WorkOrdersService, MaintenanceSchedulerService],
 })
 export class WorkOrdersModule {}

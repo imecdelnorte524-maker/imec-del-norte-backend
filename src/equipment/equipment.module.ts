@@ -13,6 +13,7 @@ import { EquipmentEvaporator } from './entities/evaporator.entity';
 import { EquipmentCondenser } from './entities/condenser.entity';
 import { EquipmentCompressor } from './entities/compressor.entity';
 import { PlanMantenimiento } from './entities/plan-mantenimiento.entity';
+import { WorkOrdersModule } from 'src/work-orders/work-orders.module';
 
 @Module({
   imports: [
@@ -29,6 +30,7 @@ import { PlanMantenimiento } from './entities/plan-mantenimiento.entity';
       PlanMantenimiento
     ]),
     ImagesModule,
+    WorkOrdersModule,
   ],
   controllers: [EquipmentController],
   providers: [EquipmentService],

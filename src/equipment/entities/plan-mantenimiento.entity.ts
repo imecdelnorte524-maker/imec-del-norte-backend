@@ -6,38 +6,51 @@ import {
   JoinColumn,
 } from 'typeorm';
 import { Equipment } from './equipment.entity';
+import { UnidadFrecuencia } from '../enums/frecuency-unity.enum';
 
 @Entity('plan_mantenimiento')
 export class PlanMantenimiento {
   @PrimaryGeneratedColumn()
   id: number;
 
-  @Column({ type: 'varchar', length: 50, nullable: true })
-  frecuencia?: string; // ej: 'mensual', 'trimestral', 'semestral', 'anual', o 'cada 90 días'
+  @Column({
+    name: 'unidad_frecuencia',
+    type: 'enum',
+    enum: UnidadFrecuencia,
+    enumName: 'plan_mantenimiento_unidad_frecuencia_enum',
+    nullable: true,
+  })
+  unidadFrecuencia?: UnidadFrecuencia;
+
+  // Día del mes (1–31)
+  @Column({
+    name: 'dia_del_mes',
+    type: 'int',
+    nullable: true,
+  })
+  diaDelMes?: number;
 
   @Column({ name: 'fecha_programada', type: 'date', nullable: true })
   fechaProgramada?: Date;
 
-  // Campos opcionales que podrías agregar después
   @Column({ type: 'text', nullable: true })
   notas?: string;
 
   @Column({
-    name: 'created_at' ,
+    name: 'created_at',
     type: 'timestamp',
     default: () => 'CURRENT_TIMESTAMP',
   })
   createdAt: Date;
 
   @Column({
-    name: 'updated_at' ,
+    name: 'updated_at',
     type: 'timestamp',
     default: () => 'CURRENT_TIMESTAMP',
     onUpdate: 'CURRENT_TIMESTAMP',
   })
   updatedAt: Date;
 
-  // Relación OneToOne con Equipment
   @OneToOne(() => Equipment, (equipment) => equipment.planMantenimiento, {
     onDelete: 'CASCADE',
   })

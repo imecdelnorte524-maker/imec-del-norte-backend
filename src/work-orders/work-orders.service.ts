@@ -28,6 +28,7 @@ import { WorkOrderStatus } from './enums/work-order-status.enum';
 import { BillingStatus } from './enums/billing-status.enum';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { ServiceCategory } from '../services/enums/service.enums';
+import { PlanMantenimiento } from '../equipment/entities/plan-mantenimiento.entity';
 
 @Injectable()
 export class WorkOrdersService {
@@ -1229,5 +1230,133 @@ export class WorkOrdersService {
 
     await this.workOrdersRepository.save(workOrder);
     return this.findOne(ordenId);
+  }
+
+  async existeOrdenParaPlanEnFecha(
+    planMantenimientoId: number,
+    fechaProgramada: Date,
+  ): Promise<boolean> {
+    if (!planMantenimientoId || !fechaProgramada) {
+      return false;
+    }
+
+    const fechaStr = fechaProgramada.toISOString().slice(0, 10);
+
+    const count = await this.workOrdersRepository
+      .createQueryBuilder('wo')
+      .where('wo.planMantenimientoId = :planMantenimientoId', {
+        planMantenimientoId,
+      })
+      .andWhere('wo.fechaProgramada = :fechaProgramada', {
+        fechaProgramada: fechaStr,
+      })
+      .getCount();
+
+    return count > 0;
+  }
+
+
+  async createFromMaintenancePlan(params: {
+    plan: PlanMantenimiento;
+    fechaProgramada: Date;
+  }): Promise<WorkOrder> {
+    const { plan, fechaProgramada } = params;
+
+    if (!plan?.equipmentId) {
+      throw new BadRequestException(
+        `El plan de mantenimiento ${plan?.id} no tiene equipmentId`,
+      );
+    }
+
+    const equipment = await this.equipmentRepository.findOne({
+      where: { equipmentId: plan.equipmentId },
+      relations: ['client'],
+    });
+
+    if (!equipment) {
+      throw new NotFoundException(
+        `Equipo ${plan.equipmentId} asociado al plan ${plan.id} no encontrado`,
+      );
+    }
+
+    const clienteEmpresa = await this.clientsRepository.findOne({
+      where: { idCliente: equipment.clientId },
+      relations: ['usuariosContacto'],
+    });
+
+    if (!clienteEmpresa) {
+      throw new NotFoundException(
+        `Cliente empresa ${equipment.clientId} del equipo ${equipment.equipmentId} no encontrado`,
+      );
+    }
+
+    const primerContacto = this.getPrimerUsuarioContacto(clienteEmpresa);
+    if (!primerContacto) {
+      throw new BadRequestException(
+        `El cliente empresa ${clienteEmpresa.nombre} no tiene usuarios contacto asignados`,
+      );
+    }
+
+    const servicio = await this.servicesRepository.findOne({
+      where: { categoriaServicio: equipment.category as ServiceCategory },
+      order: { servicioId: 'ASC' },
+    });
+
+    if (!servicio) {
+      throw new NotFoundException(
+        `No se encontró un servicio para la categoría ${equipment.category}`,
+      );
+    }
+
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+
+    try {
+      const workOrder = this.workOrdersRepository.create({
+        servicioId: servicio.servicioId,
+        clienteId: primerContacto.usuarioId,
+        clienteEmpresaId: clienteEmpresa.idCliente,
+        tecnicoId: undefined,
+        fechaProgramada,
+        comentarios:
+          plan.notas ??
+          `Mantenimiento programado para el equipo ${
+            equipment.code || equipment.equipmentId
+          }`,
+        estado: WorkOrderStatus.REQUESTED_UNASSIGNED,
+        estadoFacturacion: BillingStatus.NOT_BILLED,
+        maintenanceTypeId: undefined,
+        planMantenimientoId: plan.id,
+      });
+
+      const savedWorkOrder = await queryRunner.manager.save(workOrder);
+
+      const ewo = this.equipmentWorkOrderRepository.create({
+        workOrderId: savedWorkOrder.ordenId,
+        equipmentId: equipment.equipmentId,
+        description:
+          'Mantenimiento automático programado desde plan de mantenimiento',
+      });
+
+      await queryRunner.manager.save(EquipmentWorkOrder, ewo);
+
+      await queryRunner.commitTransaction();
+
+      this.eventEmitter.emit('work-order.created', {
+        workOrderId: savedWorkOrder.ordenId,
+        clienteId: savedWorkOrder.clienteId,
+        tecnicoId: savedWorkOrder.tecnicoId,
+        servicioId: savedWorkOrder.servicioId,
+        equipmentIds: [equipment.equipmentId],
+      });
+
+      return this.findOne(savedWorkOrder.ordenId);
+    } catch (error) {
+      await queryRunner.rollbackTransaction();
+      throw error;
+    } finally {
+      await queryRunner.release();
+    }
   }
 }

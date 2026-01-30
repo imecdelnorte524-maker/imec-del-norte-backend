@@ -25,6 +25,8 @@ import { PlanMantenimiento } from './entities/plan-mantenimiento.entity';
 import { EquipmentStatus } from './enums/equipment-status.enum';
 import { BaseSequenceService } from '../common/services/base-sequence.service';
 import { SequenceHelperService } from '../common/services/sequence-helper.service';
+import { PlanMantenimientoDto } from './dto/plan-mantenimiento.dto';
+import { WorkOrdersService } from '../work-orders/work-orders.service';
 
 interface OrphanedRecordIssue {
   table: string;
@@ -84,6 +86,7 @@ export class EquipmentService
     private readonly planMantenimientoRepository: Repository<PlanMantenimiento>,
     private readonly imagesService: ImagesService,
     private readonly dataSource: DataSource,
+    private readonly workOrdersService: WorkOrdersService,
   ) {
     super(sequenceHelper);
 
@@ -439,6 +442,74 @@ export class EquipmentService
     return `${clientInitials}${categoryPrefix}${areaIndex}${subAreasPath}${equipmentIndex}`;
   }
 
+  private async validateEvapCondComponentsForAirType(params: {
+    category: ServiceCategory;
+    airConditionerTypeId?: number;
+    evaporators?: any[];
+    condensers?: any[];
+  }): Promise<void> {
+    const { category, airConditionerTypeId, evaporators, condensers } = params;
+
+    // Solo aplica para AIRES_ACONDICIONADOS
+    if (category !== ServiceCategory.AIRES_ACONDICIONADOS) {
+      return;
+    }
+
+    if (!airConditionerTypeId) {
+      throw new BadRequestException(
+        'Tipo de aire requerido para validar evaporadoras y condensadoras',
+      );
+    }
+
+    const acType = await this.acTypeRepository.findOne({
+      where: { id: airConditionerTypeId },
+    });
+
+    if (!acType) {
+      throw new BadRequestException(
+        `Tipo de aire ${airConditionerTypeId} no existe`,
+      );
+    }
+
+    const typeName = (acType.name || '').toLowerCase();
+
+    // Solo estos tipos pueden tener MÁS de una evap/cond
+    const isMultiSplitOrVariable =
+      typeName.includes('multi') || typeName.includes('variable');
+
+    // 1) Respetar hasEvaporator / hasCondenser
+    if (
+      acType.hasEvaporator === false &&
+      evaporators &&
+      evaporators.length > 0
+    ) {
+      throw new BadRequestException(
+        `El tipo de aire "${acType.name}" no permite evaporador y se envió al menos uno`,
+      );
+    }
+
+    if (acType.hasCondenser === false && condensers && condensers.length > 0) {
+      throw new BadRequestException(
+        `El tipo de aire "${acType.name}" no permite condensadora y se envió al menos una`,
+      );
+    }
+
+    // 2) Regla de negocio: solo multisplit/variable más de uno
+    if (!isMultiSplitOrVariable) {
+      if (evaporators && evaporators.length > 1) {
+        throw new BadRequestException(
+          `El tipo de aire "${acType.name}" solo permite un evaporador`,
+        );
+      }
+
+      if (condensers && condensers.length > 1) {
+        throw new BadRequestException(
+          `El tipo de aire "${acType.name}" solo permite una condensadora`,
+        );
+      }
+    }
+  }
+
   // ────────────────────────────────────────────────────────────────
   // CREATE - Con transacción completa y manejo de secuencia
   // ────────────────────────────────────────────────────────────────
@@ -523,9 +594,12 @@ export class EquipmentService
         );
       }
 
+      const { evaporators, condensers, planMantenimiento, ...equipmentBase } =
+        dto;
+
       // Crear equipo base
       const equipmentData = {
-        ...dto,
+        ...equipmentBase,
         areaId: finalAreaId,
         subAreaId: finalSubAreaId ?? undefined,
         code,
@@ -546,6 +620,12 @@ export class EquipmentService
       this.logger.log(
         `Equipo creado exitosamente: ${savedEquipment.equipmentId} con código ${code}`,
       );
+
+      if (dto.planMantenimiento) {
+        await this.createImmediateMaintenanceOrderIfNeeded(
+          savedEquipment.equipmentId,
+        );
+      }
 
       return this.findOne(savedEquipment.equipmentId);
     } catch (error) {
@@ -629,6 +709,14 @@ export class EquipmentService
     equipmentId: number,
     dto: CreateEquipmentDto,
   ): Promise<void> {
+    // Validar cantidad según tipo de aire (solo si es aire acondicionado)
+    await this.validateEvapCondComponentsForAirType({
+      category: dto.category,
+      airConditionerTypeId: dto.airConditionerTypeId,
+      evaporators: dto.evaporators,
+      condensers: dto.condensers,
+    });
+
     // Crear evaporadores y sus motores
     if (dto.evaporators?.length) {
       await this.createEvaporators(queryRunner, equipmentId, dto.evaporators);
@@ -722,23 +810,102 @@ export class EquipmentService
     }
   }
 
+  private startOfDay(d: Date): Date {
+    return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  }
+
+  private diffEnDias(fechaObjetivo: Date, hoy: Date): number {
+    const msPorDia = 1000 * 60 * 60 * 24;
+    return Math.round(
+      (this.startOfDay(fechaObjetivo).getTime() -
+        this.startOfDay(hoy).getTime()) /
+        msPorDia,
+    );
+  }
+
+  private async createImmediateMaintenanceOrderIfNeeded(
+    equipmentId: number,
+  ): Promise<void> {
+    try {
+      const plan = await this.planMantenimientoRepository.findOne({
+        where: { equipmentId },
+      });
+
+      if (!plan || !plan.fechaProgramada) {
+        return;
+      }
+
+      const hoy = this.startOfDay(new Date());
+      const fechaPlan = this.startOfDay(new Date(plan.fechaProgramada));
+      const diff = this.diffEnDias(fechaPlan, hoy);
+
+      // Solo si es hoy o dentro de 2 días
+      if (diff < 0 || diff > 2) {
+        return;
+      }
+
+      const yaExiste = await this.workOrdersService.existeOrdenParaPlanEnFecha(
+        plan.id,
+        fechaPlan,
+      );
+
+      if (yaExiste) {
+        this.logger.debug(
+          `Ya existe orden para plan ${plan.id} en fecha ${fechaPlan.toISOString().slice(0, 10)}`,
+        );
+        return;
+      }
+
+      await this.workOrdersService.createFromMaintenancePlan({
+        plan,
+        fechaProgramada: fechaPlan,
+      });
+    } catch (error: any) {
+      this.logger.error(
+        `Error creando orden de mantenimiento automática para equipo ${equipmentId}: ${error.message}`,
+        error.stack,
+      );
+    }
+  }
+
+  private normalizePlanData(
+    planData: PlanMantenimientoDto,
+  ): Partial<PlanMantenimiento> {
+    if (!planData) return {};
+
+    const { fechaProgramada, ...rest } = planData;
+
+    return {
+      ...rest,
+      fechaProgramada:
+        typeof fechaProgramada === 'string'
+          ? new Date(fechaProgramada)
+          : fechaProgramada,
+    };
+  }
+
   private async createMaintenancePlan(
     queryRunner: any,
     equipmentId: number,
-    planData: any,
+    planData: PlanMantenimientoDto,
   ): Promise<void> {
     const existing = await queryRunner.manager.findOne(PlanMantenimiento, {
       where: { equipmentId },
     });
 
+    const normalized = this.normalizePlanData(planData);
+
     if (existing) {
-      const merged = this.planMantenimientoRepository.merge(existing, planData);
+      const merged = this.planMantenimientoRepository.merge(
+        existing,
+        normalized,
+      );
       await queryRunner.manager.save(merged);
       return;
     }
 
     const planMantenimiento = this.planMantenimientoRepository.create({
-      ...planData,
+      ...normalized,
       equipmentId,
     });
 
@@ -746,7 +913,7 @@ export class EquipmentService
       await queryRunner.manager.save(planMantenimiento);
     } catch (error) {
       this.logger.error(
-        `Error guardadnod plan para equipo ${equipmentId}: ${error.message}`,
+        `Error guardando plan para equipo ${equipmentId}: ${error.message}`,
         error.stack,
       );
 
@@ -902,7 +1069,12 @@ export class EquipmentService
         condensers !== undefined ||
         planMantenimiento !== undefined
       ) {
-        await this.updateComponentsWithQueryRunner(queryRunner, id, dto);
+        await this.updateComponentsWithQueryRunner(
+          queryRunner,
+          id,
+          dto,
+          equipment,
+        );
       }
 
       await queryRunner.commitTransaction();
@@ -1052,7 +1224,25 @@ export class EquipmentService
     queryRunner: any,
     equipmentId: number,
     dto: UpdateEquipmentDto,
+    equipment?: Equipment,
   ): Promise<void> {
+    // Validar cantidad según tipo de aire usando el equipo final
+    const finalCategory = equipment?.category ?? dto.category;
+    const finalAirTypeId =
+      dto.airConditionerTypeId ?? equipment?.airConditionerTypeId;
+
+    if (
+      finalCategory &&
+      finalCategory === ServiceCategory.AIRES_ACONDICIONADOS
+    ) {
+      await this.validateEvapCondComponentsForAirType({
+        category: finalCategory,
+        airConditionerTypeId: finalAirTypeId,
+        evaporators: dto.evaporators,
+        condensers: dto.condensers,
+      });
+    }
+
     // Primero, obtener IDs de evaporadores y condensadores existentes
     const existingEvaporators = await this.evaporatorRepository.find({
       where: { equipmentId },
