@@ -266,6 +266,9 @@ export class EquipmentResponseDto {
   @ApiPropertyOptional()
   notes?: string | null;
 
+  @ApiPropertyOptional({ example: 'juan.perez' })
+  createdBy?: string | null;
+
   @ApiProperty()
   createdAt: Date;
 

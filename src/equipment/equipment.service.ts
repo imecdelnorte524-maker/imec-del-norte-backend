@@ -514,7 +514,7 @@ export class EquipmentService
   // CREATE - Con transacción completa y manejo de secuencia
   // ────────────────────────────────────────────────────────────────
 
-  async create(dto: CreateEquipmentDto): Promise<Equipment> {
+  async create(dto: CreateEquipmentDto, createdBy?: string): Promise<Equipment> {
     this.logger.log(`Creando equipo para cliente: ${dto.clientId}`);
 
     const queryRunner = this.dataSource.createQueryRunner();
@@ -604,6 +604,7 @@ export class EquipmentService
         subAreaId: finalSubAreaId ?? undefined,
         code,
         status: dto.status ?? EquipmentStatus.ACTIVE,
+        createdBy,
       };
 
       const equipment = this.equipmentRepository.create(equipmentData);
