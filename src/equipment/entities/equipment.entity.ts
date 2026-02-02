@@ -82,6 +82,14 @@ export class Equipment {
   @Column({ name: 'observaciones', type: 'text', nullable: true })
   notes?: string;
 
+  @Column({
+    name: 'crated_by',
+    type: 'varchar',
+    length: 150,
+    nullable: true,
+  })
+  createdBy?: string;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 

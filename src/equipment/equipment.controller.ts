@@ -9,6 +9,7 @@ import {
   UseGuards,
   ParseIntPipe,
   Query,
+  Req,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -36,9 +37,25 @@ export class EquipmentController {
   @Post()
   @Roles('Administrador', 'Técnico')
   @ApiOperation({ summary: 'Crear equipo (hoja de vida)' })
-  @ApiResponse({ status: 201, description: 'Equipo creado', type: EquipmentResponseDto })
-  async create(@Body() createEquipmentDto: CreateEquipmentDto) {
-    const equipment = await this.equipmentService.create(createEquipmentDto);
+  @ApiResponse({
+    status: 201,
+    description: 'Equipo creado',
+    type: EquipmentResponseDto,
+  })
+  async create(
+    @Body() createEquipmentDto: CreateEquipmentDto,
+    @Req() req: Request,
+  ) {
+    const user = (req as any).user;
+
+    const createBy =
+      `${user?.username} - ${user?.nombre} ${user?.apellido ?? user?.email ?? (user?.id != null ? String(user.id) : undefined)}`;
+
+    const equipment = await this.equipmentService.create(
+      createEquipmentDto,
+      createBy,
+    );
+
     return {
       message: 'Equipo creado exitosamente',
       data: this.mapToResponseDto(equipment),
@@ -52,7 +69,11 @@ export class EquipmentController {
   @ApiQuery({ name: 'areaId', required: false, type: Number })
   @ApiQuery({ name: 'subAreaId', required: false, type: Number })
   @ApiQuery({ name: 'search', required: false, type: String })
-  @ApiResponse({ status: 200, description: 'Equipos obtenidos', type: [EquipmentResponseDto] })
+  @ApiResponse({
+    status: 200,
+    description: 'Equipos obtenidos',
+    type: [EquipmentResponseDto],
+  })
   async findAll(
     @Query('clientId') clientId?: string,
     @Query('areaId') areaId?: string,
@@ -75,7 +96,11 @@ export class EquipmentController {
   @Get(':id')
   @Roles('Administrador', 'Secretaria', 'Técnico')
   @ApiOperation({ summary: 'Obtener equipo por ID' })
-  @ApiResponse({ status: 200, description: 'Equipo obtenido', type: EquipmentResponseDto })
+  @ApiResponse({
+    status: 200,
+    description: 'Equipo obtenido',
+    type: EquipmentResponseDto,
+  })
   async findOne(@Param('id', ParseIntPipe) id: number) {
     const equipment = await this.equipmentService.findOne(id);
     return {
@@ -98,12 +123,19 @@ export class EquipmentController {
   @Patch(':id')
   @Roles('Administrador', 'Técnico')
   @ApiOperation({ summary: 'Actualizar equipo' })
-  @ApiResponse({ status: 200, description: 'Equipo actualizado', type: EquipmentResponseDto })
+  @ApiResponse({
+    status: 200,
+    description: 'Equipo actualizado',
+    type: EquipmentResponseDto,
+  })
   async update(
     @Param('id', ParseIntPipe) id: number,
     @Body() updateEquipmentDto: UpdateEquipmentDto,
   ) {
-    const equipment = await this.equipmentService.update(id, updateEquipmentDto);
+    const equipment = await this.equipmentService.update(
+      id,
+      updateEquipmentDto,
+    );
     return {
       message: 'Equipo actualizado exitosamente',
       data: this.mapToResponseDto(equipment),
@@ -120,11 +152,12 @@ export class EquipmentController {
 
   private mapToResponseDto(equipment: Equipment): EquipmentResponseDto {
     // Obtener work orders desde la relación intermedia
-    const workOrders = equipment.equipmentWorkOrders?.map((ewo) => ({
-      workOrderId: ewo.workOrder?.ordenId,
-      description: ewo.description,
-      createdAt: ewo.createdAt,
-    })) || [];
+    const workOrders =
+      equipment.equipmentWorkOrders?.map((ewo) => ({
+        workOrderId: ewo.workOrder?.ordenId,
+        description: ewo.description,
+        createdAt: ewo.createdAt,
+      })) || [];
 
     return {
       equipmentId: equipment.equipmentId,
@@ -134,10 +167,16 @@ export class EquipmentController {
         nit: equipment.client.nit,
       },
       area: equipment.area
-        ? { idArea: equipment.area.idArea, nombreArea: equipment.area.nombreArea }
+        ? {
+            idArea: equipment.area.idArea,
+            nombreArea: equipment.area.nombreArea,
+          }
         : undefined,
       subArea: equipment.subArea
-        ? { idSubArea: equipment.subArea.idSubArea, nombreSubArea: equipment.subArea.nombreSubArea }
+        ? {
+            idSubArea: equipment.subArea.idSubArea,
+            nombreSubArea: equipment.subArea.nombreSubArea,
+          }
         : undefined,
       // Ahora tenemos un array de work orders en lugar de un solo workOrderId
       workOrders: workOrders,
@@ -155,6 +194,7 @@ export class EquipmentController {
       status: equipment.status,
       installationDate: equipment.installationDate,
       notes: equipment.notes,
+      createdBy: equipment.createdBy,
       createdAt: equipment.createdAt,
       updatedAt: equipment.updatedAt,
       photos:
