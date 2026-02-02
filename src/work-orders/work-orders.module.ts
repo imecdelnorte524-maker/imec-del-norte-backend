@@ -15,7 +15,7 @@ import { Client } from '../client/entities/client.entity';
 import { Equipment } from '../equipment/entities/equipment.entity';
 import { PlanMantenimiento } from '../equipment/entities/plan-mantenimiento.entity';
 import { MailModule } from '../mail/mail.module';
-import { MaintenanceSchedulerService } from './maintenance-scheduler.service';
+// import { MaintenanceSchedulerService } from './maintenance-scheduler.service';
 
 @Module({
   imports: [
@@ -36,7 +36,9 @@ import { MaintenanceSchedulerService } from './maintenance-scheduler.service';
     MailModule,
   ],
   controllers: [WorkOrdersController],
-  providers: [WorkOrdersService, MaintenanceSchedulerService],
-  exports: [WorkOrdersService, MaintenanceSchedulerService],
+  providers: [WorkOrdersService],
+  // providers: [WorkOrdersService, MaintenanceSchedulerService],
+  exports: [WorkOrdersService],
+  // exports: [WorkOrdersService, MaintenanceSchedulerService],
 })
 export class WorkOrdersModule {}
