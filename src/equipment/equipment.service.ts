@@ -621,11 +621,11 @@ export class EquipmentService
         `Equipo creado exitosamente: ${savedEquipment.equipmentId} con código ${code}`,
       );
 
-      if (dto.planMantenimiento) {
-        await this.createImmediateMaintenanceOrderIfNeeded(
-          savedEquipment.equipmentId,
-        );
-      }
+      // if (dto.planMantenimiento) {
+      //   await this.createImmediateMaintenanceOrderIfNeeded(
+      //     savedEquipment.equipmentId,
+      //   );
+      // }
 
       return this.findOne(savedEquipment.equipmentId);
     } catch (error) {
