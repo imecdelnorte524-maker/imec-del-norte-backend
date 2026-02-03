@@ -180,6 +180,7 @@ export class UsersService {
       activo: userData.activo ?? true,
       fechaNacimiento: fechaNacimientoDate,
       genero: userData.genero as Genero,
+      position: userData.position,
       resetToken: userData.resetToken,
       resetTokenExpiry: userData.resetTokenExpiry ? new Date(userData.resetTokenExpiry) : undefined,
       mustChangePassword: true,

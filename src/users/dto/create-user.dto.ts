@@ -68,7 +68,8 @@ export class CreateUserDto {
   @IsString({ message: 'El teléfono debe ser una cadena de texto' })
   @MaxLength(30, { message: 'El teléfono no puede superar 30 caracteres' })
   @Matches(/^[0-9+\-\s()]*$/, {
-    message: 'El teléfono solo puede contener dígitos, espacios y los caracteres + - ( )',
+    message:
+      'El teléfono solo puede contener dígitos, espacios y los caracteres + - ( )',
   })
   telefono?: string;
 
@@ -106,7 +107,9 @@ export class CreateUserDto {
     required: false,
   })
   @IsOptional()
-  @IsEnum(Genero, { message: 'El género debe ser MASCULINO, FEMENINO o NO_BINARIO' })
+  @IsEnum(Genero, {
+    message: 'El género debe ser MASCULINO, FEMENINO o NO_BINARIO',
+  })
   genero?: Genero;
 
   @ApiProperty({
@@ -116,7 +119,6 @@ export class CreateUserDto {
   })
   @IsOptional()
   @IsString({ message: 'La Cédula debe ser una cadena de texto' })
-  @Length(6, 10, { message: 'La cédula debe tener entre 6 y 10 caracteres' })
   cedula?: string;
 
   @ApiProperty({
@@ -208,7 +210,8 @@ export class CreateUserDto {
   @IsString()
   @MaxLength(30)
   @Matches(/^[0-9+\-\s()]*$/, {
-    message: 'El teléfono de contacto debe contener solo dígitos, espacios y los caracteres + - ( )',
+    message:
+      'El teléfono de contacto debe contener solo dígitos, espacios y los caracteres + - ( )',
   })
   contactoEmergenciaTelefono?: string;
 
@@ -221,4 +224,14 @@ export class CreateUserDto {
   @IsString()
   @MaxLength(100)
   contactoEmergenciaParentesco?: string;
+
+  @ApiProperty({
+    example: 'Supervisor de Planta',
+    description: 'Cargo del usuario',
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  position?: string;
 }
