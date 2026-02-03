@@ -1,5 +1,5 @@
 // src/users/dto/user-response.dto.ts
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { TipoCedula } from '../enums/Type-cedula.enum';
 import { Genero } from '../enums/genero.enum';
 
@@ -16,8 +16,8 @@ export class UserResponseDto {
   @ApiProperty({ example: 'juan.perez@imec.com', description: 'Correo electrónico' })
   email: string;
 
-  @ApiProperty({ example: '1244575548', description: 'Número de Cédula' })
-  cedula: string;
+  @ApiPropertyOptional({ example: '1244575548', description: 'Número de Cédula' })
+  cedula?: string;
 
   @ApiProperty({ example: 'juanperez', description: 'Nombre de usuario' })
   username: string;
@@ -43,8 +43,11 @@ export class UserResponseDto {
     nombreRol: string;
   };
 
-  @ApiProperty({ example: 'CC', description: 'Tipo de cédula', enum: TipoCedula })
-  tipoCedula: TipoCedula;
+  @ApiPropertyOptional({ example: 'CC', description: 'Tipo de cédula', enum: TipoCedula })
+  tipoCedula?: TipoCedula;
+
+  @ApiPropertyOptional({ example: 'Supervisor de Planta', description: 'Cargo del usuario' })
+  position?: string;
 
   @ApiProperty({ example: 'abc123def456', description: 'Token para resetear contraseña', required: false })
   resetToken?: string;

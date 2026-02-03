@@ -52,7 +52,12 @@ export class User {
   @Column({ name: 'username', type: 'varchar', length: 50, unique: true })
   username: string;
 
-  @Column({ name: 'password_hash', type: 'varchar', length: 255, nullable: true })
+  @Column({
+    name: 'password_hash',
+    type: 'varchar',
+    length: 255,
+    nullable: true,
+  })
   passwordHash?: string | null;
 
   @Column({ name: 'telefono', type: 'varchar', length: 20, nullable: true })
@@ -74,6 +79,9 @@ export class User {
     nullable: true,
   })
   genero?: Genero | null;
+
+  @Column({ name: 'cargo', type: 'varchar', length: 100, nullable: true })
+  position?: string | null;
 
   @Column({ name: 'reset_token', type: 'varchar', length: 255, nullable: true })
   resetToken?: string | null;
