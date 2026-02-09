@@ -7,11 +7,14 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Between, DataSource, In } from 'typeorm';
+import { Repository, Between, DataSource, In, Not, IsNull } from 'typeorm';
 import { WorkOrder } from './entities/work-order.entity';
 import { SupplyDetail } from './entities/supply-detail.entity';
 import { ToolDetail } from './entities/tool-detail.entity';
 import { EquipmentWorkOrder } from './entities/equipment-work-order.entity';
+import { WorkOrderTechnician } from './entities/work-order-technician.entity';
+import { WorkOrderTimer } from './entities/work-order-timer.entity';
+import { WorkOrderPause } from './entities/work-order-pause.entity';
 import { Service } from '../services/entities/service.entity';
 import { User } from '../users/entities/user.entity';
 import { Supply } from '../supplies/entities/supply.entity';
@@ -29,6 +32,8 @@ import { BillingStatus } from './enums/billing-status.enum';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { ServiceCategory } from '../services/enums/service.enums';
 import { PlanMantenimiento } from '../equipment/entities/plan-mantenimiento.entity';
+import { CreateEmergencyOrderDto } from './dto/create-emergency-order.dto';
+import { AssignTechniciansDto } from './dto/assign-technicians.dto';
 
 @Injectable()
 export class WorkOrdersService {
@@ -41,6 +46,12 @@ export class WorkOrdersService {
     private toolDetailsRepository: Repository<ToolDetail>,
     @InjectRepository(EquipmentWorkOrder)
     private equipmentWorkOrderRepository: Repository<EquipmentWorkOrder>,
+    @InjectRepository(WorkOrderTechnician)
+    private workOrderTechnicianRepository: Repository<WorkOrderTechnician>,
+    @InjectRepository(WorkOrderTimer)
+    private workOrderTimerRepository: Repository<WorkOrderTimer>,
+    @InjectRepository(WorkOrderPause)
+    private workOrderPauseRepository: Repository<WorkOrderPause>,
     @InjectRepository(Service)
     private servicesRepository: Repository<Service>,
     @InjectRepository(User)
@@ -61,6 +72,15 @@ export class WorkOrdersService {
 
   private getRoleName(currentUser: any): string {
     return currentUser?.role?.nombreRol || currentUser?.role || '';
+  }
+
+  private getColombiaTime(): Date {
+    const now = new Date();
+    // Colombia es UTC-5
+    const colombiaOffset = -5 * 60; // en minutos
+    const localOffset = now.getTimezoneOffset(); // en minutos
+    const offsetDiff = colombiaOffset - localOffset;
+    return new Date(now.getTime() + offsetDiff * 60000);
   }
 
   // Helper para verificar si un usuario es contacto de un cliente
@@ -194,36 +214,32 @@ export class WorkOrdersService {
       }
     }
 
+    // CORRECCIÓN: Aseguramos que equipmentIds sea array
+    const equipmentIds = dto.equipmentIds || [];
+
     // Validar equipos si se envían
-    if (dto.equipmentIds && dto.equipmentIds.length > 0) {
-      const equipmentIds = dto.equipmentIds;
-      const equipments = await this.equipmentRepository.find({
-        where: { equipmentId: In(equipmentIds) },
-        relations: ['client'],
-      });
-
-      if (equipments.length !== equipmentIds.length) {
-        throw new NotFoundException('Uno o más equipos no fueron encontrados');
+    if (equipmentIds.length > 0) {
+      if (!dto.clienteEmpresaId) {
+        throw new BadRequestException(
+          'clienteEmpresaId es requerido para asignar equipos',
+        );
       }
-
-      for (const equipment of equipments) {
-        if (equipment.clientId !== dto.clienteEmpresaId) {
-          throw new BadRequestException(
-            `El equipo ${equipment.code || equipment.equipmentId} no pertenece al cliente de la orden`,
-          );
-        }
-      }
+      await this.validateEquipmentAssignment(
+        equipmentIds,
+        dto.clienteEmpresaId,
+      );
     }
 
     dto.estado = dto.estado || WorkOrderStatus.REQUESTED_UNASSIGNED;
-    dto.estadoFacturacion = dto.estadoFacturacion || BillingStatus.NOT_BILLED;
+    // CORRECCIÓN: estadoFacturacion siempre null al crear
+    dto.estadoFacturacion = null;
 
     const workOrder = this.workOrdersRepository.create(dto);
     const savedWorkOrder = await this.workOrdersRepository.save(workOrder);
 
     // Asociar equipos si se especificaron
-    if (dto.equipmentIds && dto.equipmentIds.length > 0) {
-      const equipmentWorkOrders = dto.equipmentIds.map((equipmentId) =>
+    if (equipmentIds.length > 0) {
+      const equipmentWorkOrders = equipmentIds.map((equipmentId) =>
         this.equipmentWorkOrderRepository.create({
           workOrderId: savedWorkOrder.ordenId,
           equipmentId,
@@ -232,65 +248,112 @@ export class WorkOrdersService {
       await this.equipmentWorkOrderRepository.save(equipmentWorkOrders);
     }
 
+    // Asociar técnicos si se especificaron
+    if (dto.technicianIds && dto.technicianIds.length > 0) {
+      await this.assignTechniciansToOrder(
+        savedWorkOrder.ordenId,
+        dto.technicianIds,
+        dto.leaderTechnicianId,
+      );
+    }
+
     this.eventEmitter.emit('work-order.created', {
       workOrderId: savedWorkOrder.ordenId,
       clienteId: savedWorkOrder.clienteId,
-      tecnicoId: savedWorkOrder.tecnicoId,
       servicioId: savedWorkOrder.servicioId,
-      equipmentIds: dto.equipmentIds || [],
+      equipmentIds: equipmentIds,
+      isEmergency: savedWorkOrder.isEmergency || false,
     });
 
     return this.findOne(savedWorkOrder.ordenId);
   }
 
-  // ... (el resto del código permanece igual excepto las relaciones que cargan usuarioContacto)
+  private async validateEquipmentAssignment(
+    equipmentIds: number[],
+    clienteEmpresaId: number,
+  ): Promise<void> {
+    const equipments = await this.equipmentRepository.find({
+      where: { equipmentId: In(equipmentIds) },
+      relations: ['client'],
+    });
+
+    if (equipments.length !== equipmentIds.length) {
+      throw new NotFoundException('Uno o más equipos no fueron encontrados');
+    }
+
+    // Verificar que los equipos pertenezcan al cliente
+    for (const equipment of equipments) {
+      if (equipment.clientId !== clienteEmpresaId) {
+        throw new BadRequestException(
+          `El equipo ${equipment.code || equipment.equipmentId} no pertenece al cliente de la orden`,
+        );
+      }
+    }
+
+    // NUEVO: Verificar que los equipos no estén ya asignados a otra orden en proceso
+    const activeOrders = await this.workOrdersRepository
+      .createQueryBuilder('wo')
+      .innerJoin('wo.equipmentWorkOrders', 'ewo')
+      .where('ewo.equipmentId IN (:...equipmentIds)', { equipmentIds })
+      .andWhere('wo.estado NOT IN (:...inactiveStatuses)', {
+        inactiveStatuses: [WorkOrderStatus.COMPLETED, WorkOrderStatus.CANCELED],
+      })
+      .getMany();
+
+    if (activeOrders.length > 0) {
+      const conflictedEquipmentIds = activeOrders.flatMap((order) =>
+        (order.equipmentWorkOrders || []).map((ewo) => ewo.equipmentId),
+      );
+      const uniqueConflicts = [...new Set(conflictedEquipmentIds)];
+      throw new ConflictException(
+        `Los equipos con IDs ${uniqueConflicts.join(', ')} ya están asignados a órdenes activas`,
+      );
+    }
+  }
 
   async findAll(): Promise<WorkOrder[]> {
-    return (
-      this.workOrdersRepository
-        .createQueryBuilder('workOrder')
-        .leftJoinAndSelect('workOrder.service', 'service')
-        .leftJoinAndSelect('workOrder.cliente', 'cliente')
-        .leftJoinAndSelect('workOrder.clienteEmpresa', 'clienteEmpresa')
-        .leftJoinAndSelect('workOrder.tecnico', 'tecnico')
-        .leftJoinAndSelect(
-          'workOrder.equipmentWorkOrders',
-          'equipmentWorkOrders',
-        )
-        .leftJoinAndSelect('equipmentWorkOrders.equipment', 'equipment')
-        .leftJoinAndSelect('workOrder.supplyDetails', 'supplyDetails')
-        .leftJoinAndSelect('supplyDetails.supply', 'supply')
-        .leftJoinAndSelect('workOrder.toolDetails', 'toolDetails')
-        .leftJoinAndSelect('toolDetails.tool', 'tool')
-        .leftJoinAndSelect('workOrder.maintenanceType', 'maintenanceType')
-        // Actualizar para cargar usuariosContacto en lugar de usuarioContacto
-        .leftJoinAndSelect(
-          'clienteEmpresa.usuariosContacto',
-          'usuariosContacto',
-        )
-        .orderBy(
-          `
+    return this.workOrdersRepository
+      .createQueryBuilder('workOrder')
+      .leftJoinAndSelect('workOrder.service', 'service')
+      .leftJoinAndSelect('workOrder.cliente', 'cliente')
+      .leftJoinAndSelect('workOrder.clienteEmpresa', 'clienteEmpresa')
+      .leftJoinAndSelect('workOrder.technicians', 'technicians')
+      .leftJoinAndSelect('technicians.technician', 'technician')
+      .leftJoinAndSelect('workOrder.equipmentWorkOrders', 'equipmentWorkOrders')
+      .leftJoinAndSelect('equipmentWorkOrders.equipment', 'equipment')
+      .leftJoinAndSelect('workOrder.supplyDetails', 'supplyDetails')
+      .leftJoinAndSelect('supplyDetails.supply', 'supply')
+      .leftJoinAndSelect('workOrder.toolDetails', 'toolDetails')
+      .leftJoinAndSelect('toolDetails.tool', 'tool')
+      .leftJoinAndSelect('workOrder.maintenanceType', 'maintenanceType')
+      .leftJoinAndSelect('workOrder.timers', 'timers')
+      .leftJoinAndSelect('workOrder.pauses', 'pauses')
+      .leftJoinAndSelect('pauses.user', 'pauseUser')
+      .leftJoinAndSelect('clienteEmpresa.usuariosContacto', 'usuariosContacto')
+      .orderBy(
+        `
         CASE
           WHEN workOrder.estado = :unassigned THEN 1
           WHEN workOrder.estado = :assigned THEN 2
           WHEN workOrder.estado = :inProgress THEN 3
-          WHEN workOrder.estado = :completed THEN 4
-          WHEN workOrder.estado = :canceled THEN 5
-          ELSE 6
+          WHEN workOrder.estado = :paused THEN 4
+          WHEN workOrder.estado = :completed THEN 5
+          WHEN workOrder.estado = :canceled THEN 6
+          ELSE 7
         END
       `,
-          'ASC',
-        )
-        .addOrderBy('workOrder.fechaSolicitud', 'DESC')
-        .setParameters({
-          unassigned: WorkOrderStatus.REQUESTED_UNASSIGNED,
-          assigned: WorkOrderStatus.REQUESTED_ASSIGNED,
-          inProgress: WorkOrderStatus.IN_PROGRESS,
-          completed: WorkOrderStatus.COMPLETED,
-          canceled: WorkOrderStatus.CANCELED,
-        })
-        .getMany()
-    );
+        'ASC',
+      )
+      .addOrderBy('workOrder.fechaSolicitud', 'DESC')
+      .setParameters({
+        unassigned: WorkOrderStatus.REQUESTED_UNASSIGNED,
+        assigned: WorkOrderStatus.REQUESTED_ASSIGNED,
+        inProgress: WorkOrderStatus.IN_PROGRESS,
+        paused: WorkOrderStatus.PAUSED,
+        completed: WorkOrderStatus.COMPLETED,
+        canceled: WorkOrderStatus.CANCELED,
+      })
+      .getMany();
   }
 
   async findOne(id: number): Promise<WorkOrder> {
@@ -299,7 +362,8 @@ export class WorkOrdersService {
       .leftJoinAndSelect('workOrder.service', 'service')
       .leftJoinAndSelect('workOrder.cliente', 'cliente')
       .leftJoinAndSelect('workOrder.clienteEmpresa', 'clienteEmpresa')
-      .leftJoinAndSelect('workOrder.tecnico', 'tecnico')
+      .leftJoinAndSelect('workOrder.technicians', 'technicians')
+      .leftJoinAndSelect('technicians.technician', 'technician')
       .leftJoinAndSelect('workOrder.equipmentWorkOrders', 'equipmentWorkOrders')
       .leftJoinAndSelect('equipmentWorkOrders.equipment', 'equipment')
       .leftJoinAndSelect('workOrder.supplyDetails', 'supplyDetails')
@@ -307,7 +371,9 @@ export class WorkOrdersService {
       .leftJoinAndSelect('workOrder.toolDetails', 'toolDetails')
       .leftJoinAndSelect('toolDetails.tool', 'tool')
       .leftJoinAndSelect('workOrder.maintenanceType', 'maintenanceType')
-      // Actualizar para cargar usuariosContacto
+      .leftJoinAndSelect('workOrder.timers', 'timers')
+      .leftJoinAndSelect('workOrder.pauses', 'pauses')
+      .leftJoinAndSelect('pauses.user', 'pauseUser')
       .leftJoinAndSelect('clienteEmpresa.usuariosContacto', 'usuariosContacto')
       .where('workOrder.ordenId = :id', { id })
       .getOne();
@@ -327,19 +393,40 @@ export class WorkOrdersService {
     const workOrder = await this.findOne(id);
     const currentRoleName = this.getRoleName(currentUser);
 
-    if (
-      currentRoleName === 'Técnico' &&
-      workOrder.tecnicoId !== currentUser.userId
-    ) {
-      throw new ForbiddenException(
-        'No tiene permiso para actualizar esta orden',
+    // Verificar permisos para actualizar estado de facturación
+    if (updateWorkOrderDto.estadoFacturacion !== undefined) {
+      if (
+        currentRoleName !== 'Administrador' &&
+        currentRoleName !== 'Secretaria'
+      ) {
+        throw new ForbiddenException(
+          'Solo Administrador o Secretaria pueden modificar el estado de facturación',
+        );
+      }
+    }
+
+    // Verificar permisos para técnicos - CORREGIDO
+    if (currentRoleName === 'Técnico') {
+      const isAssigned = workOrder.technicians?.some(
+        (t) => t.tecnicoId === currentUser.userId,
       );
+      if (!isAssigned) {
+        throw new ForbiddenException(
+          'No tiene permiso para actualizar esta orden',
+        );
+      }
     }
 
-    if (currentRoleName !== 'Administrador') {
-      updateWorkOrderDto.tecnicoId = undefined;
+    // Restringir cambios de técnico si no es admin
+    if (
+      currentRoleName !== 'Administrador' &&
+      currentRoleName !== 'Secretaria'
+    ) {
+      updateWorkOrderDto.technicianIds = undefined;
+      updateWorkOrderDto.leaderTechnicianId = undefined;
     }
 
+    // Solo admin puede cancelar desde este endpoint
     if (
       updateWorkOrderDto.estado === WorkOrderStatus.CANCELED &&
       currentRoleName !== 'Administrador'
@@ -349,45 +436,77 @@ export class WorkOrdersService {
       );
     }
 
+    // Validar transición de estado
     if (updateWorkOrderDto.estado) {
       this.validateEstadoTransition(
         workOrder.estado,
         updateWorkOrderDto.estado,
+        currentRoleName,
       );
     }
 
-    if (
-      updateWorkOrderDto.estado === WorkOrderStatus.COMPLETED &&
-      !workOrder.fechaFinalizacion
-    ) {
-      updateWorkOrderDto.fechaFinalizacion = new Date();
-    }
-
+    // Manejar inicio de orden
     if (
       updateWorkOrderDto.estado === WorkOrderStatus.IN_PROGRESS &&
       !workOrder.fechaInicio
     ) {
-      updateWorkOrderDto.fechaInicio = new Date();
+      updateWorkOrderDto.fechaInicio = this.getColombiaTime();
+      await this.startTimer(id, currentUser.userId);
     }
 
-    // Manejar actualización de equipos si se envía
+    // Manejar finalización de orden
+    if (
+      updateWorkOrderDto.estado === WorkOrderStatus.COMPLETED &&
+      !workOrder.fechaFinalizacion
+    ) {
+      updateWorkOrderDto.fechaFinalizacion = this.getColombiaTime();
+      await this.stopTimer(id);
+    }
+
+    // Manejar pausa de orden
+    if (updateWorkOrderDto.estado === WorkOrderStatus.PAUSED) {
+      await this.pauseOrder(
+        id,
+        currentUser.userId,
+        updateWorkOrderDto.pauseObservation,
+      );
+    }
+
+    // Manejar reanudación de orden
+    if (
+      workOrder.estado === WorkOrderStatus.PAUSED &&
+      updateWorkOrderDto.estado === WorkOrderStatus.IN_PROGRESS
+    ) {
+      await this.resumeOrder(id, currentUser.userId);
+    }
+
+    // Manejar actualización de equipos si se envía - CORREGIDO
     if (updateWorkOrderDto.equipmentIds !== undefined) {
-      await this.equipmentWorkOrderRepository.delete({
-        workOrderId: id,
-      });
-
-      if (updateWorkOrderDto.equipmentIds.length > 0) {
-        const equipmentWorkOrders = updateWorkOrderDto.equipmentIds.map(
-          (equipmentId) => ({
-            workOrderId: id,
-            equipmentId,
-          }),
+      if (!workOrder.clienteEmpresaId) {
+        throw new BadRequestException(
+          'La orden no tiene clienteEmpresaId asignado',
         );
-        await this.equipmentWorkOrderRepository.save(equipmentWorkOrders);
       }
+      await this.updateEquipmentAssociations(
+        id,
+        updateWorkOrderDto.equipmentIds,
+        workOrder.clienteEmpresaId,
+      );
     }
 
-    await this.workOrdersRepository.update(id, updateWorkOrderDto);
+    // Manejar actualización de técnicos si se envía
+    if (updateWorkOrderDto.technicianIds !== undefined) {
+      await this.updateTechnicianAssociations(
+        id,
+        updateWorkOrderDto.technicianIds,
+        updateWorkOrderDto.leaderTechnicianId,
+      );
+    }
+
+    // 🔴 CORRECCIÓN: Extraer pauseObservation antes de hacer update para evitar error
+    const { pauseObservation, ...restDto } = updateWorkOrderDto;
+
+    await this.workOrdersRepository.update(id, restDto);
 
     this.eventEmitter.emit('work-order.updated', {
       ordenId: id,
@@ -395,6 +514,43 @@ export class WorkOrdersService {
     });
 
     return await this.findOne(id);
+  }
+
+  private async updateEquipmentAssociations(
+    ordenId: number,
+    equipmentIds: number[],
+    clienteEmpresaId: number,
+  ): Promise<void> {
+    await this.equipmentWorkOrderRepository.delete({
+      workOrderId: ordenId,
+    });
+
+    if (equipmentIds.length > 0) {
+      await this.validateEquipmentAssignment(equipmentIds, clienteEmpresaId);
+      const equipmentWorkOrders = equipmentIds.map((equipmentId) => ({
+        workOrderId: ordenId,
+        equipmentId,
+      }));
+      await this.equipmentWorkOrderRepository.save(equipmentWorkOrders);
+    }
+  }
+
+  private async updateTechnicianAssociations(
+    ordenId: number,
+    technicianIds: number[],
+    leaderTechnicianId?: number,
+  ): Promise<void> {
+    await this.workOrderTechnicianRepository.delete({
+      ordenId,
+    });
+
+    if (technicianIds.length > 0) {
+      await this.assignTechniciansToOrder(
+        ordenId,
+        technicianIds,
+        leaderTechnicianId,
+      );
+    }
   }
 
   async cancelByClient(id: number, currentUser: any): Promise<WorkOrder> {
@@ -426,14 +582,19 @@ export class WorkOrdersService {
       );
     }
 
-    this.validateEstadoTransition(workOrder.estado, WorkOrderStatus.CANCELED);
+    this.validateEstadoTransition(
+      workOrder.estado,
+      WorkOrderStatus.CANCELED,
+      roleName,
+    );
 
     workOrder.estado = WorkOrderStatus.CANCELED;
     if (!workOrder.fechaFinalizacion) {
-      workOrder.fechaFinalizacion = new Date();
+      workOrder.fechaFinalizacion = this.getColombiaTime();
     }
 
     await this.workOrdersRepository.save(workOrder);
+    await this.stopTimer(id);
 
     this.eventEmitter.emit('work-order.updated', {
       ordenId: id,
@@ -504,6 +665,9 @@ export class WorkOrdersService {
       await queryRunner.manager.delete(SupplyDetail, { ordenId: id });
       await queryRunner.manager.delete(ToolDetail, { ordenId: id });
       await queryRunner.manager.delete(EquipmentWorkOrder, { workOrderId: id });
+      await queryRunner.manager.delete(WorkOrderTechnician, { ordenId: id });
+      await queryRunner.manager.delete(WorkOrderTimer, { ordenId: id });
+      await queryRunner.manager.delete(WorkOrderPause, { ordenId: id });
       await queryRunner.manager.remove(workOrder);
 
       await queryRunner.commitTransaction();
@@ -533,23 +697,14 @@ export class WorkOrdersService {
     }
 
     const workOrder = await this.findOne(ordenId);
-    const nuevoEstado =
-      workOrder.estado === WorkOrderStatus.REQUESTED_UNASSIGNED
-        ? WorkOrderStatus.REQUESTED_ASSIGNED
-        : workOrder.estado;
 
-    await this.workOrdersRepository.update(ordenId, {
-      tecnicoId,
-      estado: nuevoEstado,
-    });
+    // Usar el nuevo método assignTechnicians para compatibilidad
+    const dto: AssignTechniciansDto = {
+      technicianIds: [tecnicoId],
+      leaderTechnicianId: tecnicoId,
+    };
 
-    const updated = await this.findOne(ordenId);
-    this.eventEmitter.emit('work-order.assigned', {
-      workOrderId: updated.ordenId,
-      tecnicoId: updated.tecnicoId,
-      clienteId: updated.clienteId,
-      servicioId: updated.servicioId,
-    });
+    const updated = await this.assignTechnicians(ordenId, dto);
 
     this.eventEmitter.emit('work-order.updated', {
       ordenId,
@@ -559,11 +714,115 @@ export class WorkOrdersService {
     return updated;
   }
 
+  async assignTechnicians(
+    ordenId: number,
+    dto: AssignTechniciansDto,
+  ): Promise<WorkOrder> {
+    const workOrder = await this.findOne(ordenId);
+
+    // Validar que todos los técnicos existan y sean técnicos
+    const technicians = await this.usersRepository
+      .createQueryBuilder('user')
+      .leftJoinAndSelect('user.role', 'role')
+      .where('user.usuarioId IN (:...ids)', { ids: dto.technicianIds })
+      .andWhere('role.nombreRol = :rol', { rol: 'Técnico' })
+      .getMany();
+
+    if (technicians.length !== dto.technicianIds.length) {
+      throw new NotFoundException(
+        'Uno o más técnicos no existen o no tienen rol Técnico',
+      );
+    }
+
+    // Validar que el líder esté en la lista de técnicos
+    if (
+      dto.leaderTechnicianId &&
+      !dto.technicianIds.includes(dto.leaderTechnicianId)
+    ) {
+      throw new BadRequestException(
+        'El líder debe estar en la lista de técnicos',
+      );
+    }
+
+    await this.workOrderTechnicianRepository.delete({ ordenId });
+
+    const technicianAssociations = dto.technicianIds.map((tecnicoId) =>
+      this.workOrderTechnicianRepository.create({
+        ordenId,
+        tecnicoId,
+        isLeader: tecnicoId === dto.leaderTechnicianId,
+      }),
+    );
+
+    await this.workOrderTechnicianRepository.save(technicianAssociations);
+
+    // Actualizar estado si estaba sin asignar
+    const nuevoEstado =
+      workOrder.estado === WorkOrderStatus.REQUESTED_UNASSIGNED
+        ? WorkOrderStatus.REQUESTED_ASSIGNED
+        : workOrder.estado;
+
+    await this.workOrdersRepository.update(ordenId, {
+      estado: nuevoEstado,
+    });
+
+    const updated = await this.findOne(ordenId);
+    this.eventEmitter.emit('work-order.assigned', {
+      workOrderId: updated.ordenId,
+      technicianIds: dto.technicianIds,
+      leaderTechnicianId: dto.leaderTechnicianId,
+      clienteId: updated.clienteId,
+      servicioId: updated.servicioId,
+    });
+
+    this.eventEmitter.emit('work-order.updated', {
+      ordenId,
+      action: 'assignTechnicians',
+    });
+
+    return updated;
+  }
+
+  private async assignTechniciansToOrder(
+    ordenId: number,
+    technicianIds: number[],
+    leaderTechnicianId?: number,
+  ): Promise<void> {
+    const technicians = await this.usersRepository
+      .createQueryBuilder('user')
+      .leftJoinAndSelect('user.role', 'role')
+      .where('user.usuarioId IN (:...ids)', { ids: technicianIds })
+      .andWhere('role.nombreRol = :rol', { rol: 'Técnico' })
+      .getMany();
+
+    if (technicians.length !== technicianIds.length) {
+      throw new NotFoundException(
+        'Uno o más técnicos no existen o no tienen rol Técnico',
+      );
+    }
+
+    if (leaderTechnicianId && !technicianIds.includes(leaderTechnicianId)) {
+      throw new BadRequestException(
+        'El líder debe estar en la lista de técnicos',
+      );
+    }
+
+    const technicianAssociations = technicianIds.map((tecnicoId) =>
+      this.workOrderTechnicianRepository.create({
+        ordenId,
+        tecnicoId,
+        isLeader: tecnicoId === leaderTechnicianId,
+      }),
+    );
+
+    await this.workOrderTechnicianRepository.save(technicianAssociations);
+  }
+
   async unassignTechnician(ordenId: number): Promise<WorkOrder> {
     const workOrder = await this.findOne(ordenId);
 
-    if (!workOrder.tecnicoId) {
-      throw new ConflictException('La orden no tiene técnico asignado');
+    if (!workOrder.technicians || workOrder.technicians.length === 0) {
+      throw new ConflictException('La orden no tiene técnicos asignados');
     }
 
     if (
@@ -581,14 +840,52 @@ export class WorkOrdersService {
         ? WorkOrderStatus.REQUESTED_UNASSIGNED
         : workOrder.estado;
 
+    // Eliminar todos los técnicos
+    await this.workOrderTechnicianRepository.delete({ ordenId });
+
     await this.workOrdersRepository.update(ordenId, {
-      tecnicoId: null as any,
       estado: nuevoEstado,
     });
 
     this.eventEmitter.emit('work-order.updated', {
       ordenId,
       action: 'unassignTechnician',
+    });
+
+    return this.findOne(ordenId);
+  }
+
+  async unassignAllTechnicians(ordenId: number): Promise<WorkOrder> {
+    const workOrder = await this.findOne(ordenId);
+
+    if (!workOrder.technicians || workOrder.technicians.length === 0) {
+      throw new ConflictException('La orden no tiene técnicos asignados');
+    }
+
+    if (
+      workOrder.estado === WorkOrderStatus.IN_PROGRESS ||
+      workOrder.estado === WorkOrderStatus.COMPLETED ||
+      workOrder.estado === WorkOrderStatus.CANCELED
+    ) {
+      throw new ConflictException(
+        'No se puede quitar los técnicos de una orden en proceso, finalizada o cancelada',
+      );
+    }
+
+    await this.workOrderTechnicianRepository.delete({ ordenId });
+
+    const nuevoEstado =
+      workOrder.estado === WorkOrderStatus.REQUESTED_ASSIGNED
+        ? WorkOrderStatus.REQUESTED_UNASSIGNED
+        : workOrder.estado;
+
+    await this.workOrdersRepository.update(ordenId, {
+      estado: nuevoEstado,
+    });
+
+    this.eventEmitter.emit('work-order.updated', {
+      ordenId,
+      action: 'unassignAllTechnicians',
     });
 
     return this.findOne(ordenId);
@@ -612,6 +909,23 @@ export class WorkOrdersService {
     if (equipment.clientId !== workOrder.clienteEmpresaId) {
       throw new BadRequestException(
         `El equipo ${equipment.code || equipmentId} no pertenece al cliente de la orden`,
+      );
+    }
+
+    // Verificar que el equipo no esté ya asignado a otra orden activa
+    const activeOrders = await this.workOrdersRepository
+      .createQueryBuilder('wo')
+      .innerJoin('wo.equipmentWorkOrders', 'ewo')
+      .where('ewo.equipmentId = :equipmentId', { equipmentId })
+      .andWhere('wo.estado NOT IN (:...inactiveStatuses)', {
+        inactiveStatuses: [WorkOrderStatus.COMPLETED, WorkOrderStatus.CANCELED],
+      })
+      .andWhere('wo.ordenId != :ordenId', { ordenId })
+      .getMany();
+
+    if (activeOrders.length > 0) {
+      throw new ConflictException(
+        `El equipo ya está asignado a la orden ${activeOrders[0].ordenId} que está activa`,
       );
     }
 
@@ -667,13 +981,243 @@ export class WorkOrdersService {
         'workOrder.service',
         'workOrder.cliente',
         'workOrder.clienteEmpresa',
-        'workOrder.tecnico',
+        'workOrder.technicians',
+        'workOrder.technicians.technician',
         'workOrder.maintenanceType',
       ],
       order: { createdAt: 'DESC' },
     });
 
     return equipmentWorkOrders.map((ewo) => ewo.workOrder);
+  }
+
+  // --- CORRECCIONES EN TIMER Y PAUSA ---
+
+  async startTimer(ordenId: number, userId: number): Promise<WorkOrderTimer> {
+    const workOrder = await this.findOne(ordenId);
+
+    // 🔴 CORRECCIÓN: Permitir si está pausada o asignada/en proceso. Solo bloquear completada/cancelada.
+    if (
+      workOrder.estado === WorkOrderStatus.COMPLETED ||
+      workOrder.estado === WorkOrderStatus.CANCELED
+    ) {
+      throw new BadRequestException(
+        'No se puede iniciar el timer en una orden finalizada o cancelada',
+      );
+    }
+
+    // Verificar si ya hay un timer activo
+    const activeTimer = await this.workOrderTimerRepository.findOne({
+      where: { ordenId, endTime: IsNull() },
+    });
+
+    if (activeTimer) {
+      throw new ConflictException('Ya hay un timer activo para esta orden');
+    }
+
+    const timer = this.workOrderTimerRepository.create({
+      ordenId,
+      startTime: this.getColombiaTime(),
+      endTime: null,
+      totalSeconds: 0,
+    });
+
+    return await this.workOrderTimerRepository.save(timer);
+  }
+
+  async stopTimer(ordenId: number): Promise<WorkOrderTimer> {
+    const activeTimer = await this.workOrderTimerRepository.findOne({
+      where: { ordenId, endTime: IsNull() },
+    });
+
+    if (!activeTimer) {
+      throw new NotFoundException('No hay un timer activo para esta orden');
+    }
+
+    const endTime = this.getColombiaTime();
+    const startTime = new Date(activeTimer.startTime);
+    const totalSeconds = Math.floor(
+      (endTime.getTime() - startTime.getTime()) / 1000,
+    );
+
+    activeTimer.endTime = endTime;
+    activeTimer.totalSeconds = totalSeconds;
+
+    return await this.workOrderTimerRepository.save(activeTimer);
+  }
+
+  async pauseOrder(
+    ordenId: number,
+    userId: number,
+    observacion?: string,
+  ): Promise<WorkOrderPause> {
+    const workOrder = await this.findOne(ordenId);
+
+    if (workOrder.estado !== WorkOrderStatus.IN_PROGRESS) {
+      throw new BadRequestException('Solo se puede pausar órdenes en proceso');
+    }
+
+    // 🔴 CORRECCIÓN: Detener timer solo si existe (tolerante a fallos previos)
+    const activeTimer = await this.workOrderTimerRepository.findOne({
+      where: { ordenId, endTime: IsNull() },
+    });
+
+    if (activeTimer) {
+      await this.stopTimer(ordenId);
+    }
+
+    const pause = this.workOrderPauseRepository.create({
+      ordenId,
+      userId,
+      startTime: this.getColombiaTime(),
+      endTime: null,
+      observacion,
+    });
+
+    return await this.workOrderPauseRepository.save(pause);
+  }
+
+  async resumeOrder(ordenId: number, userId: number): Promise<WorkOrderTimer> {
+    const workOrder = await this.findOne(ordenId);
+
+    if (workOrder.estado !== WorkOrderStatus.PAUSED) {
+      throw new BadRequestException('Solo se puede reanudar órdenes en pausa');
+    }
+
+    // Encontrar la pausa activa más reciente
+    const activePause = await this.workOrderPauseRepository.findOne({
+      where: { ordenId, endTime: IsNull() },
+      order: { startTime: 'DESC' },
+    });
+
+    if (activePause) {
+      activePause.endTime = this.getColombiaTime();
+      await this.workOrderPauseRepository.save(activePause);
+    }
+
+    // Iniciar nuevo timer
+    return await this.startTimer(ordenId, userId);
+  }
+
+  // --- FIN CORRECCIONES TIMER Y PAUSA ---
+
+  async createEmergencyOrder(
+    ordenId: number,
+    dto: CreateEmergencyOrderDto,
+    currentUser: any,
+  ): Promise<WorkOrder> {
+    const originalOrder = await this.findOne(ordenId);
+
+    const originalTechs = originalOrder.technicians || [];
+    const techCount = originalTechs.length;
+
+    if (techCount === 0) {
+      throw new BadRequestException(
+        'La orden original no tiene técnicos asignados',
+      );
+    }
+
+    // 🔴 CORRECCIÓN: Asegurar equipmentIds
+    const equipmentIds = dto.equipmentIds || [];
+
+    if (!dto.technicianIds || dto.technicianIds.length === 0) {
+      throw new BadRequestException(
+        'Debe especificar al menos un técnico para la orden de emergencia',
+      );
+    }
+
+    if (dto.technicianIds.length > 1) {
+      throw new BadRequestException(
+        'Solo se permite un técnico para la orden de emergencia',
+      );
+    }
+
+    const emergencyTechId = dto.technicianIds[0];
+
+    const isFromOriginal = originalTechs.some(
+      (t) => t.tecnicoId === emergencyTechId,
+    );
+    if (!isFromOriginal) {
+      throw new BadRequestException(
+        'El técnico de la orden de emergencia debe estar asignado a la orden original',
+      );
+    }
+
+    // LÓGICA DE PAUSA/REASIGNACIÓN
+    if (
+      originalOrder.estado === WorkOrderStatus.IN_PROGRESS &&
+      techCount === 1
+    ) {
+      // 1 técnico: pausar la original
+      await this.pauseOrder(
+        ordenId,
+        currentUser.userId,
+        'En pausa por orden de servicio de emergencia',
+      );
+      await this.workOrdersRepository.update(ordenId, {
+        estado: WorkOrderStatus.PAUSED,
+      });
+    } else {
+      // >1 técnico: sacar técnico de la original
+      await this.workOrderTechnicianRepository.delete({
+        ordenId,
+        tecnicoId: emergencyTechId,
+      });
+
+      // Reasignar líder si es necesario
+      const wasLeader = originalTechs.find(
+        (t) => t.tecnicoId === emergencyTechId,
+      )?.isLeader;
+
+      if (wasLeader) {
+        const remainingTechs = await this.workOrderTechnicianRepository.find({
+          where: { ordenId },
+        });
+
+        if (remainingTechs.length > 0) {
+          await this.workOrderTechnicianRepository.update(
+            { ordenId },
+            { isLeader: false },
+          );
+          const newLeaderId = remainingTechs[0].tecnicoId;
+          await this.workOrderTechnicianRepository.update(
+            { ordenId, tecnicoId: newLeaderId },
+            { isLeader: true },
+          );
+        }
+      }
+    }
+
+    if (!originalOrder.clienteEmpresaId) {
+      throw new BadRequestException(
+        'La orden original no tiene clienteEmpresaId asignado',
+      );
+    }
+
+    const emergencyOrderData: CreateWorkOrderDto = {
+      servicioId: originalOrder.servicioId,
+      clienteId: originalOrder.clienteId,
+      clienteEmpresaId: originalOrder.clienteEmpresaId,
+      technicianIds: [emergencyTechId],
+      leaderTechnicianId: dto.leaderTechnicianId || emergencyTechId,
+      equipmentIds: equipmentIds,
+      comentarios: `Orden de Emergencia - ${
+        dto.comentarios || 'Emergencia creada desde orden ' + ordenId
+      }`,
+      isEmergency: true,
+      estado: WorkOrderStatus.REQUESTED_ASSIGNED,
+      estadoFacturacion: null,
+    };
+
+    const emergencyOrder = await this.create(emergencyOrderData, currentUser);
+
+    this.eventEmitter.emit('work-order.emergency-created', {
+      originalOrderId: ordenId,
+      emergencyOrderId: emergencyOrder.ordenId,
+      userId: currentUser.userId,
+    });
+
+    return emergencyOrder;
   }
 
   async addSupplyDetail(
@@ -941,7 +1485,8 @@ export class WorkOrdersService {
       .leftJoinAndSelect('workOrder.service', 'service')
       .leftJoinAndSelect('workOrder.cliente', 'cliente')
       .leftJoinAndSelect('workOrder.clienteEmpresa', 'clienteEmpresa')
-      .leftJoinAndSelect('workOrder.tecnico', 'tecnico')
+      .leftJoinAndSelect('workOrder.technicians', 'technicians')
+      .leftJoinAndSelect('technicians.technician', 'technician')
       .leftJoinAndSelect('workOrder.equipmentWorkOrders', 'equipmentWorkOrders')
       .leftJoinAndSelect('equipmentWorkOrders.equipment', 'equipment')
       .leftJoinAndSelect('workOrder.supplyDetails', 'supplyDetails')
@@ -949,6 +1494,9 @@ export class WorkOrdersService {
       .leftJoinAndSelect('workOrder.toolDetails', 'toolDetails')
       .leftJoinAndSelect('toolDetails.tool', 'tool')
       .leftJoinAndSelect('workOrder.maintenanceType', 'maintenanceType')
+      .leftJoinAndSelect('workOrder.timers', 'timers')
+      .leftJoinAndSelect('workOrder.pauses', 'pauses')
+      .leftJoinAndSelect('pauses.user', 'pauseUser')
       .where('workOrder.estado = :estado', {
         estado: estado as WorkOrderStatus,
       })
@@ -962,7 +1510,8 @@ export class WorkOrdersService {
       .leftJoinAndSelect('workOrder.service', 'service')
       .leftJoinAndSelect('workOrder.cliente', 'cliente')
       .leftJoinAndSelect('workOrder.clienteEmpresa', 'clienteEmpresa')
-      .leftJoinAndSelect('workOrder.tecnico', 'tecnico')
+      .leftJoinAndSelect('workOrder.technicians', 'technicians')
+      .leftJoinAndSelect('technicians.technician', 'technician')
       .leftJoinAndSelect('workOrder.equipmentWorkOrders', 'equipmentWorkOrders')
       .leftJoinAndSelect('equipmentWorkOrders.equipment', 'equipment')
       .leftJoinAndSelect('workOrder.supplyDetails', 'supplyDetails')
@@ -970,6 +1519,9 @@ export class WorkOrdersService {
       .leftJoinAndSelect('workOrder.toolDetails', 'toolDetails')
       .leftJoinAndSelect('toolDetails.tool', 'tool')
       .leftJoinAndSelect('workOrder.maintenanceType', 'maintenanceType')
+      .leftJoinAndSelect('workOrder.timers', 'timers')
+      .leftJoinAndSelect('workOrder.pauses', 'pauses')
+      .leftJoinAndSelect('pauses.user', 'pauseUser')
       .leftJoinAndSelect('clienteEmpresa.usuariosContacto', 'usuariosContacto')
       .where('workOrder.clienteId = :clienteId', { clienteId })
       .orderBy(
@@ -978,9 +1530,10 @@ export class WorkOrdersService {
           WHEN workOrder.estado = :unassigned THEN 1
           WHEN workOrder.estado = :assigned THEN 2
           WHEN workOrder.estado = :inProgress THEN 3
-          WHEN workOrder.estado = :completed THEN 4
-          WHEN workOrder.estado = :canceled THEN 5
-          ELSE 6
+          WHEN workOrder.estado = :paused THEN 4
+          WHEN workOrder.estado = :completed THEN 5
+          WHEN workOrder.estado = :canceled THEN 6
+          ELSE 7
         END
       `,
         'ASC',
@@ -990,6 +1543,7 @@ export class WorkOrdersService {
         unassigned: WorkOrderStatus.REQUESTED_UNASSIGNED,
         assigned: WorkOrderStatus.REQUESTED_ASSIGNED,
         inProgress: WorkOrderStatus.IN_PROGRESS,
+        paused: WorkOrderStatus.PAUSED,
         completed: WorkOrderStatus.COMPLETED,
         canceled: WorkOrderStatus.CANCELED,
       })
@@ -1002,7 +1556,8 @@ export class WorkOrdersService {
       .leftJoinAndSelect('workOrder.service', 'service')
       .leftJoinAndSelect('workOrder.cliente', 'cliente')
       .leftJoinAndSelect('workOrder.clienteEmpresa', 'clienteEmpresa')
-      .leftJoinAndSelect('workOrder.tecnico', 'tecnico')
+      .innerJoinAndSelect('workOrder.technicians', 'technicians')
+      .innerJoinAndSelect('technicians.technician', 'technician')
       .leftJoinAndSelect('workOrder.equipmentWorkOrders', 'equipmentWorkOrders')
       .leftJoinAndSelect('equipmentWorkOrders.equipment', 'equipment')
       .leftJoinAndSelect('workOrder.supplyDetails', 'supplyDetails')
@@ -1010,16 +1565,20 @@ export class WorkOrdersService {
       .leftJoinAndSelect('workOrder.toolDetails', 'toolDetails')
       .leftJoinAndSelect('toolDetails.tool', 'tool')
       .leftJoinAndSelect('workOrder.maintenanceType', 'maintenanceType')
-      .where('workOrder.tecnicoId = :tecnicoId', { tecnicoId })
+      .leftJoinAndSelect('workOrder.timers', 'timers')
+      .leftJoinAndSelect('workOrder.pauses', 'pauses')
+      .leftJoinAndSelect('pauses.user', 'pauseUser')
+      .where('technicians.tecnicoId = :tecnicoId', { tecnicoId })
       .orderBy(
         `
         CASE
           WHEN workOrder.estado = :unassigned THEN 1
           WHEN workOrder.estado = :assigned THEN 2
           WHEN workOrder.estado = :inProgress THEN 3
-          WHEN workOrder.estado = :completed THEN 4
-          WHEN workOrder.estado = :canceled THEN 5
-          ELSE 6
+          WHEN workOrder.estado = :paused THEN 4
+          WHEN workOrder.estado = :completed THEN 5
+          WHEN workOrder.estado = :canceled THEN 6
+          ELSE 7
         END
       `,
         'ASC',
@@ -1029,6 +1588,7 @@ export class WorkOrdersService {
         unassigned: WorkOrderStatus.REQUESTED_UNASSIGNED,
         assigned: WorkOrderStatus.REQUESTED_ASSIGNED,
         inProgress: WorkOrderStatus.IN_PROGRESS,
+        paused: WorkOrderStatus.PAUSED,
         completed: WorkOrderStatus.COMPLETED,
         canceled: WorkOrderStatus.CANCELED,
       })
@@ -1047,7 +1607,8 @@ export class WorkOrdersService {
         'service',
         'cliente',
         'clienteEmpresa',
-        'tecnico',
+        'technicians',
+        'technicians.technician',
         'equipmentWorkOrders',
         'equipmentWorkOrders.equipment',
         'supplyDetails',
@@ -1055,26 +1616,26 @@ export class WorkOrdersService {
         'toolDetails',
         'toolDetails.tool',
         'maintenanceType',
+        'timers',
+        'pauses',
+        'pauses.user',
       ],
       order: { fechaSolicitud: 'DESC' },
     });
   }
 
-  // Añadir este nuevo método en WorkOrdersService:
   async getWorkOrdersByClientAndCategory(
     clienteEmpresaId: number,
     category: string,
   ): Promise<WorkOrder[]> {
-    // Primero, verifica si hay servicios con esa categoría
-    const serviciosConCategoria = await this.servicesRepository.find({
-      where: { categoriaServicio: category as ServiceCategory },
-    });
-
-    // Luego haz la consulta principal
     const workOrders = await this.workOrdersRepository
       .createQueryBuilder('workOrder')
       .leftJoinAndSelect('workOrder.service', 'service')
       .leftJoinAndSelect('workOrder.clienteEmpresa', 'clienteEmpresa')
+      .leftJoinAndSelect('workOrder.technicians', 'technicians')
+      .leftJoinAndSelect('technicians.technician', 'technician')
+      .leftJoinAndSelect('workOrder.timers', 'timers')
+      .leftJoinAndSelect('workOrder.pauses', 'pauses')
       .where('workOrder.clienteEmpresaId = :clienteEmpresaId', {
         clienteEmpresaId,
       })
@@ -1136,6 +1697,7 @@ export class WorkOrdersService {
   public validateEstadoTransition(
     currentEstado: WorkOrderStatus,
     newEstado: WorkOrderStatus,
+    currentRole?: string,
   ): void {
     const validTransitions: Record<WorkOrderStatus, WorkOrderStatus[]> = {
       [WorkOrderStatus.REQUESTED_UNASSIGNED]: [
@@ -1148,12 +1710,31 @@ export class WorkOrdersService {
         WorkOrderStatus.REQUESTED_UNASSIGNED,
       ],
       [WorkOrderStatus.IN_PROGRESS]: [
+        WorkOrderStatus.PAUSED,
+        WorkOrderStatus.COMPLETED,
+        WorkOrderStatus.CANCELED,
+      ],
+      [WorkOrderStatus.PAUSED]: [
+        WorkOrderStatus.IN_PROGRESS,
         WorkOrderStatus.COMPLETED,
         WorkOrderStatus.CANCELED,
       ],
       [WorkOrderStatus.COMPLETED]: [],
       [WorkOrderStatus.CANCELED]: [],
     };
+
+    // Solo Admin/Secretaria pueden cambiar de PAUSED a COMPLETED o CANCELED
+    if (
+      currentEstado === WorkOrderStatus.PAUSED &&
+      (newEstado === WorkOrderStatus.COMPLETED ||
+        newEstado === WorkOrderStatus.CANCELED) &&
+      currentRole &&
+      !['Administrador', 'Secretaria'].includes(currentRole)
+    ) {
+      throw new BadRequestException(
+        'Solo Administrador o Secretaria pueden finalizar o cancelar una orden en pausa',
+      );
+    }
 
     if (!validTransitions[currentEstado]?.includes(newEstado)) {
       throw new BadRequestException(
@@ -1164,7 +1745,7 @@ export class WorkOrdersService {
 
   async calculateTotalCost(
     ordenId: number,
-  ): Promise<{ costoTotalInsumos: number }> {
+  ): Promise<{ costoTotalInsumos: number; tiempoTotal: number }> {
     const workOrder = await this.findOne(ordenId);
 
     let costoTotalInsumos = 0;
@@ -1178,8 +1759,25 @@ export class WorkOrdersService {
       }, 0);
     }
 
+    // Calcular tiempo total
+    let tiempoTotal = 0;
+    if (workOrder.timers) {
+      tiempoTotal = workOrder.timers.reduce((total, timer) => {
+        if (timer.endTime) {
+          return total + timer.totalSeconds;
+        } else {
+          const now = this.getColombiaTime();
+          const startTime = new Date(timer.startTime);
+          return (
+            total + Math.floor((now.getTime() - startTime.getTime()) / 1000)
+          );
+        }
+      }, 0);
+    }
+
     return {
       costoTotalInsumos,
+      tiempoTotal,
     };
   }
 
@@ -1221,8 +1819,10 @@ export class WorkOrdersService {
       );
     }
 
-    if (workOrder.estadoFacturacion === BillingStatus.BILLED) {
-      throw new BadRequestException('La orden ya está facturada');
+    if (workOrder.estadoFacturacion !== BillingStatus.NOT_BILLED && workOrder.facturaPdfUrl) {
+      throw new BadRequestException(
+        'La orden ya tiene un estado de facturación asignado',
+      );
     }
 
     workOrder.facturaPdfUrl = `/api/uploads/invoices/${file.filename}`;
@@ -1254,7 +1854,6 @@ export class WorkOrdersService {
 
     return count > 0;
   }
-
 
   async createFromMaintenancePlan(params: {
     plan: PlanMantenimiento;
@@ -1317,7 +1916,6 @@ export class WorkOrdersService {
         servicioId: servicio.servicioId,
         clienteId: primerContacto.usuarioId,
         clienteEmpresaId: clienteEmpresa.idCliente,
-        tecnicoId: undefined,
         fechaProgramada,
         comentarios:
           plan.notas ??
@@ -1325,9 +1923,10 @@ export class WorkOrdersService {
             equipment.code || equipment.equipmentId
           }`,
         estado: WorkOrderStatus.REQUESTED_UNASSIGNED,
-        estadoFacturacion: BillingStatus.NOT_BILLED,
+        estadoFacturacion: null,
         maintenanceTypeId: undefined,
         planMantenimientoId: plan.id,
+        isEmergency: false,
       });
 
       const savedWorkOrder = await queryRunner.manager.save(workOrder);
@@ -1346,9 +1945,9 @@ export class WorkOrdersService {
       this.eventEmitter.emit('work-order.created', {
         workOrderId: savedWorkOrder.ordenId,
         clienteId: savedWorkOrder.clienteId,
-        tecnicoId: savedWorkOrder.tecnicoId,
         servicioId: savedWorkOrder.servicioId,
         equipmentIds: [equipment.equipmentId],
+        isEmergency: false,
       });
 
       return this.findOne(savedWorkOrder.ordenId);

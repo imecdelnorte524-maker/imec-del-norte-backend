@@ -1,3 +1,4 @@
+// src/work-orders/work-orders.controller.ts
 import {
   Controller,
   Get,
@@ -27,6 +28,8 @@ import { UpdateWorkOrderDto } from './dto/update-work-order.dto';
 import { AddSupplyDetailDto } from './dto/add-supply-detail.dto';
 import { AddToolDetailDto } from './dto/add-tool-detail.dto';
 import { AssignTechnicianDto } from './dto/assign-technician.dto';
+import { AssignTechniciansDto } from './dto/assign-technicians.dto';
+import { CreateEmergencyOrderDto } from './dto/create-emergency-order.dto';
 import { WorkOrderResponseDto } from './dto/work-order-response.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
@@ -35,6 +38,7 @@ import { WorkOrder } from './entities/work-order.entity';
 import { diskStorage } from 'multer';
 import { FileInterceptor } from '@nestjs/platform-express';
 import * as path from 'path';
+import { ServiceCategory } from 'src/services/enums/service.enums';
 
 @ApiTags('work-orders')
 @Controller('work-orders')
@@ -58,6 +62,33 @@ export class WorkOrdersController {
 
     return {
       message: 'Orden de trabajo creada exitosamente',
+      data: {
+        ...this.mapToResponseDto(workOrder),
+        ...costs,
+      },
+    };
+  }
+
+  @Post(':id/emergency')
+  @ApiOperation({
+    summary: 'Crear una orden de emergencia desde una orden existente',
+  })
+  async createEmergency(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: CreateEmergencyOrderDto,
+    @Req() req: any,
+  ) {
+    const workOrder = await this.workOrdersService.createEmergencyOrder(
+      id,
+      dto,
+      req.user,
+    );
+    const costs = await this.workOrdersService.calculateTotalCost(
+      workOrder.ordenId,
+    );
+
+    return {
+      message: 'Orden de emergencia creada exitosamente',
       data: {
         ...this.mapToResponseDto(workOrder),
         ...costs,
@@ -111,8 +142,13 @@ export class WorkOrdersController {
     const workOrder = await this.workOrdersService.findOne(id);
     const roleName = this.getRoleName(req.user);
 
-    if (roleName === 'Técnico' && workOrder.tecnicoId !== req.user.userId) {
-      throw new ForbiddenException();
+    if (roleName === 'Técnico') {
+      const isAssigned = workOrder.technicians?.some(
+        (t) => t.tecnicoId === req.user.userId,
+      );
+      if (!isAssigned) {
+        throw new ForbiddenException();
+      }
     }
 
     if (roleName === 'Cliente' && workOrder.clienteId !== req.user.userId) {
@@ -178,14 +214,23 @@ export class WorkOrdersController {
 
   @Patch(':id/assign-technician')
   @Roles('Administrador', 'Secretaria', 'Supervisor')
-  @ApiOperation({ summary: 'Asignar o cambiar el técnico de una orden' })
+  @ApiOperation({
+    summary:
+      'Asignar o cambiar el técnico de una orden (legacy - un solo técnico)',
+  })
   async assignTechnician(
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: AssignTechnicianDto,
   ) {
-    const workOrder = await this.workOrdersService.assignTechnician(
+    // Para compatibilidad con versión anterior
+    const techniciansDto: AssignTechniciansDto = {
+      technicianIds: [dto.tecnicoId],
+      leaderTechnicianId: dto.tecnicoId,
+    };
+
+    const workOrder = await this.workOrdersService.assignTechnicians(
       id,
-      dto.tecnicoId,
+      techniciansDto,
     );
     const costs = await this.workOrdersService.calculateTotalCost(id);
 
@@ -198,19 +243,92 @@ export class WorkOrdersController {
     };
   }
 
-  @Delete(':id/technician')
+  @Patch(':id/assign-technicians')
   @Roles('Administrador', 'Secretaria', 'Supervisor')
-  @ApiOperation({ summary: 'Quitar técnico de una orden de trabajo' })
-  async unassignTechnician(@Param('id', ParseIntPipe) id: number) {
-    const workOrder = await this.workOrdersService.unassignTechnician(id);
+  @ApiOperation({ summary: 'Asignar múltiples técnicos a una orden' })
+  async assignTechnicians(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: AssignTechniciansDto,
+  ) {
+    const workOrder = await this.workOrdersService.assignTechnicians(id, dto);
     const costs = await this.workOrdersService.calculateTotalCost(id);
 
     return {
-      message: 'Técnico removido de la orden correctamente',
+      message: 'Técnicos asignados correctamente',
       data: {
         ...this.mapToResponseDto(workOrder),
         ...costs,
       },
+    };
+  }
+
+  @Delete(':id/technicians')
+  @Roles('Administrador', 'Secretaria', 'Supervisor')
+  @ApiOperation({
+    summary: 'Quitar todos los técnicos de una orden de trabajo',
+  })
+  async unassignAllTechnicians(@Param('id', ParseIntPipe) id: number) {
+    const workOrder = await this.workOrdersService.unassignAllTechnicians(id);
+    const costs = await this.workOrdersService.calculateTotalCost(id);
+
+    return {
+      message: 'Técnicos removidos de la orden correctamente',
+      data: {
+        ...this.mapToResponseDto(workOrder),
+        ...costs,
+      },
+    };
+  }
+
+  @Post(':id/start-timer')
+  @Roles('Técnico', 'Administrador', 'Secretaria', 'Supervisor')
+  @ApiOperation({ summary: 'Iniciar cronómetro para orden en proceso' })
+  async startTimer(@Param('id', ParseIntPipe) id: number, @Req() req: any) {
+    const timer = await this.workOrdersService.startTimer(id, req.user.userId);
+    return {
+      message: 'Cronómetro iniciado correctamente',
+      data: timer,
+    };
+  }
+
+  @Post(':id/stop-timer')
+  @Roles('Técnico', 'Administrador', 'Secretaria', 'Supervisor')
+  @ApiOperation({ summary: 'Detener cronómetro' })
+  async stopTimer(@Param('id', ParseIntPipe) id: number) {
+    const timer = await this.workOrdersService.stopTimer(id);
+    return {
+      message: 'Cronómetro detenido correctamente',
+      data: timer,
+    };
+  }
+
+  @Post(':id/pause')
+  @Roles('Técnico', 'Administrador', 'Secretaria', 'Supervisor')
+  @ApiOperation({ summary: 'Pausar orden en proceso' })
+  async pauseOrder(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() body: { observacion?: string },
+    @Req() req: any,
+  ) {
+    const pause = await this.workOrdersService.pauseOrder(
+      id,
+      req.user.userId,
+      body.observacion,
+    );
+    return {
+      message: 'Orden pausada correctamente',
+      data: pause,
+    };
+  }
+
+  @Post(':id/resume')
+  @Roles('Técnico', 'Administrador', 'Secretaria', 'Supervisor')
+  @ApiOperation({ summary: 'Reanudar orden en pausa' })
+  async resumeOrder(@Param('id', ParseIntPipe) id: number, @Req() req: any) {
+    const timer = await this.workOrdersService.resumeOrder(id, req.user.userId);
+    return {
+      message: 'Orden reanudada correctamente',
+      data: timer,
     };
   }
 
@@ -385,6 +503,21 @@ export class WorkOrdersController {
   }
 
   private mapToResponseDto(workOrder: WorkOrder): WorkOrderResponseDto {
+    const technicians =
+      workOrder.technicians?.map((tech) => ({
+        id: tech.id,
+        tecnicoId: tech.tecnicoId,
+        isLeader: tech.isLeader,
+        technician: {
+          usuarioId: tech.technician?.usuarioId || 0,
+          nombre: tech.technician?.nombre || '',
+          apellido: tech.technician?.apellido || '',
+          email: tech.technician?.email ?? undefined,
+          telefono: tech.technician?.telefono ?? undefined,
+          cedula: tech.technician?.cedula ?? undefined,
+        },
+      })) || [];
+
     const supplyDetails =
       workOrder.supplyDetails?.map((detail) => ({
         detalleInsumoId: detail.detalleInsumoId,
@@ -403,11 +536,48 @@ export class WorkOrdersController {
 
     const equipments =
       workOrder.equipmentWorkOrders?.map((ewo) => ({
-        equipmentId: ewo.equipment.equipmentId,
-        code: ewo.equipment.code,
-        category: ewo.equipment.category,
+        equipmentId: ewo.equipment?.equipmentId || 0,
+        code: ewo.equipment?.code || '',
+        category: ewo.equipment?.category || ('' as ServiceCategory),
         description: ewo.description,
       })) || [];
+
+    const timers =
+      workOrder.timers?.map((timer) => ({
+        timerId: timer.timerId,
+        startTime: timer.startTime,
+        endTime: timer.endTime,
+        totalSeconds: timer.totalSeconds,
+      })) || [];
+
+    const pauses =
+      workOrder.pauses?.map((pause) => ({
+        pauseId: pause.pauseId,
+        startTime: pause.startTime,
+        endTime: pause.endTime,
+        observacion: pause.observacion || '',
+        user: {
+          usuarioId: pause.user?.usuarioId || 0,
+          nombre: pause.user?.nombre || '',
+          apellido: pause.user?.apellido || '',
+          email: pause.user?.email ?? undefined,
+          telefono: pause.user?.telefono ?? undefined,
+          cedula: pause.user?.cedula ?? undefined,
+        },
+      })) || [];
+
+    // CORRECCIÓN: Manejar el caso cuando service es null
+    const serviceInfo = workOrder.service
+      ? {
+          servicioId: workOrder.service.servicioId,
+          nombreServicio: workOrder.service.nombreServicio,
+          categoriaServicio: workOrder.service.categoriaServicio,
+        }
+      : {
+          servicioId: 0,
+          nombreServicio: '',
+          categoriaServicio: undefined,
+        };
 
     return {
       ordenId: workOrder.ordenId,
@@ -427,7 +597,7 @@ export class WorkOrdersController {
       comentarios: workOrder.comentarios,
       estadoFacturacion: workOrder.estadoFacturacion,
       facturaPdfUrl: workOrder.facturaPdfUrl,
-      service: workOrder.service,
+      service: serviceInfo, // Usar la variable corregida
       cliente: workOrder.cliente
         ? {
             usuarioId: workOrder.cliente.usuarioId,
@@ -438,22 +608,26 @@ export class WorkOrdersController {
             cedula: workOrder.cliente.cedula ?? undefined,
           }
         : null,
-      clienteEmpresa: workOrder.clienteEmpresa,
-      tecnico: workOrder.tecnico
+      clienteEmpresa: workOrder.clienteEmpresa
         ? {
-            usuarioId: workOrder.cliente.usuarioId,
-            nombre: workOrder.tecnico.nombre,
-            apellido: workOrder.tecnico.apellido || '', // Manejo del apellido por si es undefined
-            email: workOrder.tecnico.email ?? undefined,
-            telefono: workOrder.tecnico.telefono ?? undefined,
-            cedula: workOrder.tecnico.cedula ?? undefined,
+            idCliente: workOrder.clienteEmpresa.idCliente,
+            nombre: workOrder.clienteEmpresa.nombre,
+            nit: workOrder.clienteEmpresa.nit,
+            email: workOrder.clienteEmpresa.email ?? undefined,
+            telefono: workOrder.clienteEmpresa.telefono ?? undefined,
+            localizacion: workOrder.clienteEmpresa.localizacion ?? undefined,
           }
         : null,
+      technicians,
       equipos: equipments,
       supplyDetails,
       toolDetails,
-      costoTotalEstimado: 0,
+      timers,
+      pauses,
       costoTotalInsumos: 0,
+      tiempoTotal: 0,
+      isEmergency: workOrder.isEmergency || false,
+      planMantenimientoId: workOrder.planMantenimientoId,
     };
   }
 }

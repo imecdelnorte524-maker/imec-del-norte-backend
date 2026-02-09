@@ -1,3 +1,4 @@
+// src/work-orders/work-orders.module.ts
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { WorkOrdersService } from './work-orders.service';
@@ -6,6 +7,9 @@ import { WorkOrder } from './entities/work-order.entity';
 import { SupplyDetail } from './entities/supply-detail.entity';
 import { ToolDetail } from './entities/tool-detail.entity';
 import { EquipmentWorkOrder } from './entities/equipment-work-order.entity';
+import { WorkOrderTechnician } from './entities/work-order-technician.entity';
+import { WorkOrderTimer } from './entities/work-order-timer.entity';
+import { WorkOrderPause } from './entities/work-order-pause.entity';
 import { Service } from '../services/entities/service.entity';
 import { User } from '../users/entities/user.entity';
 import { Supply } from '../supplies/entities/supply.entity';
@@ -24,6 +28,9 @@ import { MaintenanceSchedulerService } from './maintenance-scheduler.service';
       SupplyDetail,
       ToolDetail,
       EquipmentWorkOrder,
+      WorkOrderTechnician,
+      WorkOrderTimer,
+      WorkOrderPause,
       Service,
       User,
       Supply,

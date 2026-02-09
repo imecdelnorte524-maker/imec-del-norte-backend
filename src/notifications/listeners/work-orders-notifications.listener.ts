@@ -38,7 +38,6 @@ export class WorkOrdersNotificationsListener {
     const admins = await this.usersRepo
       .createQueryBuilder('user')
       .leftJoinAndSelect('user.role', 'role')
-      // CORRECCIÓN AQUÍ: Usar :...rol para que TypeORM expanda el array
       .where('role.nombreRol IN (:...rol)', { rol: ['Administrador', 'Secretaria'] })
       .andWhere('user.activo = true')
       .getMany();
@@ -62,13 +61,17 @@ export class WorkOrdersNotificationsListener {
   async handleWorkOrderAssigned(payload: WorkOrderAssignedEvent) {
     this.logger.log(`📢 Evento recibido: work-order.assigned ID: ${payload.workOrderId}`);
 
-    // Buscar al técnico asignado
-    const tecnico = await this.usersRepo.findOne({
-      where: { usuarioId: payload.tecnicoId },
-    });
+    // Buscar al técnico asignado con su rol
+    const tecnico = await this.usersRepo
+      .createQueryBuilder('user')
+      .leftJoinAndSelect('user.role', 'role')
+      .where('user.usuarioId = :tecnicoId', { tecnicoId: payload.tecnicoId })
+      .andWhere('role.nombreRol = :rol', { rol: 'Tecnico' })
+      .andWhere('user.activo = true')
+      .getOne();
 
-    if (!tecnico || !tecnico.activo) {
-      this.logger.warn(`⚠️ Técnico ${payload.tecnicoId} no encontrado o inactivo.`);
+    if (!tecnico) {
+      this.logger.warn(`⚠️ Técnico ${payload.tecnicoId} no encontrado, inactivo o no tiene rol de Técnico.`);
       return;
     }
 

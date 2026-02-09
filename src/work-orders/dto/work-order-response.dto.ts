@@ -1,3 +1,4 @@
+// src/work-orders/dto/work-order-response.dto.ts
 import { ApiProperty } from '@nestjs/swagger';
 import { WorkOrderStatus } from '../enums/work-order-status.enum';
 import { ServiceCategory } from '../../services/enums/service.enums';
@@ -45,6 +46,20 @@ export class UserInfo {
 
   @ApiProperty({ example: 54424415 })
   cedula?: string | null;
+}
+
+export class TechnicianInfo {
+  @ApiProperty({ example: 1 })
+  id: number;
+
+  @ApiProperty({ example: 1 })
+  tecnicoId: number;
+
+  @ApiProperty({ example: false })
+  isLeader: boolean;
+
+  @ApiProperty({ type: UserInfo })
+  technician: UserInfo;
 }
 
 export class ClientCompanyInfo {
@@ -116,6 +131,45 @@ export class ToolDetailInfo {
   marca: string;
 }
 
+export class TimerInfo {
+  @ApiProperty({ example: 1 })
+  timerId: number;
+
+  @ApiProperty({ example: '2024-01-01T10:00:00.000Z' })
+  startTime: Date;
+
+  @ApiProperty({
+    example: '2024-01-01T12:00:00.000Z',
+    required: false,
+    nullable: true,
+  })
+  endTime?: Date | null;
+
+  @ApiProperty({ example: 7200 })
+  totalSeconds: number;
+}
+
+export class PauseInfo {
+  @ApiProperty({ example: 1 })
+  pauseId: number;
+
+  @ApiProperty({ example: '2024-01-01T12:00:00.000Z' })
+  startTime: Date;
+
+  @ApiProperty({
+    example: '2024-01-01T13:00:00.000Z',
+    required: false,
+    nullable: true,
+  })
+  endTime?: Date | null;
+
+  @ApiProperty({ example: 'Pausa para almuerzo' })
+  observacion: string;
+
+  @ApiProperty({ type: UserInfo })
+  user: UserInfo;
+}
+
 export class WorkOrderResponseDto {
   @ApiProperty({ example: 1 })
   ordenId: number;
@@ -129,8 +183,8 @@ export class WorkOrderResponseDto {
   @ApiProperty({ type: UserInfo, required: false, nullable: true })
   cliente?: UserInfo | null;
 
-  @ApiProperty({ type: UserInfo, required: false, nullable: true })
-  tecnico?: UserInfo | null;
+  @ApiProperty({ type: [TechnicianInfo], required: false })
+  technicians: TechnicianInfo[];
 
   @ApiProperty({ type: [EquipmentInfo], required: false })
   equipos: EquipmentInfo[];
@@ -162,15 +216,27 @@ export class WorkOrderResponseDto {
   @ApiProperty({ type: [ToolDetailInfo], required: false })
   toolDetails: ToolDetailInfo[];
 
+  @ApiProperty({ type: [TimerInfo], required: false })
+  timers: TimerInfo[];
+
+  @ApiProperty({ type: [PauseInfo], required: false })
+  pauses: PauseInfo[];
+
   @ApiProperty()
   costoTotalInsumos: number;
 
   @ApiProperty()
-  costoTotalEstimado: number;
+  tiempoTotal: number;
 
-  @ApiProperty({ enum: BillingStatus })
-  estadoFacturacion: BillingStatus;
+  @ApiProperty({ enum: BillingStatus, nullable: true })
+  estadoFacturacion: BillingStatus | null;
 
   @ApiProperty({ required: false, nullable: true })
   facturaPdfUrl?: string | null;
+
+  @ApiProperty({ example: false })
+  isEmergency: boolean;
+
+  @ApiProperty({ example: 1, required: false, nullable: true })
+  planMantenimientoId?: number | null;
 }

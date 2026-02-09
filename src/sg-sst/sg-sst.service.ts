@@ -54,7 +54,12 @@ export class SgSstService {
     try {
       const workOrder = await this.workOrderRepository.findOne({
         where: { ordenId: createAtsDto.workOrderId },
-        relations: ['cliente', 'clienteEmpresa', 'tecnico'],
+        relations: [
+          'cliente',
+          'clienteEmpresa',
+          'technicians',
+          'technicians.technician',
+        ],
       });
 
       if (!workOrder) {
@@ -63,7 +68,12 @@ export class SgSstService {
         );
       }
 
-      if (workOrder.tecnicoId && workOrder.tecnicoId !== createAtsDto.userId) {
+      // Verificar si el usuario es uno de los técnicos asignados
+      const isAssignedTechnician = workOrder.technicians?.some(
+        (tech) => tech.tecnicoId === createAtsDto.userId,
+      );
+
+      if (workOrder.technicians?.length > 0 && !isAssignedTechnician) {
         throw new BadRequestException(
           'La orden de trabajo no está asignada a este técnico',
         );
@@ -147,7 +157,7 @@ export class SgSstService {
   async createHeightWork(createHeightWorkDto: CreateHeightWorkDto) {
     const workOrder = await this.workOrderRepository.findOne({
       where: { ordenId: createHeightWorkDto.workOrderId },
-      relations: ['tecnico'],
+      relations: ['technicians', 'technicians.technician'],
     });
 
     if (!workOrder) {
@@ -156,10 +166,12 @@ export class SgSstService {
       );
     }
 
-    if (
-      workOrder.tecnicoId &&
-      workOrder.tecnicoId !== createHeightWorkDto.userId
-    ) {
+    // Verificar si el usuario es uno de los técnicos asignados
+    const isAssignedTechnician = workOrder.technicians?.some(
+      (tech) => tech.tecnicoId === createHeightWorkDto.userId,
+    );
+
+    if (workOrder.technicians?.length > 0 && !isAssignedTechnician) {
       throw new BadRequestException(
         'La orden de trabajo no está asignada a este técnico',
       );
@@ -199,7 +211,7 @@ export class SgSstService {
   async createPreoperational(createPreoperationalDto: CreatePreoperationalDto) {
     const workOrder = await this.workOrderRepository.findOne({
       where: { ordenId: createPreoperationalDto.workOrderId },
-      relations: ['tecnico'],
+      relations: ['technicians', 'technicians.technician'],
     });
 
     if (!workOrder) {
@@ -208,10 +220,12 @@ export class SgSstService {
       );
     }
 
-    if (
-      workOrder.tecnicoId &&
-      workOrder.tecnicoId !== createPreoperationalDto.userId
-    ) {
+    // Verificar si el usuario es uno de los técnicos asignados
+    const isAssignedTechnician = workOrder.technicians?.some(
+      (tech) => tech.tecnicoId === createPreoperationalDto.userId,
+    );
+
+    if (workOrder.technicians?.length > 0 && !isAssignedTechnician) {
       throw new BadRequestException(
         'La orden de trabajo no está asignada a este técnico',
       );
@@ -283,8 +297,6 @@ export class SgSstService {
     } else if (signFormDto.signerType === SignerType.SST) {
       form.sstSignatureDate = new Date();
       form.status = FormStatus.COMPLETED;
-
-      await this.generatePdf(formId);
     }
 
     await this.formRepository.save(form);
@@ -366,20 +378,12 @@ export class SgSstService {
       form.sstSignatureDate = new Date();
       await queryRunner.manager.save(Form, form);
 
-      let pdf: GeneratedPdf | null = null;
-      try {
-        pdf = await this.generatePdf(formId);
-      } catch (error) {
-        console.warn('No se pudo generar PDF:', (error as any).message);
-      }
-
       await queryRunner.commitTransaction();
 
       return {
         form,
         heightWork,
         signature,
-        pdf,
       };
     } catch (error) {
       await queryRunner.rollbackTransaction();
@@ -473,7 +477,12 @@ export class SgSstService {
     try {
       const workOrder = await this.workOrderRepository.findOne({
         where: { ordenId: createAtsWithSignatureDto.workOrderId },
-        relations: ['cliente', 'clienteEmpresa', 'tecnico'],
+        relations: [
+          'cliente',
+          'clienteEmpresa',
+          'technicians',
+          'technicians.technician',
+        ],
       });
 
       if (!workOrder) {
@@ -482,10 +491,12 @@ export class SgSstService {
         );
       }
 
-      if (
-        workOrder.tecnicoId &&
-        workOrder.tecnicoId !== createAtsWithSignatureDto.userId
-      ) {
+      // Verificar si el usuario es uno de los técnicos asignados
+      const isAssignedTechnician = workOrder.technicians?.some(
+        (tech) => tech.tecnicoId === createAtsWithSignatureDto.userId,
+      );
+
+      if (workOrder.technicians?.length > 0 && !isAssignedTechnician) {
         throw new BadRequestException(
           'La orden de trabajo no está asignada a este técnico',
         );
@@ -571,7 +582,12 @@ export class SgSstService {
     try {
       const workOrder = await this.workOrderRepository.findOne({
         where: { ordenId: createHeightWorkWithSignatureDto.workOrderId },
-        relations: ['tecnico'],
+        relations: [
+          'cliente',
+          'clienteEmpresa',
+          'technicians',
+          'technicians.technician',
+        ],
       });
 
       if (!workOrder) {
@@ -580,10 +596,12 @@ export class SgSstService {
         );
       }
 
-      if (
-        workOrder.tecnicoId &&
-        workOrder.tecnicoId !== createHeightWorkWithSignatureDto.userId
-      ) {
+      // Verificar si el usuario es uno de los técnicos asignados
+      const isAssignedTechnician = workOrder.technicians?.some(
+        (tech) => tech.tecnicoId === createHeightWorkWithSignatureDto.userId,
+      );
+
+      if (workOrder.technicians?.length > 0 && !isAssignedTechnician) {
         throw new BadRequestException(
           'La orden de trabajo no está asignada a este técnico',
         );
@@ -670,7 +688,12 @@ export class SgSstService {
     try {
       const workOrder = await this.workOrderRepository.findOne({
         where: { ordenId: createPreoperationalWithSignatureDto.workOrderId },
-        relations: ['tecnico'],
+        relations: [
+          'cliente',
+          'clienteEmpresa',
+          'technicians',
+          'technicians.technician',
+        ],
       });
 
       if (!workOrder) {
@@ -679,10 +702,13 @@ export class SgSstService {
         );
       }
 
-      if (
-        workOrder.tecnicoId &&
-        workOrder.tecnicoId !== createPreoperationalWithSignatureDto.userId
-      ) {
+      // Verificar si el usuario es uno de los técnicos asignados
+      const isAssignedTechnician = workOrder.technicians?.some(
+        (tech) =>
+          tech.tecnicoId === createPreoperationalWithSignatureDto.userId,
+      );
+
+      if (workOrder.technicians?.length > 0 && !isAssignedTechnician) {
         throw new BadRequestException(
           'La orden de trabajo no está asignada a este técnico',
         );
@@ -750,7 +776,6 @@ export class SgSstService {
     }
   }
 
-  // ========== PDF GENERATION (HTML + templates) ==========
   async generatePdf(formId: number) {
     const form = await this.formRepository.findOne({
       where: { id: formId },
@@ -831,12 +856,10 @@ export class SgSstService {
     doc.moveDown(2);
 
     // Título
-    doc
-      .fontSize(16)
-      .text('ANÁLISIS DE TRABAJO SEGURO (ATS)', {
-        align: 'center',
-        underline: true,
-      });
+    doc.fontSize(16).text('ANÁLISIS DE TRABAJO SEGURO (ATS)', {
+      align: 'center',
+      underline: true,
+    });
     doc.moveDown();
 
     // COMPLETE LOS SIGUIENTES DATOS
@@ -1018,12 +1041,10 @@ export class SgSstService {
     doc
       .fontSize(14)
       .text('GESTIÓN DOCUMENTAL Y DE MEJORA', { align: 'center' });
-    doc
-      .fontSize(16)
-      .text('PERMISO PARA TRABAJO EN ALTURAS', {
-        align: 'center',
-        underline: true,
-      });
+    doc.fontSize(16).text('PERMISO PARA TRABAJO EN ALTURAS', {
+      align: 'center',
+      underline: true,
+    });
     doc.moveDown(1);
 
     // Fecha y hora
@@ -1075,11 +1096,9 @@ export class SgSstService {
     doc.moveDown(1);
 
     // TIEMPO ESTIMADO
-    doc
-      .fontSize(12)
-      .text('TIEMPO ESTIMADO PARA LA REALIZACION DEL TRABAJO', {
-        underline: true,
-      });
+    doc.fontSize(12).text('TIEMPO ESTIMADO PARA LA REALIZACION DEL TRABAJO', {
+      underline: true,
+    });
     doc.moveDown(0.5);
     doc.fontSize(10).text(hw.estimatedTime || '24 horas');
     doc.moveDown(1);
@@ -1394,12 +1413,10 @@ export class SgSstService {
     doc.text('Página 2 de 2', 500, 40);
 
     doc.moveDown(2);
-    doc
-      .fontSize(14)
-      .text('INSPECCION PREOPERACIONAL DE ANDAMIOS', {
-        align: 'center',
-        underline: true,
-      });
+    doc.fontSize(14).text('INSPECCION PREOPERACIONAL DE ANDAMIOS', {
+      align: 'center',
+      underline: true,
+    });
     doc.moveDown(1);
 
     // Observaciones

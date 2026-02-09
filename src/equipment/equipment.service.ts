@@ -1,7 +1,3 @@
-// imports nuevos arriba
-import * as ExcelJS from 'exceljs';
-import { UnidadFrecuencia } from './enums/frecuency-unity.enum';
-import { Response } from 'express';
 import {
   Injectable,
   NotFoundException,
@@ -31,6 +27,8 @@ import { BaseSequenceService } from '../common/services/base-sequence.service';
 import { SequenceHelperService } from '../common/services/sequence-helper.service';
 import { PlanMantenimientoDto } from './dto/plan-mantenimiento.dto';
 import { WorkOrdersService } from '../work-orders/work-orders.service';
+import { UnidadFrecuencia } from './enums/frecuency-unity.enum';
+import * as ExcelJS from 'exceljs';
 
 interface OrphanedRecordIssue {
   table: string;
@@ -629,12 +627,6 @@ export class EquipmentService
         `Equipo creado exitosamente: ${savedEquipment.equipmentId} con código ${code}`,
       );
 
-      // if (dto.planMantenimiento) {
-      //   await this.createImmediateMaintenanceOrderIfNeeded(
-      //     savedEquipment.equipmentId,
-      //   );
-      // }
-
       return this.findOne(savedEquipment.equipmentId);
     } catch (error) {
       await queryRunner.rollbackTransaction();
@@ -831,60 +823,17 @@ export class EquipmentService
     );
   }
 
-  private async createImmediateMaintenanceOrderIfNeeded(
-    equipmentId: number,
-  ): Promise<void> {
-    try {
-      const plan = await this.planMantenimientoRepository.findOne({
-        where: { equipmentId },
-      });
-
-      if (!plan || !plan.fechaProgramada) {
-        return;
-      }
-
-      const hoy = this.startOfDay(new Date());
-      const fechaPlan = this.startOfDay(new Date(plan.fechaProgramada));
-      const diff = this.diffEnDias(fechaPlan, hoy);
-
-      // Solo si es hoy o dentro de 2 días
-      if (diff < 0 || diff > 2) {
-        return;
-      }
-
-      const yaExiste = await this.workOrdersService.existeOrdenParaPlanEnFecha(
-        plan.id,
-        fechaPlan,
-      );
-
-      if (yaExiste) {
-        this.logger.debug(
-          `Ya existe orden para plan ${plan.id} en fecha ${fechaPlan.toISOString().slice(0, 10)}`,
-        );
-        return;
-      }
-
-      await this.workOrdersService.createFromMaintenancePlan({
-        plan,
-        fechaProgramada: fechaPlan,
-      });
-    } catch (error: any) {
-      this.logger.error(
-        `Error creando orden de mantenimiento automática para equipo ${equipmentId}: ${error.message}`,
-        error.stack,
-      );
-    }
-  }
-
   private normalizePlanData(
     planData: PlanMantenimientoDto,
   ): Partial<PlanMantenimiento> {
     if (!planData) return {};
 
-    const { fechaProgramada, ...rest } = planData;
+    const { fechaProgramada, diaDelMes, ...rest } = planData;
 
     return {
       ...rest,
+      // 🔧 Asegurar que diaDelMes se pase correctamente
+      diaDelMes: diaDelMes !== undefined ? diaDelMes : undefined,
       fechaProgramada:
         typeof fechaProgramada === 'string'
           ? new Date(fechaProgramada)
@@ -897,6 +846,48 @@ export class EquipmentService
     equipmentId: number,
     planData: PlanMantenimientoDto,
   ): Promise<void> {
+    const validateInterval = (
+      unidad: UnidadFrecuencia,
+      intervalo: number,
+    ): boolean => {
+      if (!unidad || !intervalo) return true;
+
+      switch (unidad) {
+        case UnidadFrecuencia.DIA:
+          return intervalo >= 1 && intervalo <= 365;
+        case UnidadFrecuencia.SEMANA:
+          return intervalo >= 1 && intervalo <= 52;
+        case UnidadFrecuencia.MES:
+          return intervalo >= 1 && intervalo <= 12;
+        default:
+          return true;
+      }
+    };
+
+    // Validar el intervalo según la unidad de frecuencias
+    if (planData.unidadFrecuencia && planData.diaDelMes) {
+      const isValid = validateInterval(
+        planData.unidadFrecuencia,
+        planData.diaDelMes,
+      );
+
+      if (!isValid) {
+        let errorMsg = 'Intervalo inválido: ';
+        switch (planData.unidadFrecuencia) {
+          case UnidadFrecuencia.DIA:
+            errorMsg += 'Para DÍA el intervalo debe estar entre 1 y 365';
+            break;
+          case UnidadFrecuencia.SEMANA:
+            errorMsg += 'Para SEMANA el intervalo debe estar entre 1 y 52';
+            break;
+          case UnidadFrecuencia.MES:
+            errorMsg += 'Para MES el intervalo debe estar entre 1 y 12';
+            break;
+        }
+        throw new BadRequestException(errorMsg);
+      }
+    }
+
     const existing = await queryRunner.manager.findOne(PlanMantenimiento, {
       where: { equipmentId },
     });
@@ -960,6 +951,10 @@ export class EquipmentService
     unidad: UnidadFrecuencia,
     step: number,
   ): Date {
+    if (!step || step <= 0) {
+      step = 1; // Valor por defecto
+    }
+
     switch (unidad) {
       case UnidadFrecuencia.DIA:
         return this.addDays(current, step);
@@ -1470,7 +1465,8 @@ export class EquipmentService
         'equipmentWorkOrders.workOrder',
         'equipmentWorkOrders.workOrder.service',
         'equipmentWorkOrders.workOrder.cliente',
-        'equipmentWorkOrders.workOrder.tecnico',
+        'equipmentWorkOrders.workOrder.technicians', // Cambiar 'tecnico' por 'technicians'
+        'equipmentWorkOrders.workOrder.technicians.technician', // Añadir esta relación
       ],
     });
 
@@ -1490,7 +1486,13 @@ export class EquipmentService
         tipoServicio: ewo.workOrder.tipoServicio,
         service: ewo.workOrder.service,
         cliente: ewo.workOrder.cliente,
-        tecnico: ewo.workOrder.tecnico,
+        technicians:
+          ewo.workOrder.technicians?.map((tech) => ({
+            id: tech.id,
+            tecnicoId: tech.tecnicoId,
+            isLeader: tech.isLeader,
+            technician: tech.technician,
+          })) || [],
       },
     }));
   }
@@ -1678,7 +1680,8 @@ export class EquipmentService
       .leftJoinAndSelect('e.client', 'client')
       .leftJoinAndSelect('e.planMantenimiento', 'plan')
       .leftJoinAndSelect('e.evaporators', 'evaps')
-      .leftJoinAndSelect('e.condensers', 'conds')
+      .leftJoinAndSelect('e.area', 'area')
+      .leftJoinAndSelect('e.subArea', 'subArea')
       .where('e.clientId = :clientId', { clientId })
       .andWhere('plan.id IS NOT NULL')
       .andWhere('e.category = :cat', {
@@ -1686,6 +1689,17 @@ export class EquipmentService
       });
 
     const equipments = await qb.getMany();
+
+    // Función simplificada para obtener solo la ubicación actual (sin recorrer jerarquía)
+    const getCurrentLocation = (equipment: Equipment): string => {
+      if (equipment.subArea) {
+        return equipment.subArea.nombreSubArea;
+      }
+      if (equipment.area) {
+        return equipment.area.nombreArea;
+      }
+      return 'Sin ubicación';
+    };
 
     const workbook = new ExcelJS.Workbook();
     const sheet = workbook.addWorksheet(`Plan ${year}`);
@@ -1708,23 +1722,28 @@ export class EquipmentService
     const WEEKS_PER_MONTH = 4; // 4 semanas fijas
     const DAYS_PER_WEEK = 6; // 6 días (lunes–sábado)
 
-    const COL_EQUIPO = 1;
-    const COL_MOD = 2;
-    const COL_SERIAL = 3;
-    const FIRST_PLAN_COL = 4;
+    // Nuevo orden de columnas:
+    const COL_UBICACION = 1; // Nuevo campo: última subárea/área
+    const COL_EQUIPO = 2; // Código del equipo
+    const COL_MOD = 3; // Modelo
+    const COL_SERIAL = 4; // Serial
+    const FIRST_PLAN_COL = 5; // Las columnas del plan empiezan aquí
 
     // Cabecera básica
+    sheet.mergeCells(1, COL_UBICACION, 3, COL_UBICACION);
+    sheet.getCell(1, COL_UBICACION).value = 'UBICACIÓN';
+    sheet.getColumn(COL_UBICACION).width = 25;
+
     sheet.mergeCells(1, COL_EQUIPO, 3, COL_EQUIPO);
     sheet.getCell(1, COL_EQUIPO).value = 'EQUIPO';
+    sheet.getColumn(COL_EQUIPO).width = 15;
 
     sheet.mergeCells(1, COL_MOD, 3, COL_MOD);
     sheet.getCell(1, COL_MOD).value = 'MOD';
+    sheet.getColumn(COL_MOD).width = 15;
 
     sheet.mergeCells(1, COL_SERIAL, 3, COL_SERIAL);
     sheet.getCell(1, COL_SERIAL).value = 'SERIAL';
-
-    sheet.getColumn(COL_EQUIPO).width = 15;
-    sheet.getColumn(COL_MOD).width = 15;
     sheet.getColumn(COL_SERIAL).width = 18;
 
     // Meses / semanas / días
@@ -1792,13 +1811,18 @@ export class EquipmentService
       });
     }
 
-    // Vista congelada: primeras 3 filas y 3 columnas
-    sheet.views = [{ state: 'frozen', xSplit: 3, ySplit: 3 }];
+    // Vista congelada: primeras 3 filas y 4 columnas (ahora tenemos 4 columnas iniciales)
+    sheet.views = [{ state: 'frozen', xSplit: 4, ySplit: 3 }];
 
-    // 5. Filas de equipos (cada aire del cliente)
+    // Filas de equipos
     let currentRowIndex = 4;
+
     for (const eq of equipments) {
       const row = sheet.getRow(currentRowIndex);
+
+      // Nueva columna: UBICACIÓN (último nivel)
+      const location = getCurrentLocation(eq);
+      row.getCell(COL_UBICACION).value = location;
 
       // Código interno como "EQUIPO"
       row.getCell(COL_EQUIPO).value = eq.code ?? eq.equipmentId;
@@ -1860,7 +1884,7 @@ export class EquipmentService
       currentRowIndex++;
     }
 
-    // 6. Exportar a buffer
+    // Exportar a buffer
     const buffer = (await workbook.xlsx.writeBuffer()) as unknown as Buffer;
     return buffer;
   }
@@ -1891,24 +1915,24 @@ export class EquipmentService
     await this.planMantenimientoRepository.save(plan);
   }
 
-async advanceMaintenancePlanForEquipment(
-  equipmentId: number,
-): Promise<Equipment> {
-  // 1. Buscar el plan por equipo
-  const plan = await this.planMantenimientoRepository.findOne({
-    where: { equipmentId },
-  });
+  async advanceMaintenancePlanForEquipment(
+    equipmentId: number,
+  ): Promise<Equipment> {
+    // 1. Buscar el plan por equipo
+    const plan = await this.planMantenimientoRepository.findOne({
+      where: { equipmentId },
+    });
 
-  if (!plan) {
-    throw new NotFoundException(
-      `No existe plan de mantenimiento para el equipo ${equipmentId}`,
-    );
+    if (!plan) {
+      throw new NotFoundException(
+        `No existe plan de mantenimiento para el equipo ${equipmentId}`,
+      );
+    }
+
+    // 2. Avanzar la fecha programada a la siguiente (respetando domingos)
+    await this.advanceMaintenancePlanFromPlanId(plan.id);
+
+    // 3. Devolver el equipo actualizado (con el plan ya movido)
+    return this.findOne(equipmentId);
   }
-
-  // 2. Avanzar la fecha programada a la siguiente (respetando domingos)
-  await this.advanceMaintenancePlanFromPlanId(plan.id);
-
-  // 3. Devolver el equipo actualizado (con el plan ya movido)
-  return this.findOne(equipmentId);
-}
 }
