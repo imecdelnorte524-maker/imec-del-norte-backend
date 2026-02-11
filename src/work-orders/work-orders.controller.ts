@@ -30,7 +30,11 @@ import { AddToolDetailDto } from './dto/add-tool-detail.dto';
 import { AssignTechnicianDto } from './dto/assign-technician.dto';
 import { AssignTechniciansDto } from './dto/assign-technicians.dto';
 import { CreateEmergencyOrderDto } from './dto/create-emergency-order.dto';
-import { WorkOrderResponseDto } from './dto/work-order-response.dto';
+import {
+  AreaInfo,
+  SubAreaInfo,
+  WorkOrderResponseDto,
+} from './dto/work-order-response.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -535,12 +539,36 @@ export class WorkOrdersController {
       })) || [];
 
     const equipments =
-      workOrder.equipmentWorkOrders?.map((ewo) => ({
-        equipmentId: ewo.equipment?.equipmentId || 0,
-        code: ewo.equipment?.code || '',
-        category: ewo.equipment?.category || ('' as ServiceCategory),
-        description: ewo.description,
-      })) || [];
+      workOrder.equipmentWorkOrders?.map((ewo) => {
+        const equipment = ewo.equipment;
+
+        // Área - CORREGIDO: usar 'nombre' en lugar de 'nombreArea'
+        let area = null as AreaInfo | null;
+        if (equipment?.area && equipment.areaId) {
+          area = {
+            areaId: equipment.areaId,
+            nombre: equipment.area.nombreArea || '', // 👈 CAMBIADO de 'nombreArea' a 'nombre'
+          };
+        }
+
+        // Subárea - CORREGIDO: usar 'nombre' en lugar de 'nombreSubArea'
+        let subArea = null as SubAreaInfo | null;
+        if (equipment?.subArea && equipment.subAreaId) {
+          subArea = {
+            subAreaId: equipment.subAreaId,
+            nombre: equipment.subArea.nombreSubArea || '', // 👈 CAMBIADO de 'nombreSubArea' a 'nombre'
+          };
+        }
+
+        return {
+          equipmentId: equipment?.equipmentId ?? 0,
+          code: equipment?.code ?? '',
+          category: equipment?.category ?? ('' as ServiceCategory),
+          status: equipment?.status ?? '',
+          area,
+          subArea,
+        };
+      }) || [];
 
     const timers =
       workOrder.timers?.map((timer) => ({

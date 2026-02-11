@@ -89,7 +89,7 @@ export class MaintenanceSchedulerService {
    * - diff === 5 → crea orden 5 días antes de la fecha programada
    * - diff === 0 → crea orden el mismo día si por alguna razón no se creó antes
    */
-  // @Cron(CronExpression.EVERY_5_MINUTES)
+  @Cron(CronExpression.EVERY_5_MINUTES)
   async procesarMantenimientosPeriodicos() {
     const hoy = startOfDay(new Date());
     const hoyStr = formatDate(hoy);

@@ -1,6 +1,6 @@
 import {
-  OnGatewayConnection,
-  OnGatewayDisconnect,
+  // OnGatewayConnection,
+  // OnGatewayDisconnect,
   WebSocketGateway,
   WebSocketServer,
 } from '@nestjs/websockets';
@@ -21,18 +21,18 @@ const allowedOrigins = [
   },
 })
 export class WebsocketGateway
-  implements OnGatewayConnection, OnGatewayDisconnect
+  // implements OnGatewayConnection, OnGatewayDisconnect
 {
   @WebSocketServer()
   server: Server;
 
-  handleConnection(client: Socket) {
-    console.log(`Client connected: ${client.id}`);
-  }
+  // handleConnection(client: Socket) {
+  //   console.log(`Client connected: ${client.id}`);
+  // }
 
-  handleDisconnect(client: Socket) {
-    console.log(`Client disconnected: ${client.id}`);
-  }
+  // handleDisconnect(client: Socket) {
+  //   console.log(`Client disconnected: ${client.id}`);
+  // }
 
   // Método genérico para emitir eventos
   emit(event: string, data: any) {
