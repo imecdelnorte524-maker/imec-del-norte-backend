@@ -328,6 +328,8 @@ export class WorkOrdersService {
       .leftJoinAndSelect('technicians.technician', 'technician')
       .leftJoinAndSelect('workOrder.equipmentWorkOrders', 'equipmentWorkOrders')
       .leftJoinAndSelect('equipmentWorkOrders.equipment', 'equipment')
+      .leftJoinAndSelect('equipment.area', 'area')
+      .leftJoinAndSelect('equipment.subArea', 'subArea')
       .leftJoinAndSelect('workOrder.supplyDetails', 'supplyDetails')
       .leftJoinAndSelect('supplyDetails.supply', 'supply')
       .leftJoinAndSelect('workOrder.toolDetails', 'toolDetails')
@@ -373,6 +375,8 @@ export class WorkOrdersService {
       .leftJoinAndSelect('technicians.technician', 'technician')
       .leftJoinAndSelect('workOrder.equipmentWorkOrders', 'equipmentWorkOrders')
       .leftJoinAndSelect('equipmentWorkOrders.equipment', 'equipment')
+      .leftJoinAndSelect('equipment.area', 'area')
+      .leftJoinAndSelect('equipment.subArea', 'subArea')
       .leftJoinAndSelect('workOrder.supplyDetails', 'supplyDetails')
       .leftJoinAndSelect('supplyDetails.supply', 'supply')
       .leftJoinAndSelect('workOrder.toolDetails', 'toolDetails')
@@ -1034,6 +1038,10 @@ export class WorkOrdersService {
         'workOrder.technicians',
         'workOrder.technicians.technician',
         'workOrder.maintenanceType',
+        'workOrder.equipmentWorkOrders',
+        'workOrder.equipmentWorkOrders.equipment',
+        'workOrder.equipmentWorkOrders.equipment.area',
+        'workOrder.equipmentWorkOrders.equipment.subArea',
       ],
       order: { createdAt: 'DESC' },
     });
@@ -1562,6 +1570,8 @@ export class WorkOrdersService {
       .leftJoinAndSelect('technicians.technician', 'technician')
       .leftJoinAndSelect('workOrder.equipmentWorkOrders', 'equipmentWorkOrders')
       .leftJoinAndSelect('equipmentWorkOrders.equipment', 'equipment')
+      .leftJoinAndSelect('equipment.area', 'area')
+      .leftJoinAndSelect('equipment.subArea', 'subArea')
       .leftJoinAndSelect('workOrder.supplyDetails', 'supplyDetails')
       .leftJoinAndSelect('supplyDetails.supply', 'supply')
       .leftJoinAndSelect('workOrder.toolDetails', 'toolDetails')
@@ -1587,6 +1597,8 @@ export class WorkOrdersService {
       .leftJoinAndSelect('technicians.technician', 'technician')
       .leftJoinAndSelect('workOrder.equipmentWorkOrders', 'equipmentWorkOrders')
       .leftJoinAndSelect('equipmentWorkOrders.equipment', 'equipment')
+      .leftJoinAndSelect('equipment.area', 'area')
+      .leftJoinAndSelect('equipment.subArea', 'subArea')
       .leftJoinAndSelect('workOrder.supplyDetails', 'supplyDetails')
       .leftJoinAndSelect('supplyDetails.supply', 'supply')
       .leftJoinAndSelect('workOrder.toolDetails', 'toolDetails')
@@ -1633,6 +1645,8 @@ export class WorkOrdersService {
       .innerJoinAndSelect('technicians.technician', 'technician')
       .leftJoinAndSelect('workOrder.equipmentWorkOrders', 'equipmentWorkOrders')
       .leftJoinAndSelect('equipmentWorkOrders.equipment', 'equipment')
+      .leftJoinAndSelect('equipment.area', 'area')
+      .leftJoinAndSelect('equipment.subArea', 'subArea')
       .leftJoinAndSelect('workOrder.supplyDetails', 'supplyDetails')
       .leftJoinAndSelect('supplyDetails.supply', 'supply')
       .leftJoinAndSelect('workOrder.toolDetails', 'toolDetails')
@@ -1684,6 +1698,8 @@ export class WorkOrdersService {
         'technicians.technician',
         'equipmentWorkOrders',
         'equipmentWorkOrders.equipment',
+        'equipmentWorkOrders.equipment.area',
+        'equipmentWorkOrders.equipment.subArea',
         'supplyDetails',
         'supplyDetails.supply',
         'toolDetails',
@@ -1707,6 +1723,11 @@ export class WorkOrdersService {
       .leftJoinAndSelect('workOrder.clienteEmpresa', 'clienteEmpresa')
       .leftJoinAndSelect('workOrder.technicians', 'technicians')
       .leftJoinAndSelect('technicians.technician', 'technician')
+      .leftJoinAndSelect('workOrder.equipmentWorkOrders', 'equipmentWorkOrders')
+      .leftJoinAndSelect('equipmentWorkOrders.equipment', 'equipment')
+      .leftJoinAndSelect('equipment.area', 'area')
+      .leftJoinAndSelect('equipment.subArea', 'subArea')
+
       .leftJoinAndSelect('workOrder.timers', 'timers')
       .leftJoinAndSelect('workOrder.pauses', 'pauses')
       .where('workOrder.clienteEmpresaId = :clienteEmpresaId', {
@@ -2004,7 +2025,7 @@ export class WorkOrdersService {
           plan.notas ??
           `Mantenimiento programado para el equipo ${
             equipment.code || equipment.equipmentId
-          }`,
+          } - ${equipment.area?.nombreArea} - ${equipment.subArea?.nombreSubArea}`,
         estado: WorkOrderStatus.REQUESTED_UNASSIGNED,
         estadoFacturacion: null,
         maintenanceTypeId: undefined,

@@ -86,6 +86,22 @@ export class ClientCompanyInfo {
   localizacion?: string | null;
 }
 
+export class AreaInfo {
+  @ApiProperty({ example: 1 })
+  areaId: number;
+
+  @ApiProperty({ example: 'Área de Mantenimiento' })
+  nombre: string;
+}
+
+export class SubAreaInfo {
+  @ApiProperty({ example: 1 })
+  subAreaId: number;
+
+  @ApiProperty({ example: 'Taller Eléctrico' })
+  nombre: string;
+}
+
 export class EquipmentInfo {
   @ApiProperty({ example: 10 })
   equipmentId: number;
@@ -96,11 +112,14 @@ export class EquipmentInfo {
   @ApiProperty({ enum: ServiceCategory })
   category: ServiceCategory;
 
-  @ApiProperty({
-    example: 'Mantenimiento preventivo programado',
-    required: false,
-  })
-  description?: string;
+  @ApiProperty({ example: 'Activo' })
+  status: string;
+
+  @ApiProperty({ type: AreaInfo, nullable: true })
+  area: AreaInfo | null;
+
+  @ApiProperty({ type: SubAreaInfo, nullable: true })
+  subArea: SubAreaInfo | null;
 }
 
 export class SupplyDetailInfo {
