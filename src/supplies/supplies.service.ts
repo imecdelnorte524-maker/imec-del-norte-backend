@@ -16,6 +16,7 @@ import { CreateSupplyDto } from './dto/create-supply.dto';
 import { UpdateSupplyDto } from './dto/update-supply.dto';
 import { SupplyStatus, SupplyCategory } from '../shared/enums/inventory.enum';
 import { ImagesService } from '../images/images.service';
+import { WebsocketGateway } from '../websockets/websocket.gateway';
 
 @Injectable()
 export class SuppliesService {
@@ -32,6 +33,7 @@ export class SuppliesService {
     private warehouseRepository: Repository<Warehouse>,
     private dataSource: DataSource,
     private readonly imagesService: ImagesService,
+    private readonly websocketGateway: WebsocketGateway,
   ) {}
 
   private async findOrCreateUnitMeasure(
@@ -42,12 +44,12 @@ export class SuppliesService {
     let unit = await queryRunnerManager.findOne(UnitMeasure, {
       where: { nombre: cleanName },
     });
-    
+
     if (!unit) {
       unit = queryRunnerManager.create(UnitMeasure, { nombre: cleanName });
       unit = await queryRunnerManager.save(unit);
     }
-    
+
     return unit;
   }
 
@@ -117,9 +119,12 @@ export class SuppliesService {
       await queryRunner.manager.save(savedSupply);
       await queryRunner.commitTransaction();
 
-      this.logger.log(`Insumo creado: ${savedSupply.insumoId} - ${savedSupply.nombre}`);
-      
-      return this.findOne(savedSupply.insumoId);
+      const full = await this.findOne(savedSupply.insumoId);
+
+      // 🔴 WebSocket
+      this.websocketGateway.emit('supplies.created', full);
+
+      return full;
     } catch (error) {
       await queryRunner.rollbackTransaction();
       throw error;
@@ -130,12 +135,7 @@ export class SuppliesService {
 
   async findAll(includeDeleted = false): Promise<Supply[]> {
     return this.suppliesRepository.find({
-      relations: [
-        'inventory',
-        'inventory.bodega',
-        'unidadMedida',
-        'images'
-      ],
+      relations: ['inventory', 'inventory.bodega', 'unidadMedida', 'images'],
       order: { fechaRegistro: 'DESC' },
       withDeleted: includeDeleted,
     });
@@ -144,12 +144,7 @@ export class SuppliesService {
   async findOne(id: number, includeDeleted = false): Promise<Supply> {
     const supply = await this.suppliesRepository.findOne({
       where: { insumoId: id },
-      relations: [
-        'inventory',
-        'inventory.bodega',
-        'unidadMedida',
-        'images'
-      ],
+      relations: ['inventory', 'inventory.bodega', 'unidadMedida', 'images'],
       withDeleted: includeDeleted,
     });
 
@@ -231,9 +226,12 @@ export class SuppliesService {
       await queryRunner.manager.save(supply);
       await queryRunner.commitTransaction();
 
-      this.logger.log(`Insumo actualizado: ${id}`);
-      
-      return this.findOne(id);
+      const updated = await this.findOne(id);
+
+      // 🔴 WebSocket
+      this.websocketGateway.emit('supplies.updated', updated);
+
+      return updated;
     } catch (error) {
       await queryRunner.rollbackTransaction();
       throw error;
@@ -244,14 +242,14 @@ export class SuppliesService {
 
   async remove(id: number): Promise<void> {
     const supply = await this.findOne(id);
-    
+
     // Eliminar imágenes asociadas
     await this.imagesService.deleteBySupply(supply);
-    
+
     // Soft delete del insumo
     await this.suppliesRepository.softDelete(id);
-    
-    this.logger.log(`Insumo eliminado: ${id} - ${supply.nombre}`);
+    // 🔴 WebSocket
+    this.websocketGateway.emit('supplies.deleted', { id, soft: true });
   }
 
   async updateStock(
@@ -269,7 +267,7 @@ export class SuppliesService {
     const inventory = await manager.findOne(Inventory, {
       where: { insumoId: id },
     });
-    
+
     if (!inventory) {
       throw new NotFoundException('Inventario no encontrado para este insumo');
     }
@@ -279,17 +277,22 @@ export class SuppliesService {
     inventory.fechaUltimaActualizacion = new Date();
     await manager.save(inventory);
 
-    // Actualizar estado del insumo
     supply.estado = this.calculateSupplyStatus(cantidad, supply.stockMin);
     await manager.save(supply);
 
-    return supply;
+    const full = await this.findOne(id);
+
+    // 🔴 WebSocket
+    this.websocketGateway.emit('supplies.stockUpdated', full);
+    this.websocketGateway.emit('supplies.updated', full);
+
+    return full;
   }
 
   async incrementStock(id: number, cantidad: number): Promise<Supply> {
     const supply = await this.findOne(id);
     const inventory = supply.inventory;
-    
+
     if (!inventory) {
       throw new NotFoundException('Inventario no encontrado');
     }
@@ -301,7 +304,7 @@ export class SuppliesService {
   async decrementStock(id: number, cantidad: number): Promise<Supply> {
     const supply = await this.findOne(id);
     const inventory = supply.inventory;
-    
+
     if (!inventory) {
       throw new NotFoundException('Inventario no encontrado');
     }
@@ -342,7 +345,9 @@ export class SuppliesService {
       .leftJoinAndSelect('supply.unidadMedida', 'unidadMedida')
       .leftJoinAndSelect('supply.images', 'images')
       .where('supply.nombre ILIKE :keyword', { keyword: `%${keyword}%` })
-      .orWhere('unidadMedida.nombre ILIKE :keyword', { keyword: `%${keyword}%` })
+      .orWhere('unidadMedida.nombre ILIKE :keyword', {
+        keyword: `%${keyword}%`,
+      })
       .orderBy('supply.fecha_registro', 'DESC')
       .getMany();
   }
@@ -396,9 +401,13 @@ export class SuppliesService {
     }
 
     await this.suppliesRepository.restore(id);
-    this.logger.log(`Insumo restaurado: ${id}`);
-    
-    return this.findOne(id);
+    const restored = await this.findOne(id);
+
+    // 🔴 WebSocket
+    this.websocketGateway.emit('supplies.restored', restored);
+    this.websocketGateway.emit('supplies.updated', restored);
+
+    return restored;
   }
 
   private calculateSupplyStatus(

@@ -1,4 +1,3 @@
-// src/area/area.service.ts
 import { Injectable, NotFoundException, ConflictException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -7,6 +6,7 @@ import { Client } from '../client/entities/client.entity';
 import { SubArea } from '../sub-area/entities/sub-area.entity';
 import { CreateAreaDto } from './dto/create-area.dto';
 import { UpdateAreaDto } from './dto/update-area.dto';
+import { WebsocketGateway } from '../websockets/websocket.gateway'; // <-- NUEVO
 
 @Injectable()
 export class AreaService {
@@ -19,6 +19,7 @@ export class AreaService {
     private clientRepository: Repository<Client>,
     @InjectRepository(SubArea)
     private subAreaRepository: Repository<SubArea>,
+    private readonly websocketGateway: WebsocketGateway,             // <-- NUEVO
   ) {}
 
   async create(createAreaDto: CreateAreaDto): Promise<Area> {
@@ -49,6 +50,10 @@ export class AreaService {
     const savedArea = await this.areaRepository.save(area);
     
     this.logger.log(`Área creada: ${savedArea.idArea} - ${savedArea.nombreArea}`);
+
+    // Emitir evento de creación
+    this.websocketGateway.emit('areas.created', savedArea);
+
     return savedArea;
   }
 
@@ -109,13 +114,21 @@ export class AreaService {
     }
     
     Object.assign(area, updateAreaDto);
-    return await this.areaRepository.save(area);
+    const updatedArea = await this.areaRepository.save(area);
+
+    // Emitir evento de actualización
+    this.websocketGateway.emit('areas.updated', updatedArea);
+
+    return updatedArea;
   }
 
   async remove(id: number): Promise<void> {
     const area = await this.findOne(id);
     await this.areaRepository.remove(area);
     this.logger.log(`Área eliminada: ${id}`);
+
+    // Emitir evento de eliminación (enviamos solo el id)
+    this.websocketGateway.emit('areas.deleted', { id });
   }
 
   async getAreaWithSubAreas(id: number): Promise<Area> {

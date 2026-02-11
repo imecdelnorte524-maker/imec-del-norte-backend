@@ -1,5 +1,8 @@
 // src/work-orders/enums/billing-status.enum.ts
 export enum BillingStatus {
-  NOT_BILLED = 'No facturado',
-  BILLED = 'Facturado',
+  NULL = '',
+  NOT_INVOICED = 'Sin facturar',
+  NOT_BILLED = 'Por facturar',
+  BILLED = 'Facturada',
+  WARRANTY = 'Garantía',
 }

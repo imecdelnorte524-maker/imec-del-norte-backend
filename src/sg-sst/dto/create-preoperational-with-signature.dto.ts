@@ -8,9 +8,9 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
-import { CheckValue } from '../entities/preoperational-check.entity';
 import { ApiProperty } from '@nestjs/swagger';
 import { SignerType } from './sign-form.dto';
+import { CheckValue } from '../enum/check-value.enum';
 
 export class PreoperationalCheckWithSignatureDto {
   @ApiProperty({ description: 'Parámetro a verificar', example: 'Estado de bisagras' })

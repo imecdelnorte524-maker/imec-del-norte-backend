@@ -10,7 +10,10 @@ import {
   ParseIntPipe,
   Query,
   Req,
+  Res,
+  BadRequestException,
 } from '@nestjs/common';
+import { Response } from 'express';
 import {
   ApiTags,
   ApiOperation,
@@ -48,8 +51,7 @@ export class EquipmentController {
   ) {
     const user = (req as any).user;
 
-    const createBy =
-      `${user?.username} - ${user?.nombre} ${user?.apellido ?? user?.email ?? (user?.id != null ? String(user.id) : undefined)}`;
+    const createBy = `${user?.nombre} ${user?.apellido ?? user?.email ?? (user?.id != null ? String(user.id) : undefined)}`;
 
     const equipment = await this.equipmentService.create(
       createEquipmentDto,
@@ -131,10 +133,16 @@ export class EquipmentController {
   async update(
     @Param('id', ParseIntPipe) id: number,
     @Body() updateEquipmentDto: UpdateEquipmentDto,
+    @Req() req: Request,
   ) {
+    const user = (req as any).user;
+
+    const updatedBy = `${user?.nombre} ${user?.apellido ?? user?.email ?? (user?.id != null ? String(user.id) : undefined)}`;
+
     const equipment = await this.equipmentService.update(
       id,
       updateEquipmentDto,
+      updatedBy,
     );
     return {
       message: 'Equipo actualizado exitosamente',
@@ -148,6 +156,67 @@ export class EquipmentController {
   async remove(@Param('id', ParseIntPipe) id: number) {
     await this.equipmentService.remove(id);
     return { message: 'Equipo eliminado exitosamente' };
+  }
+
+  @Get('maintenance-plan/export')
+  @Roles('Administrador', 'Secretaria', 'Técnico')
+  @ApiOperation({
+    summary: 'Exportar plan de mantenimiento anual por cliente',
+    description:
+      'Genera un archivo Excel con el plan de mantenimiento anual de los aires de un cliente',
+  })
+  @ApiQuery({ name: 'year', required: false, type: Number })
+  @ApiQuery({ name: 'clientId', required: true, type: Number })
+  async exportAnnualMaintenancePlanForClient(
+    @Res() res: Response,
+    @Query('year') year?: string,
+    @Query('clientId') clientId?: string,
+  ) {
+    if (!clientId) {
+      throw new BadRequestException('clientId es obligatorio');
+    }
+
+    const y = year ? parseInt(year, 10) : new Date().getFullYear();
+    const client = parseInt(clientId, 10);
+
+    const buffer =
+      await this.equipmentService.generateAnnualMaintenanceExcelForClient(
+        y,
+        client,
+      );
+
+    res.setHeader(
+      'Content-Type',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    );
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="plan_mantenimiento_cliente_${client}_${y}.xlsx"`,
+    );
+
+    res.send(buffer);
+  }
+
+  @Patch(':id/maintenance-plan/advance')
+  @Roles('Administrador', 'Técnico')
+  @ApiOperation({
+    summary: 'Avanzar plan de mantenimiento del equipo',
+    description:
+      'Calcula y actualiza la próxima fecha programada del plan de mantenimiento de este equipo (evitando domingos).',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Plan de mantenimiento actualizado',
+    type: EquipmentResponseDto,
+  })
+  async advanceMaintenancePlan(@Param('id', ParseIntPipe) id: number) {
+    const equipment =
+      await this.equipmentService.advanceMaintenancePlanForEquipment(id);
+
+    return {
+      message: 'Plan de mantenimiento actualizado correctamente',
+      data: this.mapToResponseDto(equipment),
+    };
   }
 
   private mapToResponseDto(equipment: Equipment): EquipmentResponseDto {
@@ -195,6 +264,7 @@ export class EquipmentController {
       installationDate: equipment.installationDate,
       notes: equipment.notes,
       createdBy: equipment.createdBy,
+      updatedBy: equipment.updatedBy,
       createdAt: equipment.createdAt,
       updatedAt: equipment.updatedAt,
       photos:

@@ -15,6 +15,7 @@ import { Warehouse } from '../warehouses/entities/warehouse.entity';
 import { CreateInventoryDto } from './dto/create-inventory.dto';
 import { UpdateInventoryDto } from './dto/update-inventory.dto';
 import { SupplyStatus, ToolStatus } from '../shared/enums';
+import { WebsocketGateway } from '../websockets/websocket.gateway'; // <-- NUEVO
 
 @Injectable()
 export class InventoryService {
@@ -30,6 +31,7 @@ export class InventoryService {
     @InjectRepository(Warehouse)
     private warehouseRepository: Repository<Warehouse>,
     private dataSource: DataSource,
+    private readonly websocketGateway: WebsocketGateway,
   ) {}
 
   async create(createInventoryDto: CreateInventoryDto): Promise<Inventory> {
@@ -123,7 +125,7 @@ export class InventoryService {
 
       // Calcular cantidad inicial
       const cantidadInicial = createInventoryDto.cantidadActual || 0;
-      
+
       // Para herramientas, la cantidad siempre debe ser 1
       if (tool && cantidadInicial !== 1) {
         throw new BadRequestException(
@@ -169,12 +171,13 @@ export class InventoryService {
       }
 
       await queryRunner.commitTransaction();
-      
-      this.logger.log(
-        `Inventario creado: ${savedInventory.inventarioId} - ${savedInventory.nombreItem}`,
-      );
-      
-      return await this.findOne(savedInventory.inventarioId);
+
+      const fullInventory = await this.findOne(savedInventory.inventarioId);
+
+      // 🔴 Evento WebSocket
+      this.websocketGateway.emit('inventory.created', fullInventory);
+
+      return fullInventory;
     } catch (error) {
       await queryRunner.rollbackTransaction();
       throw error;
@@ -185,7 +188,13 @@ export class InventoryService {
 
   async findAll(includeDeleted = false): Promise<Inventory[]> {
     return await this.inventoryRepository.find({
-      relations: ['supply', 'supply.unidadMedida', 'tool', 'bodega', 'bodega.cliente'],
+      relations: [
+        'supply',
+        'supply.unidadMedida',
+        'tool',
+        'bodega',
+        'bodega.cliente',
+      ],
       order: { fechaUltimaActualizacion: 'DESC' },
       withDeleted: includeDeleted,
     });
@@ -194,7 +203,13 @@ export class InventoryService {
   async findOne(id: number, includeDeleted = false): Promise<Inventory> {
     const inventory = await this.inventoryRepository.findOne({
       where: { inventarioId: id },
-      relations: ['supply', 'supply.unidadMedida', 'tool', 'bodega', 'bodega.cliente'],
+      relations: [
+        'supply',
+        'supply.unidadMedida',
+        'tool',
+        'bodega',
+        'bodega.cliente',
+      ],
       withDeleted: includeDeleted,
     });
 
@@ -219,10 +234,19 @@ export class InventoryService {
       const inventory = await this.findOne(id);
 
       // Validar que no se envíen campos no permitidos
-      const camposNoPermitidos = ['nombre', 'valorUnitario', 'unidadMedida', 'descripcion', 'insumoId', 'herramientaId'];
+      const camposNoPermitidos = [
+        'nombre',
+        'valorUnitario',
+        'unidadMedida',
+        'descripcion',
+        'insumoId',
+        'herramientaId',
+      ];
       for (const campo of camposNoPermitidos) {
         if (campo in updateInventoryDto) {
-          throw new BadRequestException(`El campo '${campo}' no está permitido en la actualización de inventario`);
+          throw new BadRequestException(
+            `El campo '${campo}' no está permitido en la actualización de inventario`,
+          );
         }
       }
 
@@ -240,7 +264,7 @@ export class InventoryService {
               `Bodega con ID ${updateInventoryDto.bodegaId} no encontrada`,
             );
           }
-          
+
           // Verificar si ya existe otro item igual en esta bodega
           if (inventory.insumoId) {
             const existing = await queryRunner.manager.findOne(Inventory, {
@@ -267,7 +291,7 @@ export class InventoryService {
               );
             }
           }
-          
+
           inventory.bodega = bodega;
         }
       }
@@ -301,7 +325,7 @@ export class InventoryService {
       // Solo actualizar si hay cambios
       if (Object.keys(updateData).length > 0) {
         updateData.fechaUltimaActualizacion = new Date();
-        
+
         // Aplicar los cambios
         Object.assign(inventory, updateData);
         await queryRunner.manager.save(inventory);
@@ -328,10 +352,13 @@ export class InventoryService {
       }
 
       await queryRunner.commitTransaction();
-      
-      this.logger.log(`Inventario actualizado: ${id}`);
-      
-      return await this.findOne(id);
+
+      const fullInventory = await this.findOne(id);
+
+      // 🔴 Evento WebSocket
+      this.websocketGateway.emit('inventory.updated', fullInventory);
+
+      return fullInventory;
     } catch (error) {
       await queryRunner.rollbackTransaction();
       throw error;
@@ -343,8 +370,12 @@ export class InventoryService {
   async remove(id: number): Promise<void> {
     const inventory = await this.findOne(id);
     await this.inventoryRepository.softDelete(id);
-    
-    this.logger.log(`Inventario eliminado (soft): ${id} - ${inventory.nombreItem}`);
+
+    // 🔴 Evento WebSocket
+    this.websocketGateway.emit('inventory.deleted', {
+      id,
+      soft: true,
+    });
   }
 
   async removeComplete(id: number): Promise<{
@@ -407,9 +438,8 @@ export class InventoryService {
 
       await queryRunner.commitTransaction();
 
-      this.logger.log(
-        `Inventario eliminado completamente: ${id} - ${deletedInfo.inventory.nombreItem}`,
-      );
+      // 🔴 Evento WebSocket
+      this.websocketGateway.emit('inventory.deletedPermanent', deletedInfo);
 
       return {
         deletedInventory: deletedInfo.inventory,
@@ -500,12 +530,13 @@ export class InventoryService {
       }
 
       await queryRunner.commitTransaction();
-      
-      this.logger.log(
-        `Stock actualizado: ${inventarioId} - Nueva cantidad: ${nuevaCantidad}`,
-      );
-      
-      return await this.findOne(inventarioId);
+      const fullInventory = await this.findOne(inventarioId);
+
+      // 🔴 Eventos WebSocket
+      this.websocketGateway.emit('inventory.stockUpdated', fullInventory);
+      this.websocketGateway.emit('inventory.updated', fullInventory);
+
+      return fullInventory;
     } catch (error) {
       await queryRunner.rollbackTransaction();
       throw error;
@@ -623,10 +654,13 @@ export class InventoryService {
     }
 
     await this.inventoryRepository.restore(id);
-    
-    this.logger.log(`Inventario restaurado: ${id}`);
-    
-    return await this.findOne(id);
+
+    const restored = await this.findOne(id);
+
+    // 🔴 Evento WebSocket
+    this.websocketGateway.emit('inventory.restored', restored);
+
+    return restored;
   }
 
   // Helper method para calcular estado de inventario

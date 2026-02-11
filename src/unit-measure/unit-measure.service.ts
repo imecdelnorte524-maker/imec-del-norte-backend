@@ -9,15 +9,19 @@ import { Repository } from 'typeorm';
 import { UnitMeasure } from './entities/unit-measure.entity';
 import { CreateUnitMeasureDto } from './dto/create-unit-measure.dto';
 import { UpdateUnitMeasureDto } from './dto/update-unit-measure.dto';
+import { WebsocketGateway } from '../websockets/websocket.gateway';
 
 @Injectable()
 export class UnitMeasureService {
   constructor(
     @InjectRepository(UnitMeasure)
     private unitMeasureRepo: Repository<UnitMeasure>,
+    private readonly websocketGateway: WebsocketGateway,
   ) {}
 
-  async createOrFind(createUnitMeasureDto: CreateUnitMeasureDto): Promise<UnitMeasure> {
+  async createOrFind(
+    createUnitMeasureDto: CreateUnitMeasureDto,
+  ): Promise<UnitMeasure> {
     // Buscar si ya existe (insensible a mayúsculas/minúsculas)
     const existingUnit = await this.unitMeasureRepo
       .createQueryBuilder('unit')
@@ -31,10 +35,17 @@ export class UnitMeasureService {
     }
 
     const unitMeasure = this.unitMeasureRepo.create(createUnitMeasureDto);
-    return await this.unitMeasureRepo.save(unitMeasure);
+    const saved = await this.unitMeasureRepo.save(unitMeasure);
+
+    // 🔴 WebSocket (solo cuando se crea realmente)
+    this.websocketGateway.emit('unitMeasures.created', saved);
+
+    return saved;
   }
 
-  async create(createUnitMeasureDto: CreateUnitMeasureDto): Promise<UnitMeasure> {
+  async create(
+    createUnitMeasureDto: CreateUnitMeasureDto,
+  ): Promise<UnitMeasure> {
     // Verificar si ya existe (para creación estricta)
     const existingUnit = await this.unitMeasureRepo.findOne({
       where: { nombre: createUnitMeasureDto.nombre },
@@ -47,7 +58,12 @@ export class UnitMeasureService {
     }
 
     const unitMeasure = this.unitMeasureRepo.create(createUnitMeasureDto);
-    return await this.unitMeasureRepo.save(unitMeasure);
+    const saved = await this.unitMeasureRepo.save(unitMeasure);
+
+    // 🔴 WebSocket
+    this.websocketGateway.emit('unitMeasures.created', saved);
+
+    return saved;
   }
 
   async findAll(includeInactive = false): Promise<UnitMeasure[]> {
@@ -66,7 +82,9 @@ export class UnitMeasureService {
     });
 
     if (!unitMeasure) {
-      throw new NotFoundException(`Unidad de medida con ID ${id} no encontrada`);
+      throw new NotFoundException(
+        `Unidad de medida con ID ${id} no encontrada`,
+      );
     }
 
     return unitMeasure;
@@ -85,7 +103,10 @@ export class UnitMeasureService {
     const unitMeasure = await this.findOne(id);
 
     // Si se intenta cambiar el nombre, verificar que no exista otro con ese nombre
-    if (updateUnitMeasureDto.nombre && updateUnitMeasureDto.nombre !== unitMeasure.nombre) {
+    if (
+      updateUnitMeasureDto.nombre &&
+      updateUnitMeasureDto.nombre !== unitMeasure.nombre
+    ) {
       const existingWithName = await this.unitMeasureRepo.findOne({
         where: { nombre: updateUnitMeasureDto.nombre },
       });
@@ -98,7 +119,12 @@ export class UnitMeasureService {
     }
 
     Object.assign(unitMeasure, updateUnitMeasureDto);
-    return await this.unitMeasureRepo.save(unitMeasure);
+    const updated = await this.unitMeasureRepo.save(unitMeasure);
+
+    // 🔴 WebSocket
+    this.websocketGateway.emit('unitMeasures.updated', updated);
+
+    return updated;
   }
 
   async remove(id: number): Promise<{ message: string }> {
@@ -112,6 +138,10 @@ export class UnitMeasureService {
     }
 
     await this.unitMeasureRepo.softDelete(id);
+
+    // 🔴 WebSocket
+    this.websocketGateway.emit('unitMeasures.deleted', { id });
+
     return { message: 'Unidad de medida eliminada exitosamente' };
   }
 

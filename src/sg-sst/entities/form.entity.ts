@@ -17,18 +17,7 @@ import { Signature } from './signature.entity';
 import { GeneratedPdf } from './generated-pdf.entity';
 import { User } from '../../users/entities/user.entity';
 import { WorkOrder } from '../../work-orders/entities/work-order.entity';
-
-export enum FormType {
-  ATS = 'ATS',
-  HEIGHT_WORK = 'HEIGHT_WORK',
-  PREOPERATIONAL = 'PREOPERATIONAL',
-}
-
-export enum FormStatus {
-  DRAFT = 'DRAFT',
-  PENDING_SST = 'PENDING_SST',
-  COMPLETED = 'COMPLETED',
-}
+import { FormStatus, FormType } from '../enum/check-value.enum';
 
 @Entity('forms')
 export class Form {
@@ -63,6 +52,18 @@ export class Form {
 
   @Column()
   userId: number;
+
+  @Column({ nullable: true })
+  rejectionReason?: string;
+
+  @Column({ nullable: true })
+  rejectedByUserId?: number;
+
+  @Column({ nullable: true })
+  rejectedByUserName?: string;
+
+  @Column({ nullable: true })
+  rejectedAt?: Date;
 
   @Column()
   createdBy: number;

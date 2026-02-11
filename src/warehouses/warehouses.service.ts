@@ -11,6 +11,7 @@ import { Warehouse } from './entities/warehouse.entity';
 import { CreateWarehouseDto } from './dto/create-warehouse.dto';
 import { UpdateWarehouseDto } from './dto/update-warehouse.dto';
 import { Client } from '../client/entities/client.entity';
+import { WebsocketGateway } from '../websockets/websocket.gateway';
 
 @Injectable()
 export class WarehousesService {
@@ -20,6 +21,7 @@ export class WarehousesService {
     @InjectRepository(Client)
     private clientRepo: Repository<Client>,
     private dataSource: DataSource,
+    private readonly websocketGateway: WebsocketGateway,
   ) {}
 
   async create(createWarehouseDto: CreateWarehouseDto): Promise<Warehouse> {
@@ -62,7 +64,15 @@ export class WarehousesService {
     }
 
     const warehouse = this.warehouseRepo.create(warehouseData);
-    return await this.warehouseRepo.save(warehouse);
+    const saved = await this.warehouseRepo.save(warehouse);
+
+    // Cargar con relaciones para el evento
+    const full = await this.findOne(saved.bodegaId);
+
+    // 🔴 WebSocket
+    this.websocketGateway.emit('warehouses.created', full);
+
+    return saved;
   }
 
   async findAll(includeInactive = false): Promise<Warehouse[]> {
@@ -94,7 +104,10 @@ export class WarehousesService {
     const warehouse = await this.findOne(id);
 
     // Si se intenta cambiar el nombre, verificar que no exista otro con ese nombre
-    if (updateWarehouseDto.nombre && updateWarehouseDto.nombre !== warehouse.nombre) {
+    if (
+      updateWarehouseDto.nombre &&
+      updateWarehouseDto.nombre !== warehouse.nombre
+    ) {
       const existingWithName = await this.warehouseRepo.findOne({
         where: { nombre: updateWarehouseDto.nombre },
       });
@@ -142,10 +155,19 @@ export class WarehousesService {
       warehouse.activa = updateWarehouseDto.activa;
     }
 
-    return await this.warehouseRepo.save(warehouse);
+    const updated = await this.warehouseRepo.save(warehouse);
+
+    // 🔴 WebSocket (con relaciones actualizadas)
+    const full = await this.findOne(updated.bodegaId);
+    this.websocketGateway.emit('warehouses.updated', full);
+
+    return updated;
   }
 
-  async findByClienteId(clienteId: number, includeInactive = false): Promise<Warehouse[]> {
+  async findByClienteId(
+    clienteId: number,
+    includeInactive = false,
+  ): Promise<Warehouse[]> {
     const where: any = { clienteId };
     if (!includeInactive) {
       where.activa = true;
@@ -178,17 +200,21 @@ export class WarehousesService {
     if (warehouse.inventarios && warehouse.inventarios.length > 0) {
       throw new BadRequestException(
         'No se puede eliminar la bodega porque tiene items en inventario asociados. ' +
-        'Primero debe reubicar los items a otra bodega.',
+          'Primero debe reubicar los items a otra bodega.',
       );
     }
 
     await this.warehouseRepo.softDelete(id);
+
+    // 🔴 WebSocket
+    this.websocketGateway.emit('warehouses.deleted', { id });
+
     return { message: 'Bodega eliminada exitosamente' };
   }
 
   async getStats(id: number): Promise<any> {
     const warehouse = await this.findOne(id);
-    
+
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
 

@@ -27,6 +27,9 @@ import { BaseSequenceService } from '../common/services/base-sequence.service';
 import { SequenceHelperService } from '../common/services/sequence-helper.service';
 import { PlanMantenimientoDto } from './dto/plan-mantenimiento.dto';
 import { WorkOrdersService } from '../work-orders/work-orders.service';
+import { UnidadFrecuencia } from './enums/frecuency-unity.enum';
+import * as ExcelJS from 'exceljs';
+import { WebsocketGateway } from '../websockets/websocket.gateway';
 
 interface OrphanedRecordIssue {
   table: string;
@@ -86,7 +89,7 @@ export class EquipmentService
     private readonly planMantenimientoRepository: Repository<PlanMantenimiento>,
     private readonly imagesService: ImagesService,
     private readonly dataSource: DataSource,
-    private readonly workOrdersService: WorkOrdersService,
+    private readonly websocketGateway: WebsocketGateway,
   ) {
     super(sequenceHelper);
 
@@ -514,9 +517,10 @@ export class EquipmentService
   // CREATE - Con transacción completa y manejo de secuencia
   // ────────────────────────────────────────────────────────────────
 
-  async create(dto: CreateEquipmentDto, createdBy?: string): Promise<Equipment> {
-    this.logger.log(`Creando equipo para cliente: ${dto.clientId}`);
-
+  async create(
+    dto: CreateEquipmentDto,
+    createdBy?: string,
+  ): Promise<Equipment> {
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
     await queryRunner.startTransaction();
@@ -618,17 +622,13 @@ export class EquipmentService
       );
 
       await queryRunner.commitTransaction();
-      this.logger.log(
-        `Equipo creado exitosamente: ${savedEquipment.equipmentId} con código ${code}`,
-      );
 
-      // if (dto.planMantenimiento) {
-      //   await this.createImmediateMaintenanceOrderIfNeeded(
-      //     savedEquipment.equipmentId,
-      //   );
-      // }
+      const fullEquipment = await this.findOne(savedEquipment.equipmentId);
 
-      return this.findOne(savedEquipment.equipmentId);
+      // 🔴 Evento WebSocket: equipo creado
+      this.websocketGateway.emit('equipment.created', fullEquipment);
+
+      return fullEquipment;
     } catch (error) {
       await queryRunner.rollbackTransaction();
       this.logger.error(`Error creando equipo: ${error.message}`, error.stack);
@@ -824,60 +824,17 @@ export class EquipmentService
     );
   }
 
-  private async createImmediateMaintenanceOrderIfNeeded(
-    equipmentId: number,
-  ): Promise<void> {
-    try {
-      const plan = await this.planMantenimientoRepository.findOne({
-        where: { equipmentId },
-      });
-
-      if (!plan || !plan.fechaProgramada) {
-        return;
-      }
-
-      const hoy = this.startOfDay(new Date());
-      const fechaPlan = this.startOfDay(new Date(plan.fechaProgramada));
-      const diff = this.diffEnDias(fechaPlan, hoy);
-
-      // Solo si es hoy o dentro de 2 días
-      if (diff < 0 || diff > 2) {
-        return;
-      }
-
-      const yaExiste = await this.workOrdersService.existeOrdenParaPlanEnFecha(
-        plan.id,
-        fechaPlan,
-      );
-
-      if (yaExiste) {
-        this.logger.debug(
-          `Ya existe orden para plan ${plan.id} en fecha ${fechaPlan.toISOString().slice(0, 10)}`,
-        );
-        return;
-      }
-
-      await this.workOrdersService.createFromMaintenancePlan({
-        plan,
-        fechaProgramada: fechaPlan,
-      });
-    } catch (error: any) {
-      this.logger.error(
-        `Error creando orden de mantenimiento automática para equipo ${equipmentId}: ${error.message}`,
-        error.stack,
-      );
-    }
-  }
-
   private normalizePlanData(
     planData: PlanMantenimientoDto,
   ): Partial<PlanMantenimiento> {
     if (!planData) return {};
 
-    const { fechaProgramada, ...rest } = planData;
+    const { fechaProgramada, diaDelMes, ...rest } = planData;
 
     return {
       ...rest,
+      // 🔧 Asegurar que diaDelMes se pase correctamente
+      diaDelMes: diaDelMes !== undefined ? diaDelMes : undefined,
       fechaProgramada:
         typeof fechaProgramada === 'string'
           ? new Date(fechaProgramada)
@@ -890,6 +847,48 @@ export class EquipmentService
     equipmentId: number,
     planData: PlanMantenimientoDto,
   ): Promise<void> {
+    const validateInterval = (
+      unidad: UnidadFrecuencia,
+      intervalo: number,
+    ): boolean => {
+      if (!unidad || !intervalo) return true;
+
+      switch (unidad) {
+        case UnidadFrecuencia.DIA:
+          return intervalo >= 1 && intervalo <= 365;
+        case UnidadFrecuencia.SEMANA:
+          return intervalo >= 1 && intervalo <= 52;
+        case UnidadFrecuencia.MES:
+          return intervalo >= 1 && intervalo <= 12;
+        default:
+          return true;
+      }
+    };
+
+    // Validar el intervalo según la unidad de frecuencias
+    if (planData.unidadFrecuencia && planData.diaDelMes) {
+      const isValid = validateInterval(
+        planData.unidadFrecuencia,
+        planData.diaDelMes,
+      );
+
+      if (!isValid) {
+        let errorMsg = 'Intervalo inválido: ';
+        switch (planData.unidadFrecuencia) {
+          case UnidadFrecuencia.DIA:
+            errorMsg += 'Para DÍA el intervalo debe estar entre 1 y 365';
+            break;
+          case UnidadFrecuencia.SEMANA:
+            errorMsg += 'Para SEMANA el intervalo debe estar entre 1 y 52';
+            break;
+          case UnidadFrecuencia.MES:
+            errorMsg += 'Para MES el intervalo debe estar entre 1 y 12';
+            break;
+        }
+        throw new BadRequestException(errorMsg);
+      }
+    }
+
     const existing = await queryRunner.manager.findOne(PlanMantenimiento, {
       where: { equipmentId },
     });
@@ -928,6 +927,81 @@ export class EquipmentService
 
       throw error;
     }
+  }
+
+  private addDays(date: Date, days: number): Date {
+    const d = new Date(date);
+    d.setDate(d.getDate() + days);
+    return d;
+  }
+
+  private addMonths(date: Date, months: number): Date {
+    const d = new Date(date);
+    const day = d.getDate();
+    d.setMonth(d.getMonth() + months);
+
+    // Ajuste por meses cortos
+    if (d.getDate() < day) {
+      d.setDate(0);
+    }
+    return d;
+  }
+
+  private nextPlanDate(
+    current: Date,
+    unidad: UnidadFrecuencia,
+    step: number,
+  ): Date {
+    if (!step || step <= 0) {
+      step = 1; // Valor por defecto
+    }
+
+    switch (unidad) {
+      case UnidadFrecuencia.DIA:
+        return this.addDays(current, step);
+      case UnidadFrecuencia.SEMANA:
+        return this.addDays(current, step * 7);
+      case UnidadFrecuencia.MES:
+        return this.addMonths(current, step);
+      default:
+        return current;
+    }
+  }
+
+  private generateMaintenanceDatesForYear(
+    plan: PlanMantenimiento,
+    year: number,
+  ): Date[] {
+    if (!plan || !plan.fechaProgramada || !plan.unidadFrecuencia) {
+      return [];
+    }
+
+    const dates: Date[] = [];
+    const unidad = plan.unidadFrecuencia;
+    const step = plan.diaDelMes ?? 1;
+
+    let current = this.startOfDay(new Date(plan.fechaProgramada));
+
+    while (current.getFullYear() < year) {
+      current = this.nextPlanDate(current, unidad, step);
+    }
+
+    while (current.getFullYear() === year) {
+      dates.push(this.adjustToWorkingDay(current));
+      current = this.nextPlanDate(current, unidad, step);
+    }
+
+    return dates;
+  }
+
+  private adjustToWorkingDay(date: Date): Date {
+    // Normalizamos a inicio de día
+    const d = this.startOfDay(date);
+    // 0 = Domingo
+    if (d.getDay() === 0) {
+      return this.addDays(d, 1); // Pasar al lunes
+    }
+    return d;
   }
 
   // ────────────────────────────────────────────────────────────────
@@ -1030,9 +1104,11 @@ export class EquipmentService
   // UPDATE - Con transacción
   // ────────────────────────────────────────────────────────────────
 
-  async update(id: number, dto: UpdateEquipmentDto): Promise<Equipment> {
-    this.logger.log(`Actualizando equipo: ${id}`);
-
+  async update(
+    id: number,
+    dto: UpdateEquipmentDto,
+    updatedBy?: string,
+  ): Promise<Equipment> {
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
     await queryRunner.startTransaction();
@@ -1059,7 +1135,15 @@ export class EquipmentService
 
       // Actualizar campos simples
       const { evaporators, condensers, planMantenimiento, ...rest } = dto;
-      Object.assign(equipment, rest);
+      Object.entries(rest).forEach(([key, value]) => {
+        if (value !== undefined) {
+          (equipment as any)[key] = value;
+        }
+      });
+
+      if (updatedBy) {
+        equipment.updatedBy = updatedBy;
+      }
 
       // Guardar cambios del equipo
       await queryRunner.manager.save(Equipment, equipment);
@@ -1079,9 +1163,12 @@ export class EquipmentService
       }
 
       await queryRunner.commitTransaction();
-      this.logger.log(`Equipo ${id} actualizado exitosamente`);
+      const fullEquipment = await this.findOne(id);
 
-      return this.findOne(id);
+      // 🔴 Evento WebSocket: equipo actualizado
+      this.websocketGateway.emit('equipment.updated', fullEquipment);
+
+      return fullEquipment;
     } catch (error) {
       await queryRunner.rollbackTransaction();
       this.logger.error(
@@ -1119,7 +1206,6 @@ export class EquipmentService
     equipment.clientId = clientId;
     equipment.client = client;
   }
-
   private async handleLocationUpdate(
     equipment: Equipment,
     dto: UpdateEquipmentDto,
@@ -1128,12 +1214,13 @@ export class EquipmentService
     const incomingArea = dto.areaId;
     const incomingSub = dto.subAreaId;
 
+    // Si no viene nada de ubicación, no tocamos nada
     if (incomingArea === undefined && incomingSub === undefined) {
       return false;
     }
 
-    let finalArea = incomingArea ?? equipment.areaId;
-    let finalSub = incomingSub ?? equipment.subAreaId;
+    let finalArea = incomingArea ?? equipment.areaId ?? null;
+    let finalSub = incomingSub ?? equipment.subAreaId ?? null;
 
     // Validar subárea si se proporciona
     if (finalSub != null) {
@@ -1149,6 +1236,7 @@ export class EquipmentService
         throw new BadRequestException('Área no coincide con subárea');
       }
 
+      // Aseguramos coherencia: el área es la del registro de subárea
       finalArea = sub.areaId;
     } else if (finalArea != null) {
       const area = await this.areaRepository.findOne({
@@ -1160,14 +1248,40 @@ export class EquipmentService
       }
     }
 
-    // Verificar si cambió la ubicación
     const changed =
       finalArea !== equipment.areaId || finalSub !== equipment.subAreaId;
 
     if (changed) {
+      // Actualizamos IDs
       equipment.areaId = finalArea ?? undefined;
       equipment.subAreaId = finalSub ?? undefined;
 
+      // 🔹 Actualizar también las RELACIONES, cuidando los tipos (Area | undefined)
+      if (finalArea != null) {
+        const newArea = await this.areaRepository.findOne({
+          where: { idArea: finalArea },
+        });
+        if (!newArea) {
+          throw new NotFoundException('Área no encontrada');
+        }
+        equipment.area = newArea; // Tipo estrechado a Area, sin null
+      } else {
+        equipment.area = undefined;
+      }
+
+      if (finalSub != null) {
+        const newSubArea = await this.subAreaRepository.findOne({
+          where: { idSubArea: finalSub },
+        });
+        if (!newSubArea) {
+          throw new NotFoundException('Subárea no encontrada');
+        }
+        equipment.subArea = newSubArea; // Tipo estrechado a SubArea, sin null
+      } else {
+        equipment.subArea = undefined;
+      }
+
+      // Recalcular código según nueva ubicación
       if (finalArea != null) {
         const newCode = await this.generateEquipmentCode(
           equipment.client,
@@ -1176,7 +1290,6 @@ export class EquipmentService
           equipment.category,
         );
 
-        // Verificar que el nuevo código no exista
         const existingWithCode = await this.equipmentRepository.findOne({
           where: { code: newCode, equipmentId: Not(equipment.equipmentId) },
         });
@@ -1227,7 +1340,9 @@ export class EquipmentService
     dto: UpdateEquipmentDto,
     equipment?: Equipment,
   ): Promise<void> {
-    // Validar cantidad según tipo de aire usando el equipo final
+    const { evaporators, condensers, planMantenimiento } = dto;
+
+    // Validar tipo de aire y cantidades
     const finalCategory = equipment?.category ?? dto.category;
     const finalAirTypeId =
       dto.airConditionerTypeId ?? equipment?.airConditionerTypeId;
@@ -1239,60 +1354,69 @@ export class EquipmentService
       await this.validateEvapCondComponentsForAirType({
         category: finalCategory,
         airConditionerTypeId: finalAirTypeId,
-        evaporators: dto.evaporators,
-        condensers: dto.condensers,
+        evaporators,
+        condensers,
       });
     }
 
-    // Primero, obtener IDs de evaporadores y condensadores existentes
-    const existingEvaporators = await this.evaporatorRepository.find({
-      where: { equipmentId },
-      select: ['id'],
-    });
-
-    const existingCondensers = await this.condenserRepository.find({
-      where: { equipmentId },
-      select: ['id'],
-    });
-
-    // Eliminar motores asociados a los componentes que se van a eliminar
-    if (existingEvaporators.length > 0) {
-      const evaporatorIds = existingEvaporators.map((ev) => ev.id);
-      await queryRunner.manager.delete(EquipmentMotor, {
-        evaporatorId: In(evaporatorIds),
+    // 1) Actualizar componentes SOLO si vienen en el DTO
+    if (evaporators !== undefined || condensers !== undefined) {
+      // Obtener IDs existentes
+      const existingEvaporators = await this.evaporatorRepository.find({
+        where: { equipmentId },
+        select: ['id'],
       });
-    }
 
-    if (existingCondensers.length > 0) {
-      const condenserIds = existingCondensers.map((cond) => cond.id);
-      await queryRunner.manager.delete(EquipmentMotor, {
-        condenserId: In(condenserIds),
+      const existingCondensers = await this.condenserRepository.find({
+        where: { equipmentId },
+        select: ['id'],
       });
-      await queryRunner.manager.delete(EquipmentCompressor, {
-        condenserId: In(condenserIds),
-      });
+
+      // Borrar motores/compresores de esos componentes
+      if (existingEvaporators.length > 0) {
+        const evaporatorIds = existingEvaporators.map((ev) => ev.id);
+        await queryRunner.manager.delete(EquipmentMotor, {
+          evaporatorId: In(evaporatorIds),
+        });
+      }
+
+      if (existingCondensers.length > 0) {
+        const condenserIds = existingCondensers.map((cond) => cond.id);
+        await queryRunner.manager.delete(EquipmentMotor, {
+          condenserId: In(condenserIds),
+        });
+        await queryRunner.manager.delete(EquipmentCompressor, {
+          condenserId: In(condenserIds),
+        });
+      }
+
+      // Borrar evaporadores/condensadores existentes
+      await queryRunner.manager.delete(EquipmentEvaporator, { equipmentId });
+      await queryRunner.manager.delete(EquipmentCondenser, { equipmentId });
+
+      // Crear nuevos
+      if (evaporators?.length) {
+        await this.createEvaporators(queryRunner, equipmentId, evaporators);
+      }
+
+      if (condensers?.length) {
+        await this.createCondensers(queryRunner, equipmentId, condensers);
+      }
     }
 
-    // Eliminar componentes existentes
-    await queryRunner.manager.delete(EquipmentEvaporator, { equipmentId });
-    await queryRunner.manager.delete(EquipmentCondenser, { equipmentId });
-    await queryRunner.manager.delete(PlanMantenimiento, { equipmentId });
-
-    // Crear nuevos componentes
-    if (dto.evaporators?.length) {
-      await this.createEvaporators(queryRunner, equipmentId, dto.evaporators);
-    }
-
-    if (dto.condensers?.length) {
-      await this.createCondensers(queryRunner, equipmentId, dto.condensers);
-    }
-
-    if (dto.planMantenimiento) {
-      await this.createMaintenancePlan(
-        queryRunner,
-        equipmentId,
-        dto.planMantenimiento,
-      );
+    // 2) Plan de mantenimiento SOLO si el DTO lo trae
+    if (planMantenimiento !== undefined) {
+      if (!planMantenimiento) {
+        // Si viene null o falsy explícito, borramos el plan
+        await queryRunner.manager.delete(PlanMantenimiento, { equipmentId });
+      } else {
+        // Si viene objeto, hacemos upsert con createMaintenancePlan
+        await this.createMaintenancePlan(
+          queryRunner,
+          equipmentId,
+          planMantenimiento,
+        );
+      }
     }
   }
 
@@ -1301,8 +1425,6 @@ export class EquipmentService
   // ────────────────────────────────────────────────────────────────
 
   async remove(id: number): Promise<void> {
-    this.logger.log(`Eliminando equipo: ${id}`);
-
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
     await queryRunner.startTransaction();
@@ -1318,7 +1440,7 @@ export class EquipmentService
       await queryRunner.manager.remove(Equipment, eq);
 
       await queryRunner.commitTransaction();
-      this.logger.log(`Equipo ${id} eliminado exitosamente`);
+      this.websocketGateway.emit('equipment.deleted', { id });
     } catch (error) {
       await queryRunner.rollbackTransaction();
       this.logger.error(
@@ -1343,7 +1465,8 @@ export class EquipmentService
         'equipmentWorkOrders.workOrder',
         'equipmentWorkOrders.workOrder.service',
         'equipmentWorkOrders.workOrder.cliente',
-        'equipmentWorkOrders.workOrder.tecnico',
+        'equipmentWorkOrders.workOrder.technicians', // Cambiar 'tecnico' por 'technicians'
+        'equipmentWorkOrders.workOrder.technicians.technician', // Añadir esta relación
       ],
     });
 
@@ -1363,7 +1486,13 @@ export class EquipmentService
         tipoServicio: ewo.workOrder.tipoServicio,
         service: ewo.workOrder.service,
         cliente: ewo.workOrder.cliente,
-        tecnico: ewo.workOrder.tecnico,
+        technicians:
+          ewo.workOrder.technicians?.map((tech) => ({
+            id: tech.id,
+            tecnicoId: tech.tecnicoId,
+            isLeader: tech.isLeader,
+            technician: tech.technician,
+          })) || [],
       },
     }));
   }
@@ -1418,7 +1547,14 @@ export class EquipmentService
         : `${new Date().toISOString()}: ${notes}`;
     }
 
-    return await this.equipmentRepository.save(equipment);
+    const updated = await this.equipmentRepository.save(equipment);
+
+    // 🔴 Evento WebSocket: solo cambio de estado
+    this.websocketGateway.emit('equipment.statusUpdated', updated);
+    // Opcionalmente también:
+    this.websocketGateway.emit('equipment.updated', updated);
+
+    return updated;
   }
 
   async getStatistics(clientId?: number): Promise<any> {
@@ -1539,5 +1675,277 @@ export class EquipmentService
       this.logger.error('Error corrigiendo secuencias:', error);
       throw error;
     }
+  }
+
+  async generateAnnualMaintenanceExcelForClient(
+    year: number,
+    clientId: number,
+  ): Promise<Buffer> {
+    // 1. Equipos del cliente CON plan y categoría Aires Acondicionados
+    const qb = this.equipmentRepository
+      .createQueryBuilder('e')
+      .leftJoinAndSelect('e.client', 'client')
+      .leftJoinAndSelect('e.planMantenimiento', 'plan')
+      .leftJoinAndSelect('e.evaporators', 'evaps')
+      .leftJoinAndSelect('e.area', 'area')
+      .leftJoinAndSelect('e.subArea', 'subArea')
+      .where('e.clientId = :clientId', { clientId })
+      .andWhere('plan.id IS NOT NULL')
+      .andWhere('e.category = :cat', {
+        cat: ServiceCategory.AIRES_ACONDICIONADOS,
+      });
+
+    const equipments = await qb.getMany();
+
+    // Función simplificada para obtener solo la ubicación actual (sin recorrer jerarquía)
+    const getCurrentLocation = (equipment: Equipment): string => {
+      if (equipment.subArea) {
+        return equipment.subArea.nombreSubArea;
+      }
+      if (equipment.area) {
+        return equipment.area.nombreArea;
+      }
+      return 'Sin ubicación';
+    };
+
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet(`Plan ${year}`);
+
+    const MONTHS = [
+      'ENERO',
+      'FEBRERO',
+      'MARZO',
+      'ABRIL',
+      'MAYO',
+      'JUNIO',
+      'JULIO',
+      'AGOSTO',
+      'SEPTIEMBRE',
+      'OCTUBRE',
+      'NOVIEMBRE',
+      'DICIEMBRE',
+    ];
+
+    const WEEKS_PER_MONTH = 4; // 4 semanas fijas
+    const DAYS_PER_WEEK = 6; // 6 días (lunes–sábado)
+
+    // Nuevo orden de columnas:
+    const COL_UBICACION = 1; // Nuevo campo: última subárea/área
+    const COL_EQUIPO = 2; // Código del equipo
+    const COL_MOD = 3; // Modelo
+    const COL_SERIAL = 4; // Serial
+    const FIRST_PLAN_COL = 5; // Las columnas del plan empiezan aquí
+
+    // Cabecera básica
+    sheet.mergeCells(1, COL_UBICACION, 3, COL_UBICACION);
+    sheet.getCell(1, COL_UBICACION).value = 'UBICACIÓN';
+    sheet.getColumn(COL_UBICACION).width = 25;
+
+    sheet.mergeCells(1, COL_EQUIPO, 3, COL_EQUIPO);
+    sheet.getCell(1, COL_EQUIPO).value = 'EQUIPO';
+    sheet.getColumn(COL_EQUIPO).width = 15;
+
+    sheet.mergeCells(1, COL_MOD, 3, COL_MOD);
+    sheet.getCell(1, COL_MOD).value = 'MOD';
+    sheet.getColumn(COL_MOD).width = 15;
+
+    sheet.mergeCells(1, COL_SERIAL, 3, COL_SERIAL);
+    sheet.getCell(1, COL_SERIAL).value = 'SERIAL';
+    sheet.getColumn(COL_SERIAL).width = 18;
+
+    // Meses / semanas / días
+    MONTHS.forEach((monthName, monthIndex) => {
+      const monthStartCol =
+        FIRST_PLAN_COL + monthIndex * (WEEKS_PER_MONTH * DAYS_PER_WEEK);
+      const monthEndCol = monthStartCol + WEEKS_PER_MONTH * DAYS_PER_WEEK - 1;
+
+      // Fila 1: mes
+      sheet.mergeCells(1, monthStartCol, 1, monthEndCol);
+      const monthCell = sheet.getCell(1, monthStartCol);
+      monthCell.value = monthName;
+      monthCell.alignment = { horizontal: 'center', vertical: 'middle' };
+      monthCell.font = { bold: true };
+
+      // Fila 2: semanas
+      for (let w = 0; w < WEEKS_PER_MONTH; w++) {
+        const weekStart = monthStartCol + w * DAYS_PER_WEEK;
+        const weekEnd = weekStart + DAYS_PER_WEEK - 1;
+        sheet.mergeCells(2, weekStart, 2, weekEnd);
+        const weekCell = sheet.getCell(2, weekStart);
+        weekCell.value = `SEMANA ${w + 1}`;
+        weekCell.alignment = { horizontal: 'center', vertical: 'middle' };
+        weekCell.font = { bold: true };
+      }
+
+      // Fila 3: columnas de día (1..6 → Lunes..Sábado)
+      for (let w = 0; w < WEEKS_PER_MONTH; w++) {
+        const weekStart = monthStartCol + w * DAYS_PER_WEEK;
+        for (let d = 0; d < DAYS_PER_WEEK; d++) {
+          const col = weekStart + d;
+          const dayCell = sheet.getCell(3, col);
+          dayCell.value = d + 1; // en tu plantilla se ven 1..6
+          dayCell.alignment = { horizontal: 'center', vertical: 'middle' };
+          dayCell.font = { size: 8 };
+        }
+      }
+    });
+
+    // 👉 Ajustar ancho de TODAS las columnas del plan a 3
+    const totalPlanCols = MONTHS.length * WEEKS_PER_MONTH * DAYS_PER_WEEK;
+    for (
+      let col = FIRST_PLAN_COL;
+      col < FIRST_PLAN_COL + totalPlanCols;
+      col++
+    ) {
+      sheet.getColumn(col).width = 3;
+    }
+
+    // Bordes cabecera
+    for (let row = 1; row <= 3; row++) {
+      const r = sheet.getRow(row);
+      r.eachCell((cell) => {
+        cell.border = {
+          top: { style: 'thin' },
+          left: { style: 'thin' },
+          bottom: { style: 'thin' },
+          right: { style: 'thin' },
+        };
+        cell.alignment = {
+          horizontal: 'center',
+          vertical: 'middle',
+          wrapText: true,
+        };
+      });
+    }
+
+    // Vista congelada: primeras 3 filas y 4 columnas (ahora tenemos 4 columnas iniciales)
+    sheet.views = [{ state: 'frozen', xSplit: 4, ySplit: 3 }];
+
+    // Filas de equipos
+    let currentRowIndex = 4;
+
+    for (const eq of equipments) {
+      const row = sheet.getRow(currentRowIndex);
+
+      // Nueva columna: UBICACIÓN (último nivel)
+      const location = getCurrentLocation(eq);
+      row.getCell(COL_UBICACION).value = location;
+
+      // Código interno como "EQUIPO"
+      row.getCell(COL_EQUIPO).value = eq.code ?? eq.equipmentId;
+
+      // MOD / SERIAL SOLO desde la primera evaporadora
+      const firstEvap = eq.evaporators && eq.evaporators[0];
+      row.getCell(COL_MOD).value = firstEvap?.modelo ?? 'N/A';
+      row.getCell(COL_SERIAL).value = firstEvap?.serial ?? 'N/A';
+
+      // Fechas de mantenimiento en ese año
+      const plan = eq.planMantenimiento;
+      const dates = plan
+        ? this.generateMaintenanceDatesForYear(plan, year)
+        : [];
+
+      for (const date of dates) {
+        const monthIndex = date.getMonth(); // 0..11
+        const dayOfMonth = date.getDate(); // 1..31
+
+        // Semana del mes (0..3; 4ª semana agrupa lo que sobre)
+        let weekIndex = Math.floor((dayOfMonth - 1) / 7);
+        if (weekIndex >= WEEKS_PER_MONTH) {
+          weekIndex = WEEKS_PER_MONTH - 1;
+        }
+
+        const jsDay = date.getDay(); // 0 Domingo .. 6 Sábado
+        // Lunes(0)..Domingo(6) => ((0+6)%7 = 6) => Domingo=6, Lunes=0
+        let dayOfWeekIndex = (jsDay + 6) % 7;
+
+        // Saltar domingos (índice 6)
+        if (dayOfWeekIndex >= DAYS_PER_WEEK) {
+          continue;
+        }
+
+        const monthStartCol =
+          FIRST_PLAN_COL + monthIndex * (WEEKS_PER_MONTH * DAYS_PER_WEEK);
+        const weekStartCol = monthStartCol + weekIndex * DAYS_PER_WEEK;
+        const col = weekStartCol + dayOfWeekIndex;
+
+        const cell = row.getCell(col);
+        cell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: 'FF00B0F0' }, // azul
+        };
+      }
+
+      // Bordes de la fila
+      row.eachCell((cell) => {
+        cell.border = {
+          top: { style: 'thin' },
+          left: { style: 'thin' },
+          bottom: { style: 'thin' },
+          right: { style: 'thin' },
+        };
+        cell.alignment = { horizontal: 'center', vertical: 'middle' };
+      });
+
+      currentRowIndex++;
+    }
+
+    // Exportar a buffer
+    const buffer = (await workbook.xlsx.writeBuffer()) as unknown as Buffer;
+    return buffer;
+  }
+
+  async advanceMaintenancePlanFromPlanId(planId: number): Promise<void> {
+    const plan = await this.planMantenimientoRepository.findOne({
+      where: { id: planId },
+    });
+
+    if (!plan || !plan.unidadFrecuencia) {
+      return;
+    }
+
+    const unidad = plan.unidadFrecuencia;
+    const step = plan.diaDelMes ?? 1;
+
+    const current = plan.fechaProgramada
+      ? this.startOfDay(new Date(plan.fechaProgramada))
+      : this.startOfDay(new Date());
+
+    // Siguiente fecha según la unidad/step
+    let next = this.nextPlanDate(current, unidad, step);
+
+    // Ajustar domingo → lunes
+    next = this.adjustToWorkingDay(next);
+
+    plan.fechaProgramada = next;
+    await this.planMantenimientoRepository.save(plan);
+  }
+
+  async advanceMaintenancePlanForEquipment(
+    equipmentId: number,
+  ): Promise<Equipment> {
+    // 1. Buscar el plan por equipo
+    const plan = await this.planMantenimientoRepository.findOne({
+      where: { equipmentId },
+    });
+
+    if (!plan) {
+      throw new NotFoundException(
+        `No existe plan de mantenimiento para el equipo ${equipmentId}`,
+      );
+    }
+
+    await this.advanceMaintenancePlanFromPlanId(plan.id);
+
+    const updatedEquipment = await this.findOne(equipmentId);
+
+    // 🔴 Evento WebSocket: plan de mantenimiento actualizado
+    this.websocketGateway.emit(
+      'equipment.maintenancePlanUpdated',
+      updatedEquipment,
+    );
+
+    return updatedEquipment;
   }
 }

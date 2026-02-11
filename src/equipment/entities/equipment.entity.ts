@@ -90,6 +90,14 @@ export class Equipment {
   })
   createdBy?: string;
 
+  @Column({
+    name: 'updated_by',
+    type: 'varchar',
+    length: 150,
+    nullable: true,
+  })
+  updatedBy?: string;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 

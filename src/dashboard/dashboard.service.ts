@@ -1,4 +1,3 @@
-// src/dashboard/dashboard.service.ts
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -50,12 +49,14 @@ export class DashboardService {
     no_facturadas: number;
     ingresos_totales: number;
     completadas_este_mes: number;
+    pausados: number;
     status_counts: {
       solicitada_sin_asignar: number;
       solicitada_asignada: number;
       en_proceso: number;
       completado: number;
       cancelado: number;
+      pausado: number;
     };
     technicians: {
       tecnico_id: number;
@@ -84,6 +85,7 @@ export class DashboardService {
     const countEnProceso = getCount(WorkOrderStatus.IN_PROGRESS);
     const countFinalizada = getCount(WorkOrderStatus.COMPLETED);
     const countCancelada = getCount(WorkOrderStatus.CANCELED);
+    const countPausada = getCount(WorkOrderStatus.PAUSED);
 
     const pendientes = countSolicitadaSinAsignar + countSolicitadaAsignada;
     const sin_asignar = countSolicitadaSinAsignar;
@@ -91,6 +93,7 @@ export class DashboardService {
     const en_proceso = countEnProceso;
     const completados = countFinalizada;
     const cancelados = countCancelada;
+    const pausados = countPausada;
 
     let mis_servicios = 0;
     const roleName = this.getRoleName(currentUser);
@@ -98,9 +101,12 @@ export class DashboardService {
 
     if (userId) {
       if (roleName === 'Técnico') {
-        mis_servicios = await this.workOrderRepository.count({
-          where: { tecnicoId: userId },
-        });
+        // Contar órdenes donde el usuario es uno de los técnicos asignados
+        mis_servicios = await this.workOrderRepository
+          .createQueryBuilder('wo')
+          .innerJoin('wo.technicians', 'technician')
+          .where('technician.tecnicoId = :userId', { userId })
+          .getCount();
       } else if (roleName === 'Cliente') {
         mis_servicios = await this.workOrderRepository
           .createQueryBuilder('wo')
@@ -128,6 +134,7 @@ export class DashboardService {
       en_proceso: en_proceso,
       completado: completados,
       cancelado: cancelados,
+      pausado: pausados,
     };
 
     const technicians = await this.getTechnicianStats();
@@ -147,6 +154,7 @@ export class DashboardService {
       completadas_este_mes,
       status_counts,
       technicians,
+      pausados,
     };
   }
 
@@ -170,13 +178,14 @@ export class DashboardService {
       .leftJoinAndSelect('wo.service', 'service')
       .leftJoinAndSelect('wo.cliente', 'cliente')
       .leftJoinAndSelect('wo.clienteEmpresa', 'clienteEmpresa')
-      .leftJoinAndSelect('wo.tecnico', 'tecnico')
+      .leftJoinAndSelect('wo.technicians', 'technicians')
+      .leftJoinAndSelect('technicians.technician', 'tecnico')
       .leftJoinAndSelect('wo.equipmentWorkOrders', 'equipmentWorkOrders')
       .leftJoinAndSelect('equipmentWorkOrders.equipment', 'equipment')
       .orderBy('wo.fechaSolicitud', 'DESC');
 
     if (filters.tecnicoId) {
-      qb.andWhere('wo.tecnicoId = :tecnicoId', {
+      qb.andWhere('technicians.tecnicoId = :tecnicoId', {
         tecnicoId: filters.tecnicoId,
       });
     }
@@ -315,16 +324,17 @@ export class DashboardService {
   > {
     const rows = await this.workOrderRepository
       .createQueryBuilder('wo')
-      .leftJoin('wo.tecnico', 'tecnico')
+      .innerJoin('wo.technicians', 'technicians') // ← CAMBIA: wo.technicians
+      .innerJoin('technicians.technician', 'tecnico')
       .select('tecnico.usuarioId', 'tecnico_id')
       .addSelect('tecnico.nombre', 'nombre')
       .addSelect('tecnico.apellido', 'apellido')
-      .addSelect('COUNT(*)', 'total_servicios')
+      .addSelect('COUNT(DISTINCT wo.ordenId)', 'total_servicios')
       .addSelect(
         `SUM(CASE WHEN wo.estado = :completed THEN 1 ELSE 0 END)`,
         'completados',
       )
-      .where('wo.tecnicoId IS NOT NULL')
+      .where('technicians.tecnicoId IS NOT NULL')
       .groupBy('tecnico.usuarioId')
       .addGroupBy('tecnico.nombre')
       .addGroupBy('tecnico.apellido')
@@ -397,7 +407,7 @@ export class DashboardService {
   private mapWorkOrderToServiceFromAPI(wo: WorkOrder): any {
     const estadoDashboard = this.mapEstadoWorkOrderToDashboard(wo.estado);
 
-    // ✅ CORREGIDO: Acceder al equipo a través de la tabla intermedia
+    // Acceder al equipo a través de la tabla intermedia
     const primerEquipo = wo.equipmentWorkOrders?.[0]?.equipment;
     const equipoAsignado = primerEquipo
       ? primerEquipo.code || `Equipo #${primerEquipo.equipmentId}`
@@ -411,7 +421,7 @@ export class DashboardService {
     const emailCliente = empresa?.email || persona?.email || '';
     const telefonoCliente = empresa?.telefono || persona?.telefono || null;
 
-    // ✅ ARRAY DE EQUIPOS ASOCIADOS
+    // ARRAY DE EQUIPOS ASOCIADOS
     const equiposAsociados =
       wo.equipmentWorkOrders?.map((ewo) => ({
         equipmentId: ewo.equipment.equipmentId,
@@ -421,13 +431,17 @@ export class DashboardService {
         status: ewo.equipment.status,
       })) || [];
 
+    // Obtener técnicos asignados (usar el primer técnico como principal para compatibilidad)
+    const primerTecnico = wo.technicians?.[0]?.technician;
+    const tecnicoId = primerTecnico?.usuarioId ?? null;
+
     return {
       orden_id: wo.ordenId,
       servicio_id: wo.servicioId,
       cliente_id: empresa
         ? empresa.idCliente
         : (persona?.usuarioId ?? wo.clienteId),
-      tecnico_id: wo.tecnicoId ?? null,
+      tecnico_id: tecnicoId, // Usar el primer técnico
       fecha_solicitud: wo.fechaSolicitud.toISOString(),
       fecha_inicio: wo.fechaInicio ? wo.fechaInicio.toISOString() : null,
       fecha_finalizacion: wo.fechaFinalizacion
@@ -445,7 +459,7 @@ export class DashboardService {
       estado_facturacion:
         wo.estadoFacturacion === BillingStatus.BILLED
           ? 'Facturado'
-          : 'No facturado',
+          : 'Por facturar',
       factura_pdf_url: wo.facturaPdfUrl || null,
       servicio: {
         servicio_id: wo.service?.servicioId ?? wo.servicioId,
@@ -475,14 +489,26 @@ export class DashboardService {
             contacto: empresa.contacto || null,
           }
         : null,
-      tecnico: wo.tecnico
+      tecnico: primerTecnico
         ? {
-            usuario_id: wo.tecnico.usuarioId,
-            nombre: wo.tecnico.nombre,
-            apellido: wo.tecnico.apellido ?? null,
-            email: wo.tecnico.email,
+            usuario_id: primerTecnico.usuarioId,
+            nombre: primerTecnico.nombre,
+            apellido: primerTecnico.apellido ?? null,
+            email: primerTecnico.email,
           }
         : null,
+      tecnicos:
+        wo.technicians?.map((tech) => ({
+          id: tech.id,
+          tecnicoId: tech.tecnicoId,
+          isLeader: tech.isLeader,
+          technician: {
+            usuario_id: tech.technician?.usuarioId,
+            nombre: tech.technician?.nombre,
+            apellido: tech.technician?.apellido,
+            email: tech.technician?.email,
+          },
+        })) || [],
       prioridad: 'Media',
       equipo_asignado: equipoAsignado,
       equipos: equiposAsociados,

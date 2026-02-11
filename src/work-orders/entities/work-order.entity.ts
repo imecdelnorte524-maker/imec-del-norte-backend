@@ -1,3 +1,4 @@
+// src/work-orders/entities/work-order.entity.ts
 import {
   Entity,
   PrimaryGeneratedColumn,
@@ -18,6 +19,9 @@ import { BillingStatus } from '../enums/billing-status.enum';
 import { ServiceRequestType } from '../enums/service-request-type.enum';
 import { EquipmentWorkOrder } from './equipment-work-order.entity';
 import { PlanMantenimiento } from '../../equipment/entities/plan-mantenimiento.entity';
+import { WorkOrderTechnician } from './work-order-technician.entity';
+import { WorkOrderTimer } from './work-order-timer.entity';
+import { WorkOrderPause } from './work-order-pause.entity';
 
 @Entity('ordenes_trabajo')
 export class WorkOrder {
@@ -33,8 +37,8 @@ export class WorkOrder {
   @Column({ name: 'cliente_empresa_id', nullable: true })
   clienteEmpresaId?: number;
 
-  @Column({ name: 'tecnico_id', nullable: true })
-  tecnicoId?: number;
+  @Column({ name: 'es_emergencia', default: false })
+  isEmergency!: boolean;
 
   @ManyToOne(() => Service)
   @JoinColumn({ name: 'servicio_id' })
@@ -48,14 +52,9 @@ export class WorkOrder {
   @JoinColumn({ name: 'cliente_empresa_id' })
   clienteEmpresa?: Client;
 
-  @ManyToOne(() => User, { nullable: true })
-  @JoinColumn({ name: 'tecnico_id' })
-  tecnico?: User;
-
   @CreateDateColumn({ name: 'fecha_solicitud' })
   fechaSolicitud!: Date;
 
-  // NUEVO: fecha programada del mantenimiento
   @Column({ name: 'fecha_programada', type: 'date', nullable: true })
   fechaProgramada?: Date;
 
@@ -77,9 +76,9 @@ export class WorkOrder {
     name: 'estado_facturacion',
     type: 'enum',
     enum: BillingStatus,
-    default: BillingStatus.NOT_BILLED,
+    nullable: true,
   })
-  estadoFacturacion!: BillingStatus;
+  estadoFacturacion!: BillingStatus | null;
 
   @Column({ name: 'factura_pdf_url', length: 500, nullable: true })
   facturaPdfUrl?: string;
@@ -102,7 +101,6 @@ export class WorkOrder {
   @JoinColumn({ name: 'tipo_mantenimiento_id' })
   maintenanceType?: MaintenanceType;
 
-  // NUEVO: relación con PlanMantenimiento (opcional)
   @Column({ name: 'plan_mantenimiento_id', nullable: true })
   planMantenimientoId?: number;
 
@@ -120,4 +118,20 @@ export class WorkOrder {
     cascade: true,
   })
   equipmentWorkOrders!: EquipmentWorkOrder[];
+
+  // NUEVAS RELACIONES
+  @OneToMany(() => WorkOrderTechnician, (technician) => technician.workOrder, {
+    cascade: true,
+  })
+  technicians!: WorkOrderTechnician[];
+
+  @OneToMany(() => WorkOrderTimer, (timer) => timer.workOrder, {
+    cascade: true,
+  })
+  timers!: WorkOrderTimer[];
+
+  @OneToMany(() => WorkOrderPause, (pause) => pause.workOrder, {
+    cascade: true,
+  })
+  pauses!: WorkOrderPause[];
 }

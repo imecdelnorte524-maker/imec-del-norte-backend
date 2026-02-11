@@ -10,6 +10,8 @@ import {
   ParseIntPipe,
   NotFoundException,
   Res,
+  BadRequestException,
+  Put,
 } from '@nestjs/common';
 import { Response } from 'express';
 import { SgSstService } from './sg-sst.service';
@@ -17,12 +19,14 @@ import { CreateAtsDto } from './dto/create-ats.dto';
 import { CreateHeightWorkDto } from './dto/create-height-work.dto';
 import { CreatePreoperationalDto } from './dto/create-preoperational.dto';
 import { SignFormDto, SignerType } from './dto/sign-form.dto';
-import { FormStatus, FormType } from './entities/form.entity';
 import { ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { CreateAtsWithSignatureDto } from './dto/create-ats-with-signature.dto';
 import { CreatePreoperationalWithSignatureDto } from './dto/create-preoperational-with-signature.dto';
 import { CreateHeightWorkWithSignatureDto } from './dto/create-height-work-with-signature.dto';
 import { AuthorizeHeightWorkDto } from './dto/authorize-height-work.dto';
+import { CreatePreoperationalChecklistTemplateDto } from './dto/create-preoperational-checklist-template.dto';
+import { FormStatus, FormType } from './enum/check-value.enum';
+import { RejectFormDto } from './dto/reject-form.dto';
 
 @Controller('sg-sst')
 @UsePipes(new ValidationPipe({ transform: true }))
@@ -73,10 +77,9 @@ export class SgSstController {
     @Body() createPreoperationalDto: CreatePreoperationalDto,
   ) {
     try {
-      const result =
-        await this.sgSstService.createPreoperational(
-          createPreoperationalDto,
-        );
+      const result = await this.sgSstService.createPreoperational(
+        createPreoperationalDto,
+      );
       return {
         success: true,
         message: 'Checklist preoperacional creado exitosamente',
@@ -125,8 +128,7 @@ export class SgSstController {
 
   @Post('forms/:id/authorize-height-work')
   @ApiOperation({
-    summary:
-      'Autorizar un Trabajo en Alturas por parte del personal SST',
+    summary: 'Autorizar un Trabajo en Alturas por parte del personal SST',
   })
   async authorizeHeightWork(
     @Param('id', ParseIntPipe) formId: number,
@@ -318,17 +320,15 @@ export class SgSstController {
       const stats = {
         total: forms.length,
         draft: forms.filter((f) => f.status === FormStatus.DRAFT).length,
-        pendingSst: forms.filter(
-          (f) => f.status === FormStatus.PENDING_SST,
-        ).length,
-        completed: forms.filter(
-          (f) => f.status === FormStatus.COMPLETED,
-        ).length,
+        pendingSst: forms.filter((f) => f.status === FormStatus.PENDING_SST)
+          .length,
+        completed: forms.filter((f) => f.status === FormStatus.COMPLETED)
+          .length,
+        rejected: forms.filter((f) => f.status === FormStatus.REJECTED).length,
         byType: {
           ats: forms.filter((f) => f.formType === FormType.ATS).length,
-          heightWork: forms.filter(
-            (f) => f.formType === FormType.HEIGHT_WORK,
-          ).length,
+          heightWork: forms.filter((f) => f.formType === FormType.HEIGHT_WORK)
+            .length,
           preoperational: forms.filter(
             (f) => f.formType === FormType.PREOPERATIONAL,
           ).length,
@@ -366,15 +366,13 @@ export class SgSstController {
     @Body() createAtsWithSignatureDto: CreateAtsWithSignatureDto,
   ) {
     try {
-      const result =
-        await this.sgSstService.createAtsWithSignature(
-          createAtsWithSignatureDto,
-        );
+      const result = await this.sgSstService.createAtsWithSignature(
+        createAtsWithSignatureDto,
+      );
 
       let message = 'ATS creado exitosamente';
       if (createAtsWithSignatureDto.signerType === SignerType.TECHNICIAN) {
-        message =
-          'ATS creado y firmado por el técnico. Pendiente firma SST';
+        message = 'ATS creado y firmado por el técnico. Pendiente firma SST';
       } else if (createAtsWithSignatureDto.signerType === SignerType.SST) {
         message = 'ATS creado y firmado por SST. Formulario completado';
       }
@@ -402,16 +400,19 @@ export class SgSstController {
     createHeightWorkWithSignatureDto: CreateHeightWorkWithSignatureDto,
   ) {
     try {
-      const result =
-        await this.sgSstService.createHeightWorkWithSignature(
-          createHeightWorkWithSignatureDto,
-        );
+      const result = await this.sgSstService.createHeightWorkWithSignature(
+        createHeightWorkWithSignatureDto,
+      );
 
       let message = 'Trabajo en alturas creado exitosamente';
-      if (createHeightWorkWithSignatureDto.signerType === SignerType.TECHNICIAN) {
+      if (
+        createHeightWorkWithSignatureDto.signerType === SignerType.TECHNICIAN
+      ) {
         message =
           'Trabajo en alturas creado y firmado por el técnico. Pendiente firma SST';
-      } else if (createHeightWorkWithSignatureDto.signerType === SignerType.SST) {
+      } else if (
+        createHeightWorkWithSignatureDto.signerType === SignerType.SST
+      ) {
         message =
           'Trabajo en alturas creado y firmado por SST. Formulario completado';
       }
@@ -432,25 +433,27 @@ export class SgSstController {
 
   @Post('preoperational-with-signature')
   @ApiOperation({
-    summary:
-      'Crear un Checklist Preoperacional completo incluyendo firma',
+    summary: 'Crear un Checklist Preoperacional completo incluyendo firma',
   })
   async createPreoperationalWithSignature(
     @Body()
     createPreoperationalWithSignatureDto: CreatePreoperationalWithSignatureDto,
   ) {
     try {
-      const result =
-        await this.sgSstService.createPreoperationalWithSignature(
-          createPreoperationalWithSignatureDto,
-        );
+      const result = await this.sgSstService.createPreoperationalWithSignature(
+        createPreoperationalWithSignatureDto,
+      );
 
-      let message =
-        'Checklist preoperacional creado exitosamente';
-      if (createPreoperationalWithSignatureDto.signerType === SignerType.TECHNICIAN) {
+      let message = 'Checklist preoperacional creado exitosamente';
+      if (
+        createPreoperationalWithSignatureDto.signerType ===
+        SignerType.TECHNICIAN
+      ) {
         message =
           'Checklist preoperacional creado y firmado por el técnico. Pendiente firma SST';
-      } else if (createPreoperationalWithSignatureDto.signerType === SignerType.SST) {
+      } else if (
+        createPreoperationalWithSignatureDto.signerType === SignerType.SST
+      ) {
         message =
           'Checklist preoperacional creado y firmado por SST. Formulario completado';
       }
@@ -463,8 +466,102 @@ export class SgSstController {
     } catch (error) {
       return {
         success: false,
-        message:
-          'Error al crear checklist preoperacional con firma',
+        message: 'Error al crear checklist preoperacional con firma',
+        error: (error as any).message,
+      };
+    }
+  }
+
+  @Post('preoperational-templates')
+  @ApiOperation({
+    summary:
+      'Crear plantilla de checklist preoperacional para un tipo de herramienta',
+  })
+  async createPreoperationalTemplate(
+    @Body()
+    dto: CreatePreoperationalChecklistTemplateDto,
+  ) {
+    try {
+      const template =
+        await this.sgSstService.createPreoperationalChecklistTemplate(dto);
+
+      return {
+        success: true,
+        message: 'Plantilla preoperacional creada exitosamente',
+        data: template,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: 'Error al crear plantilla preoperacional',
+        error: (error as any).message,
+      };
+    }
+  }
+
+  @Get('preoperational-templates/by-tool-type')
+  async getPreoperationalTemplateByToolType(
+    @Query('toolType') toolType: string,
+  ) {
+    if (!toolType) {
+      throw new BadRequestException('El parámetro toolType es requerido');
+    }
+
+    const template =
+      await this.sgSstService.getPreoperationalChecklistByToolType(toolType);
+
+    return {
+      success: true,
+      data: template,
+    };
+  }
+
+  @Post('forms/:id/reject')
+  @ApiOperation({
+    summary: 'Rechazar un formulario SG-SST como SST',
+  })
+  async rejectForm(
+    @Param('id', ParseIntPipe) formId: number,
+    @Body() rejectFormDto: RejectFormDto,
+  ) {
+    try {
+      const result = await this.sgSstService.rejectForm(formId, rejectFormDto);
+
+      return {
+        success: true,
+        message: 'Formulario rechazado exitosamente',
+        data: result,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: 'Error al rechazar formulario',
+        error: (error as any).message,
+      };
+    }
+  }
+
+  @Put('preoperational-templates/:id')
+  @ApiOperation({
+    summary: 'Actualizar plantilla de checklist preoperacional',
+  })
+  async updatePreoperationalTemplate(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: CreatePreoperationalChecklistTemplateDto,
+  ) {
+    try {
+      const template =
+        await this.sgSstService.updatePreoperationalChecklistTemplate(id, dto);
+
+      return {
+        success: true,
+        message: 'Plantilla preoperacional actualizada exitosamente',
+        data: template,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: 'Error al actualizar plantilla preoperacional',
         error: (error as any).message,
       };
     }

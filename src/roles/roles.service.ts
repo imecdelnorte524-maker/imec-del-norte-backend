@@ -11,6 +11,7 @@ import { Role } from './entities/role.entity';
 import { Module as ModuleEntity } from '../modules/entities/module.entity';
 import { CreateRoleDto } from './dto/create-role.dto';
 import { UpdateRoleDto } from './dto/update-role.dto';
+import { WebsocketGateway } from '../websockets/websocket.gateway';
 
 @Injectable()
 export class RolesService {
@@ -23,6 +24,7 @@ export class RolesService {
     // Repositorio de módulos para manejar las asociaciones sin necesidad de usar ModulesService
     @InjectRepository(ModuleEntity)
     private modulesRepository: Repository<ModuleEntity>,
+    private readonly websocketGateway: WebsocketGateway,
   ) {
     // Verificar y corregir la secuencia al inicializar el servicio
     this.initializeSequence().catch((error) => {
@@ -125,9 +127,10 @@ export class RolesService {
 
     try {
       savedRole = await this.rolesRepository.save(role);
-      this.logger.log(
-        `🎭 Rol creado exitosamente: ${savedRole.rolId} - ${savedRole.nombreRol}`,
-      );
+      // 🔴 WebSocket
+      this.websocketGateway.emit('roles.created', savedRole);
+
+      return savedRole;
     } catch (error) {
       // Si hay error de duplicado, verificar y corregir secuencia
       if (error.code === '23505' && error.constraint === 'roles_pkey') {
@@ -196,7 +199,9 @@ export class RolesService {
     await this.rolesRepository.update(id, updateRoleDto);
     const updatedRole = await this.findOne(id);
 
-    this.logger.log(`🎭 Rol actualizado: ${id}`);
+    // 🔴 WebSocket
+    this.websocketGateway.emit('roles.updated', updatedRole);
+
     return updatedRole;
   }
 
@@ -221,7 +226,8 @@ export class RolesService {
     }
 
     await this.rolesRepository.remove(role);
-    this.logger.log(`🎭 Rol eliminado: ${id}`);
+    // 🔴 WebSocket
+    this.websocketGateway.emit('roles.deleted', { id });
   }
 
   /**
@@ -325,19 +331,24 @@ export class RolesService {
   async setModulesForRole(id: number, moduloIds: number[]): Promise<Role> {
     const role = await this.findOne(id);
 
-    const modules = moduloIds && moduloIds.length
-      ? await this.modulesRepository.findBy({ moduloId: In(moduloIds) })
-      : [];
+    const modules =
+      moduloIds && moduloIds.length
+        ? await this.modulesRepository.findBy({ moduloId: In(moduloIds) })
+        : [];
 
     if (moduloIds && moduloIds.length && modules.length !== moduloIds.length) {
-      const foundIds = new Set(modules.map(m => m.moduloId));
-      const notFound = moduloIds.filter(mid => !foundIds.has(mid));
-      throw new NotFoundException(`Algunos módulos no fueron encontrados: IDs ${notFound.join(', ')}`);
+      const foundIds = new Set(modules.map((m) => m.moduloId));
+      const notFound = moduloIds.filter((mid) => !foundIds.has(mid));
+      throw new NotFoundException(
+        `Algunos módulos no fueron encontrados: IDs ${notFound.join(', ')}`,
+      );
     }
 
     role.modules = modules;
     const saved = await this.rolesRepository.save(role);
-    this.logger.log(`🔗 Módulos actualizados para rol ${id}`);
+    // 🔴 WebSocket
+    this.websocketGateway.emit('roles.updated', saved);
+
     return saved;
   }
 
@@ -354,11 +365,12 @@ export class RolesService {
     const module = await this.modulesRepository.findOne({
       where: { moduloId },
     });
-    if (!module) throw new NotFoundException(`Módulo con ID ${moduloId} no encontrado`);
+    if (!module)
+      throw new NotFoundException(`Módulo con ID ${moduloId} no encontrado`);
 
     role.modules = role.modules || [];
 
-    const already = role.modules.some(m => m.moduloId === moduloId);
+    const already = role.modules.some((m) => m.moduloId === moduloId);
     if (already) {
       return role;
     }
@@ -379,9 +391,11 @@ export class RolesService {
     });
     if (!role) throw new NotFoundException(`Rol con ID ${rolId} no encontrado`);
 
-    role.modules = (role.modules || []).filter(m => m.moduloId !== moduloId);
+    role.modules = (role.modules || []).filter((m) => m.moduloId !== moduloId);
     const saved = await this.rolesRepository.save(role);
-    this.logger.log(`❌ Módulo ${moduloId} removido del rol ${rolId}`);
+    // 🔴 WebSocket
+    this.websocketGateway.emit('roles.updated', saved);
+
     return saved;
   }
 }

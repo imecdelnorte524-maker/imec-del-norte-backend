@@ -1,8 +1,4 @@
-import {
-  Injectable,
-  NotFoundException,
-  Logger,
-} from '@nestjs/common';
+import { Injectable, NotFoundException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Image } from './entities/image.entity';
@@ -12,6 +8,7 @@ import { Supply } from '../supplies/entities/supply.entity';
 import { User } from '../users/entities/user.entity';
 import { Equipment } from '../equipment/entities/equipment.entity';
 import { Client } from '../client/entities/client.entity';
+import { WebsocketGateway } from '../websockets/websocket.gateway'; // <-- NUEVO
 
 @Injectable()
 export class ImagesService {
@@ -37,6 +34,7 @@ export class ImagesService {
     private readonly clientRepo: Repository<Client>,
 
     private readonly cloudinary: CloudinaryService,
+    private readonly websocketGateway: WebsocketGateway,
   ) {}
 
   // =======================
@@ -64,32 +62,35 @@ export class ImagesService {
 
     if (existingImages.length) {
       await Promise.all(
-        existingImages.map((img) =>
-          this.cloudinary.delete(img.public_id),
-        ),
+        existingImages.map((img) => this.cloudinary.delete(img.public_id)),
       );
       await this.imageRepo.remove(existingImages);
     }
 
     // Subir todas las imágenes
     const uploadPromises = files.map((file, index) =>
-      this.cloudinary.upload(file, `tools/${toolId}/${Date.now()}_${index}`)
+      this.cloudinary.upload(file, `tools/${toolId}/${Date.now()}_${index}`),
     );
 
     const uploadResults = await Promise.all(uploadPromises);
 
     // Crear entidades para cada imagen
-    const imageEntities = uploadResults.map(upload => 
+    const imageEntities = uploadResults.map((upload) =>
       this.imageRepo.create({
         url: upload.secure_url,
         public_id: upload.public_id,
         folder: 'tools',
         tool,
-      })
+      }),
     );
 
-    // Guardar todas las imágenes en la base de datos
     const savedImages = await this.imageRepo.save(imageEntities);
+
+    // 🔴 Evento WebSocket
+    this.websocketGateway.emit('tools.imagesUpdated', {
+      toolId,
+      images: savedImages,
+    });
 
     return {
       message: `${files.length} imagen(es) subida(s) correctamente para la herramienta`,
@@ -130,11 +131,10 @@ export class ImagesService {
     );
     await this.imageRepo.remove(images);
 
-    this.logger.log(
-      `Imágenes de herramienta eliminadas. Herramienta=${tool.herramientaId}, imágenes borradas=${images
-        .map((i) => i.id)
-        .join(',')}`,
-    );
+    this.websocketGateway.emit('tools.imagesUpdated', {
+      toolId: tool.herramientaId,
+      images: [],
+    });
   }
 
   // =======================
@@ -162,32 +162,38 @@ export class ImagesService {
 
     if (existingImages.length) {
       await Promise.all(
-        existingImages.map((img) =>
-          this.cloudinary.delete(img.public_id),
-        ),
+        existingImages.map((img) => this.cloudinary.delete(img.public_id)),
       );
       await this.imageRepo.remove(existingImages);
     }
 
     // Subir todas las imágenes
     const uploadPromises = files.map((file, index) =>
-      this.cloudinary.upload(file, `supplies/${supplyId}/${Date.now()}_${index}`)
+      this.cloudinary.upload(
+        file,
+        `supplies/${supplyId}/${Date.now()}_${index}`,
+      ),
     );
 
     const uploadResults = await Promise.all(uploadPromises);
 
     // Crear entidades para cada imagen
-    const imageEntities = uploadResults.map(upload => 
+    const imageEntities = uploadResults.map((upload) =>
       this.imageRepo.create({
         url: upload.secure_url,
         public_id: upload.public_id,
         folder: 'supplies',
         supply,
-      })
+      }),
     );
 
     // Guardar todas las imágenes en la base de datos
     const savedImages = await this.imageRepo.save(imageEntities);
+
+    this.websocketGateway.emit('supplies.imagesUpdated', {
+      supplyId,
+      images: savedImages,
+    });
 
     return {
       message: `${files.length} imagen(es) subida(s) correctamente para el insumo`,
@@ -231,11 +237,11 @@ export class ImagesService {
     );
     await this.imageRepo.remove(images);
 
-    this.logger.log(
-      `Imágenes de insumo eliminadas. Insumo=${supply.insumoId}, imágenes borradas=${images
-        .map((i) => i.id)
-        .join(',')}`,
-    );
+    // 🔴 Evento WebSocket
+    this.websocketGateway.emit('supplies.imagesUpdated', {
+      supplyId: supply.insumoId,
+      images: [],
+    });
   }
 
   // =======================
@@ -257,9 +263,7 @@ export class ImagesService {
 
     if (existingImages.length) {
       await Promise.all(
-        existingImages.map((img) =>
-          this.cloudinary.delete(img.public_id),
-        ),
+        existingImages.map((img) => this.cloudinary.delete(img.public_id)),
       );
       await this.imageRepo.remove(existingImages);
     }
@@ -273,7 +277,15 @@ export class ImagesService {
       user,
     });
 
-    return this.imageRepo.save(image);
+    const saved = await this.imageRepo.save(image);
+
+    // 🔴 Evento WebSocket
+    this.websocketGateway.emit('users.profilePhotoUpdated', {
+      userId,
+      image: saved,
+    });
+
+    return saved;
   }
 
   async deleteUserImages(userId: number) {
@@ -303,11 +315,11 @@ export class ImagesService {
     const ids = images.map((img) => img.id);
     await this.imageRepo.delete(ids);
 
-    this.logger.log(
-      `Fotos de usuario eliminadas. Usuario=${userId}, imágenes borradas=${ids.join(
-        ',',
-      )}`,
-    );
+    // 🔴 Evento WebSocket
+    this.websocketGateway.emit('users.profilePhotoUpdated', {
+      userId,
+      image: null,
+    });
 
     return { message: 'Fotos de usuario eliminadas correctamente' };
   }
@@ -333,10 +345,7 @@ export class ImagesService {
   // =======================
   //   EQUIPOS
   // =======================
-  async uploadForEquipment(
-    equipmentId: number,
-    file: Express.Multer.File,
-  ) {
+  async uploadForEquipment(equipmentId: number, file: Express.Multer.File) {
     const equipment = await this.equipmentRepo.findOne({
       where: { equipmentId },
     });
@@ -357,7 +366,16 @@ export class ImagesService {
       equipment,
     });
 
-    return this.imageRepo.save(image);
+    const saved = await this.imageRepo.save(image);
+    const images = await this.getEquipmentImages(equipmentId);
+
+    // 🔴 Evento WebSocket
+    this.websocketGateway.emit('equipment.imagesUpdated', {
+      equipmentId,
+      images,
+    });
+
+    return saved;
   }
 
   async getEquipmentImages(equipmentId: number) {
@@ -391,11 +409,11 @@ export class ImagesService {
     );
     await this.imageRepo.remove(images);
 
-    this.logger.log(
-      `Imágenes de equipo eliminadas. Equipo=${equipmentId}, imágenes borradas=${images
-        .map((i) => i.id)
-        .join(',')}`,
-    );
+    // 🔴 Evento WebSocket
+    this.websocketGateway.emit('equipment.imagesUpdated', {
+      equipmentId,
+      images: [],
+    });
   }
 
   // =======================
@@ -419,9 +437,7 @@ export class ImagesService {
 
     if (existingLogos.length) {
       await Promise.all(
-        existingLogos.map((img) =>
-          this.cloudinary.delete(img.public_id),
-        ),
+        existingLogos.map((img) => this.cloudinary.delete(img.public_id)),
       );
       await this.imageRepo.remove(existingLogos);
     }
@@ -439,7 +455,15 @@ export class ImagesService {
       client,
     });
 
-    return this.imageRepo.save(image);
+    const saved = await this.imageRepo.save(image);
+
+    // 🔴 Evento WebSocket
+    this.websocketGateway.emit('clients.logoUpdated', {
+      clientId,
+      logo: saved,
+    });
+
+    return saved;
   }
 
   async uploadClientImages(clientId: number, files: Express.Multer.File[]) {
@@ -458,24 +482,32 @@ export class ImagesService {
 
     // Subir todas las imágenes
     const uploadPromises = files.map((file, index) =>
-      this.cloudinary.upload(file, `clients/${clientId}/gallery/${Date.now()}_${index}`)
+      this.cloudinary.upload(
+        file,
+        `clients/${clientId}/gallery/${Date.now()}_${index}`,
+      ),
     );
 
     const uploadResults = await Promise.all(uploadPromises);
 
     // Crear entidades para cada imagen
-    const imageEntities = uploadResults.map(upload => 
+    const imageEntities = uploadResults.map((upload) =>
       this.imageRepo.create({
         url: upload.secure_url,
         public_id: upload.public_id,
         folder: 'clients',
         isLogo: false,
         client,
-      })
+      }),
     );
 
-    // Guardar todas las imágenes en la base de datos
     const savedImages = await this.imageRepo.save(imageEntities);
+
+    // 🔴 Evento WebSocket
+    this.websocketGateway.emit('clients.galleryUpdated', {
+      clientId,
+      images: savedImages,
+    });
 
     return {
       message: `${files.length} imagen(es) subida(s) correctamente a la galería del cliente`,
@@ -536,11 +568,15 @@ export class ImagesService {
     );
     await this.imageRepo.remove(images);
 
-    this.logger.log(
-      `Imágenes de cliente eliminadas. Cliente=${clientId}, imágenes borradas=${images
-        .map((i) => i.id)
-        .join(',')}`,
-    );
+    // 🔴 Evento WebSocket (se vacía galería y logos)
+    this.websocketGateway.emit('clients.galleryUpdated', {
+      clientId,
+      images: [],
+    });
+    this.websocketGateway.emit('clients.logoUpdated', {
+      clientId,
+      logo: null,
+    });
   }
 
   // =======================
@@ -551,8 +587,13 @@ export class ImagesService {
 
     if (!image) throw new NotFoundException('Imagen no encontrada');
 
+    const imageCopy = { ...image };
+
     await this.cloudinary.delete(image.public_id);
     await this.imageRepo.remove(image);
+
+    // 🔴 Evento WebSocket genérico
+    this.websocketGateway.emit('images.deleted', imageCopy);
 
     return { message: 'Imagen eliminada correctamente' };
   }

@@ -269,6 +269,9 @@ export class EquipmentResponseDto {
   @ApiPropertyOptional({ example: 'juan.perez' })
   createdBy?: string | null;
 
+  @ApiPropertyOptional({ example: 'tecnico1 - Carlos Ruiz' })
+  updatedBy?: string | null;
+
   @ApiProperty()
   createdAt: Date;
 

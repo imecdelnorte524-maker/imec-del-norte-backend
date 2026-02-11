@@ -11,6 +11,7 @@ import { Client } from './entities/client.entity';
 import { User } from '../users/entities/user.entity';
 import { CreateClientDto } from './dto/create-client.dto';
 import { UpdateClientDto } from './dto/update-client.dto';
+import { WebsocketGateway } from '../websockets/websocket.gateway'; // <-- NUEVO
 
 @Injectable()
 export class ClientService {
@@ -21,6 +22,7 @@ export class ClientService {
     private clientRepository: Repository<Client>,
     @InjectRepository(User)
     private userRepository: Repository<User>,
+    private readonly websocketGateway: WebsocketGateway,              // <-- NUEVO
   ) {}
 
   private getRoleName(currentUser: any): string {
@@ -118,6 +120,10 @@ export class ClientService {
     this.logger.log(
       `Cliente creado: ${savedClient.idCliente} - ${savedClient.nombre}`,
     );
+
+    // 🔴 Evento WebSocket: cliente creado
+    this.websocketGateway.emit('clients.created', savedClient);
+
     return savedClient;
   }
 
@@ -202,13 +208,21 @@ export class ClientService {
       client.direccionCompleta = this._generateFullAddress(client);
     }
 
-    return await this.clientRepository.save(client);
+    const updatedClient = await this.clientRepository.save(client);
+
+    // 🔴 Evento WebSocket: cliente actualizado
+    this.websocketGateway.emit('clients.updated', updatedClient);
+
+    return updatedClient;
   }
 
   async remove(id: number): Promise<void> {
     const client = await this.findOne(id);
     await this.clientRepository.remove(client);
     this.logger.log(`Cliente eliminado: ${id}`);
+
+    // 🔴 Evento WebSocket: cliente eliminado
+    this.websocketGateway.emit('clients.deleted', { id });
   }
 
   async findByUsuarioContacto(usuarioId: number): Promise<Client[]> {
@@ -247,7 +261,16 @@ export class ClientService {
     }
 
     client.usuariosContacto.push(user);
-    return this.clientRepository.save(client);
+    const updatedClient = await this.clientRepository.save(client);
+
+    // 🔴 Evento WebSocket: contacto agregado
+    this.websocketGateway.emit('clients.contactAdded', {
+      clientId: idCliente,
+      userId: usuarioId,
+      client: updatedClient,
+    });
+
+    return updatedClient;
   }
 
   async removeUsuarioContacto(idCliente: number, usuarioId: number): Promise<Client> {
@@ -275,7 +298,16 @@ export class ClientService {
       throw new NotFoundException('El usuario no es contacto de este cliente');
     }
 
-    return this.clientRepository.save(client);
+    const updatedClient = await this.clientRepository.save(client);
+
+    // 🔴 Evento WebSocket: contacto removido
+    this.websocketGateway.emit('clients.contactRemoved', {
+      clientId: idCliente,
+      userId: usuarioId,
+      client: updatedClient,
+    });
+
+    return updatedClient;
   }
 
   async getClientesByUsuario(usuarioId: number): Promise<Client[]> {

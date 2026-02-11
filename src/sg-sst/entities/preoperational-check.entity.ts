@@ -1,13 +1,6 @@
 import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, ManyToOne, JoinColumn } from 'typeorm';
 import { Form } from './form.entity';
-
-export enum CheckValue {
-  GOOD = 'GOOD',
-  BAD = 'BAD',
-  YES = 'YES',
-  NO = 'NO'
-}
-
+import { CheckValue } from '../enum/check-value.enum';
 @Entity('preoperational_checks')
 export class PreoperationalCheck {
   @PrimaryGeneratedColumn()

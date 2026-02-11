@@ -12,6 +12,7 @@ import { SubArea } from './entities/sub-area.entity';
 import { Area } from '../area/entities/area.entity';
 import { CreateSubAreaDto } from './dto/create-sub-area.dto';
 import { UpdateSubAreaDto } from './dto/update-sub-area.dto';
+import { WebsocketGateway } from '../websockets/websocket.gateway';
 
 @Injectable()
 export class SubAreaService {
@@ -22,6 +23,7 @@ export class SubAreaService {
     private subAreaRepository: Repository<SubArea>,
     @InjectRepository(Area)
     private areaRepository: Repository<Area>,
+    private readonly websocketGateway: WebsocketGateway,
   ) {}
 
   async create(createSubAreaDto: CreateSubAreaDto): Promise<SubArea> {
@@ -85,10 +87,11 @@ export class SubAreaService {
 
     const savedSubArea = await this.subAreaRepository.save(subArea);
 
-    this.logger.log(
-      `Subárea creada: ${savedSubArea.idSubArea} - ${savedSubArea.nombreSubArea}`,
-    );
-    return savedSubArea;
+    // 🔴 WebSocket
+    const full = await this.findOne(savedSubArea.idSubArea);
+    this.websocketGateway.emit('subAreas.created', full);
+
+    return full;
   }
 
   async findAll(): Promise<SubArea[]> {
@@ -130,7 +133,10 @@ export class SubAreaService {
       .getMany();
   }
 
-  async update(id: number, updateSubAreaDto: UpdateSubAreaDto): Promise<SubArea> {
+  async update(
+    id: number,
+    updateSubAreaDto: UpdateSubAreaDto,
+  ): Promise<SubArea> {
     const subArea = await this.findOne(id);
 
     if (updateSubAreaDto.areaId && updateSubAreaDto.areaId !== subArea.areaId) {
@@ -169,8 +175,7 @@ export class SubAreaService {
           );
         }
 
-        const areaIdForParent =
-          updateSubAreaDto.areaId || subArea.areaId;
+        const areaIdForParent = updateSubAreaDto.areaId || subArea.areaId;
 
         if (parentSubArea.areaId !== areaIdForParent) {
           throw new BadRequestException(
@@ -191,7 +196,7 @@ export class SubAreaService {
       const parentSubAreaIdForCheck =
         updateSubAreaDto.parentSubAreaId !== undefined
           ? updateSubAreaDto.parentSubAreaId
-          : subArea.parentSubAreaId ?? null;
+          : (subArea.parentSubAreaId ?? null);
 
       const whereCondition: any = {
         nombreSubArea: updateSubAreaDto.nombreSubArea,
@@ -216,13 +221,20 @@ export class SubAreaService {
     }
 
     Object.assign(subArea, updateSubAreaDto);
-    return await this.subAreaRepository.save(subArea);
+    const saved = await this.subAreaRepository.save(subArea);
+
+    // 🔴 WebSocket
+    const full = await this.findOne(saved.idSubArea);
+    this.websocketGateway.emit('subAreas.updated', full);
+
+    return full;
   }
 
   async remove(id: number): Promise<void> {
     const subArea = await this.findOne(id);
     await this.subAreaRepository.remove(subArea);
-    this.logger.log(`Subárea eliminada: ${id}`);
+    // 🔴 WebSocket
+    this.websocketGateway.emit('subAreas.deleted', { id });
   }
 
   async getHierarchy(subAreaId: number): Promise<any> {
@@ -232,13 +244,12 @@ export class SubAreaService {
     });
 
     if (!subArea) {
-      throw new NotFoundException(
-        `Subárea con ID ${subAreaId} no encontrada`,
-      );
+      throw new NotFoundException(`Subárea con ID ${subAreaId} no encontrada`);
     }
 
     // Tomar el primer usuario contacto (o puedes ajustar según tu lógica)
-    const primerUsuarioContacto = subArea.area.cliente.usuariosContacto?.[0] || null;
+    const primerUsuarioContacto =
+      subArea.area.cliente.usuariosContacto?.[0] || null;
 
     return {
       subArea: {
@@ -254,11 +265,13 @@ export class SubAreaService {
         nombre: subArea.area.cliente.nombre,
         nit: subArea.area.cliente.nit,
       },
-      usuarioContacto: primerUsuarioContacto ? {
-        usuarioId: primerUsuarioContacto.usuarioId,
-        nombre: primerUsuarioContacto.nombre,
-        email: primerUsuarioContacto.email,
-      } : null,
+      usuarioContacto: primerUsuarioContacto
+        ? {
+            usuarioId: primerUsuarioContacto.usuarioId,
+            nombre: primerUsuarioContacto.nombre,
+            email: primerUsuarioContacto.email,
+          }
+        : null,
     };
   }
 

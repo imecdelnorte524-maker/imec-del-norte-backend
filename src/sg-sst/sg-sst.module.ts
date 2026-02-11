@@ -9,6 +9,8 @@ import { PreoperationalCheck } from './entities/preoperational-check.entity';
 import { Signature } from './entities/signature.entity';
 import { GeneratedPdf } from './entities/generated-pdf.entity';
 import { WorkOrder } from '../work-orders/entities/work-order.entity';
+import { PreoperationalChecklistTemplate } from './entities/preoperational-checklist-template.entity';
+import { PreoperationalChecklistParameter } from './entities/preoperational-checklist-parameter.entity';
 
 @Module({
   imports: [
@@ -20,6 +22,8 @@ import { WorkOrder } from '../work-orders/entities/work-order.entity';
       Signature,
       GeneratedPdf,
       WorkOrder,
+      PreoperationalChecklistTemplate,
+      PreoperationalChecklistParameter
     ]),
   ],
   controllers: [SgSstController],
