@@ -8,8 +8,8 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
-import { CheckValue } from '../entities/preoperational-check.entity';
 import { ApiProperty } from '@nestjs/swagger';
+import { CheckValue } from '../enum/check-value.enum';
 
 export class PreoperationalCheckDto {
   @ApiProperty({ description: 'Parámetro a verificar', example: 'Estado de bisagras' })

@@ -3,12 +3,14 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { MaintenanceType } from './entities/maintenance-type.entity';
 import { CreateMaintenanceTypeDto } from './dto/create-maintenance-type.dto';
+import { WebsocketGateway } from '../websockets/websocket.gateway'; // <-- NUEVO
 
 @Injectable()
 export class MaintenanceTypesService {
   constructor(
     @InjectRepository(MaintenanceType)
     private repository: Repository<MaintenanceType>,
+    private readonly websocketGateway: WebsocketGateway,            // <-- NUEVO
   ) {}
 
   async create(dto: CreateMaintenanceTypeDto): Promise<MaintenanceType> {
@@ -17,7 +19,12 @@ export class MaintenanceTypesService {
       throw new ConflictException('Ya existe un tipo de mantenimiento con este nombre');
     }
     const type = this.repository.create(dto);
-    return this.repository.save(type);
+    const saved = await this.repository.save(type);
+
+    // 🔴 Evento WebSocket
+    this.websocketGateway.emit('maintenanceTypes.created', saved);
+
+    return saved;
   }
 
   async findAll(): Promise<MaintenanceType[]> {
@@ -37,6 +44,11 @@ export class MaintenanceTypesService {
   async remove(id: number): Promise<void> {
     const type = await this.findOne(id);
     type.activo = false;
-    await this.repository.save(type);
+    const saved = await this.repository.save(type);
+
+    // 🔴 Podemos tratarlo como “eliminado” hacia el frontend
+    this.websocketGateway.emit('maintenanceTypes.deleted', { id });
+    // o, si prefieres manejarlo como actualización:
+    // this.websocketGateway.emit('maintenanceTypes.updated', saved);
   }
 }

@@ -34,6 +34,7 @@ import { ServiceCategory } from '../services/enums/service.enums';
 import { PlanMantenimiento } from '../equipment/entities/plan-mantenimiento.entity';
 import { CreateEmergencyOrderDto } from './dto/create-emergency-order.dto';
 import { AssignTechniciansDto } from './dto/assign-technicians.dto';
+import { WebsocketGateway } from '../websockets/websocket.gateway';
 
 @Injectable()
 export class WorkOrdersService {
@@ -68,6 +69,7 @@ export class WorkOrdersService {
     private equipmentRepository: Repository<Equipment>,
     private dataSource: DataSource,
     private eventEmitter: EventEmitter2,
+    private readonly websocketGateway: WebsocketGateway,
   ) {}
 
   private getRoleName(currentUser: any): string {
@@ -265,7 +267,12 @@ export class WorkOrdersService {
       isEmergency: savedWorkOrder.isEmergency || false,
     });
 
-    return this.findOne(savedWorkOrder.ordenId);
+    const full = await this.findOne(savedWorkOrder.ordenId);
+
+    // 🔴 WebSocket
+    this.websocketGateway.emit('workOrders.created', full);
+
+    return full;
   }
 
   private async validateEquipmentAssignment(
@@ -503,7 +510,6 @@ export class WorkOrdersService {
       );
     }
 
-    // 🔴 CORRECCIÓN: Extraer pauseObservation antes de hacer update para evitar error
     const { pauseObservation, ...restDto } = updateWorkOrderDto;
 
     await this.workOrdersRepository.update(id, restDto);
@@ -513,7 +519,12 @@ export class WorkOrdersService {
       action: 'update',
     });
 
-    return await this.findOne(id);
+    // 🔴 WebSocket
+    await this.emitWorkOrderUpdated(id, {
+      previousStatus: workOrder.estado,
+    });
+
+    return this.findOne(id);
   }
 
   private async updateEquipmentAssociations(
@@ -588,6 +599,8 @@ export class WorkOrdersService {
       roleName,
     );
 
+    const previousStatus = workOrder.estado;
+
     workOrder.estado = WorkOrderStatus.CANCELED;
     if (!workOrder.fechaFinalizacion) {
       workOrder.fechaFinalizacion = this.getColombiaTime();
@@ -599,6 +612,11 @@ export class WorkOrdersService {
     this.eventEmitter.emit('work-order.updated', {
       ordenId: id,
       action: 'cancel',
+    });
+
+    // 🔴 WebSocket
+    await this.emitWorkOrderUpdated(id, {
+      previousStatus,
     });
 
     return this.findOne(id);
@@ -671,6 +689,12 @@ export class WorkOrdersService {
       await queryRunner.manager.remove(workOrder);
 
       await queryRunner.commitTransaction();
+      this.eventEmitter.emit('work-order.deleted', {
+        ordenId: id,
+      });
+
+      // 🔴 WebSocket
+      this.websocketGateway.emit('workOrders.deleted', { id });
     } catch (error) {
       await queryRunner.rollbackTransaction();
       throw error;
@@ -780,6 +804,12 @@ export class WorkOrdersService {
       action: 'assignTechnicians',
     });
 
+    // 🔴 WebSocket
+    await this.emitWorkOrderUpdated(ordenId, {
+      previousStatus: workOrder.estado,
+      emitAssigned: true,
+    });
+
     return updated;
   }
 
@@ -846,13 +876,20 @@ export class WorkOrdersService {
     await this.workOrdersRepository.update(ordenId, {
       estado: nuevoEstado,
     });
+    const updated = await this.findOne(ordenId);
 
     this.eventEmitter.emit('work-order.updated', {
       ordenId,
       action: 'unassignTechnician',
     });
 
-    return this.findOne(ordenId);
+    // 🔴 WebSocket
+    await this.emitWorkOrderUpdated(ordenId, {
+      previousStatus: workOrder.estado,
+      emitAssigned: true,
+    });
+
+    return updated;
   }
 
   async unassignAllTechnicians(ordenId: number): Promise<WorkOrder> {
@@ -888,7 +925,14 @@ export class WorkOrdersService {
       action: 'unassignAllTechnicians',
     });
 
-    return this.findOne(ordenId);
+    const updated = await this.findOne(ordenId);
+    // 🔴 WebSocket
+    await this.emitWorkOrderUpdated(ordenId, {
+      previousStatus: workOrder.estado,
+      emitAssigned: true,
+    });
+
+    return updated;
   }
 
   async addEquipmentToOrder(
@@ -951,6 +995,9 @@ export class WorkOrdersService {
       equipmentId,
     });
 
+    // 🔴 WebSocket
+    await this.emitWorkOrderUpdated(ordenId);
+
     return saved;
   }
 
@@ -971,6 +1018,9 @@ export class WorkOrdersService {
       ordenId,
       equipmentId,
     });
+
+    // 🔴 WebSocket
+    await this.emitWorkOrderUpdated(ordenId);
   }
 
   async getWorkOrdersByEquipment(equipmentId: number): Promise<WorkOrder[]> {
@@ -1217,6 +1267,17 @@ export class WorkOrdersService {
       userId: currentUser.userId,
     });
 
+    // 🔴 WebSocket: actualizar orden original y notificar emergencia
+    await this.emitWorkOrderUpdated(ordenId, {
+      previousStatus: originalOrder.estado,
+      emitAssigned: true,
+    });
+
+    this.websocketGateway.emit('workOrders.emergencyCreated', {
+      originalOrderId: ordenId,
+      emergencyOrder,
+    });
+
     return emergencyOrder;
   }
 
@@ -1312,6 +1373,9 @@ export class WorkOrdersService {
         action: 'addSupply',
       });
 
+      // 🔴 WebSocket
+      await this.emitWorkOrderUpdated(ordenId);
+
       return savedDetail;
     } catch (error) {
       await queryRunner.rollbackTransaction();
@@ -1367,6 +1431,9 @@ export class WorkOrdersService {
         ordenId,
         action: 'addTool',
       });
+
+      // 🔴 WebSocket
+      await this.emitWorkOrderUpdated(ordenId);
 
       return savedDetail;
     } catch (error) {
@@ -1429,6 +1496,9 @@ export class WorkOrdersService {
         ordenId,
         action: 'removeSupply',
       });
+
+      // 🔴 WebSocket
+      await this.emitWorkOrderUpdated(ordenId);
     } catch (error) {
       await queryRunner.rollbackTransaction();
       throw error;
@@ -1471,6 +1541,9 @@ export class WorkOrdersService {
         ordenId,
         action: 'removeTool',
       });
+
+      // 🔴 WebSocket
+      await this.emitWorkOrderUpdated(ordenId);
     } catch (error) {
       await queryRunner.rollbackTransaction();
       throw error;
@@ -1819,7 +1892,10 @@ export class WorkOrdersService {
       );
     }
 
-    if (workOrder.estadoFacturacion !== BillingStatus.NOT_BILLED && workOrder.facturaPdfUrl) {
+    if (
+      workOrder.estadoFacturacion !== BillingStatus.NOT_BILLED &&
+      workOrder.facturaPdfUrl
+    ) {
       throw new BadRequestException(
         'La orden ya tiene un estado de facturación asignado',
       );
@@ -1829,7 +1905,14 @@ export class WorkOrdersService {
     workOrder.estadoFacturacion = BillingStatus.BILLED;
 
     await this.workOrdersRepository.save(workOrder);
-    return this.findOne(ordenId);
+
+    const updated = await this.findOne(ordenId);
+
+    // 🔴 WebSocket
+    this.websocketGateway.emit('workOrders.updated', updated);
+    this.websocketGateway.emit('workOrders.invoiceUpdated', updated);
+
+    return updated;
   }
 
   async existeOrdenParaPlanEnFecha(
@@ -1950,12 +2033,56 @@ export class WorkOrdersService {
         isEmergency: false,
       });
 
-      return this.findOne(savedWorkOrder.ordenId);
+      const full = await this.findOne(savedWorkOrder.ordenId);
+
+      // 🔴 WebSocket
+      this.websocketGateway.emit('workOrders.created', full);
+
+      return full;
     } catch (error) {
       await queryRunner.rollbackTransaction();
       throw error;
     } finally {
       await queryRunner.release();
+    }
+  }
+
+  private async emitWorkOrderUpdated(
+    ordenId: number,
+    options?: {
+      previousStatus?: WorkOrderStatus;
+      emitAssigned?: boolean;
+      extraEvent?: string;
+      extraPayload?: any;
+    },
+  ): Promise<void> {
+    const workOrder = await this.findOne(ordenId);
+
+    // Siempre
+    this.websocketGateway.emit('workOrders.updated', workOrder);
+
+    // Cambio de estado
+    if (
+      options?.previousStatus &&
+      options.previousStatus !== workOrder.estado
+    ) {
+      this.websocketGateway.emit('workOrders.statusUpdated', workOrder);
+    }
+
+    // Cambio de técnicos asignados
+    if (options?.emitAssigned) {
+      this.websocketGateway.emit('workOrders.assigned', {
+        workOrder,
+        technicianIds: workOrder.technicians?.map((t) => t.tecnicoId) ?? [],
+      });
+    }
+
+    // Evento extra opcional
+    if (options?.extraEvent) {
+      this.websocketGateway.emit(
+        options.extraEvent,
+        options.extraPayload ?? workOrder,
+      );
     }
   }
 }

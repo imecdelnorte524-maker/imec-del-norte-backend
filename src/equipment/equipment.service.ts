@@ -29,6 +29,7 @@ import { PlanMantenimientoDto } from './dto/plan-mantenimiento.dto';
 import { WorkOrdersService } from '../work-orders/work-orders.service';
 import { UnidadFrecuencia } from './enums/frecuency-unity.enum';
 import * as ExcelJS from 'exceljs';
+import { WebsocketGateway } from '../websockets/websocket.gateway';
 
 interface OrphanedRecordIssue {
   table: string;
@@ -88,7 +89,7 @@ export class EquipmentService
     private readonly planMantenimientoRepository: Repository<PlanMantenimiento>,
     private readonly imagesService: ImagesService,
     private readonly dataSource: DataSource,
-    private readonly workOrdersService: WorkOrdersService,
+    private readonly websocketGateway: WebsocketGateway,
   ) {
     super(sequenceHelper);
 
@@ -520,8 +521,6 @@ export class EquipmentService
     dto: CreateEquipmentDto,
     createdBy?: string,
   ): Promise<Equipment> {
-    this.logger.log(`Creando equipo para cliente: ${dto.clientId}`);
-
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
     await queryRunner.startTransaction();
@@ -623,11 +622,13 @@ export class EquipmentService
       );
 
       await queryRunner.commitTransaction();
-      this.logger.log(
-        `Equipo creado exitosamente: ${savedEquipment.equipmentId} con código ${code}`,
-      );
 
-      return this.findOne(savedEquipment.equipmentId);
+      const fullEquipment = await this.findOne(savedEquipment.equipmentId);
+
+      // 🔴 Evento WebSocket: equipo creado
+      this.websocketGateway.emit('equipment.created', fullEquipment);
+
+      return fullEquipment;
     } catch (error) {
       await queryRunner.rollbackTransaction();
       this.logger.error(`Error creando equipo: ${error.message}`, error.stack);
@@ -1108,8 +1109,6 @@ export class EquipmentService
     dto: UpdateEquipmentDto,
     updatedBy?: string,
   ): Promise<Equipment> {
-    this.logger.log(`Actualizando equipo: ${id}`);
-
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
     await queryRunner.startTransaction();
@@ -1164,9 +1163,12 @@ export class EquipmentService
       }
 
       await queryRunner.commitTransaction();
-      this.logger.log(`Equipo ${id} actualizado exitosamente`);
+      const fullEquipment = await this.findOne(id);
 
-      return this.findOne(id);
+      // 🔴 Evento WebSocket: equipo actualizado
+      this.websocketGateway.emit('equipment.updated', fullEquipment);
+
+      return fullEquipment;
     } catch (error) {
       await queryRunner.rollbackTransaction();
       this.logger.error(
@@ -1423,8 +1425,6 @@ export class EquipmentService
   // ────────────────────────────────────────────────────────────────
 
   async remove(id: number): Promise<void> {
-    this.logger.log(`Eliminando equipo: ${id}`);
-
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
     await queryRunner.startTransaction();
@@ -1440,7 +1440,7 @@ export class EquipmentService
       await queryRunner.manager.remove(Equipment, eq);
 
       await queryRunner.commitTransaction();
-      this.logger.log(`Equipo ${id} eliminado exitosamente`);
+      this.websocketGateway.emit('equipment.deleted', { id });
     } catch (error) {
       await queryRunner.rollbackTransaction();
       this.logger.error(
@@ -1547,7 +1547,14 @@ export class EquipmentService
         : `${new Date().toISOString()}: ${notes}`;
     }
 
-    return await this.equipmentRepository.save(equipment);
+    const updated = await this.equipmentRepository.save(equipment);
+
+    // 🔴 Evento WebSocket: solo cambio de estado
+    this.websocketGateway.emit('equipment.statusUpdated', updated);
+    // Opcionalmente también:
+    this.websocketGateway.emit('equipment.updated', updated);
+
+    return updated;
   }
 
   async getStatistics(clientId?: number): Promise<any> {
@@ -1929,10 +1936,16 @@ export class EquipmentService
       );
     }
 
-    // 2. Avanzar la fecha programada a la siguiente (respetando domingos)
     await this.advanceMaintenancePlanFromPlanId(plan.id);
 
-    // 3. Devolver el equipo actualizado (con el plan ya movido)
-    return this.findOne(equipmentId);
+    const updatedEquipment = await this.findOne(equipmentId);
+
+    // 🔴 Evento WebSocket: plan de mantenimiento actualizado
+    this.websocketGateway.emit(
+      'equipment.maintenancePlanUpdated',
+      updatedEquipment,
+    );
+
+    return updatedEquipment;
   }
 }

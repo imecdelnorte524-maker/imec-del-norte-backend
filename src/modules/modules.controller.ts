@@ -62,7 +62,6 @@ export class ModulesController {
   }
 
   @Get()
-  @Roles('Administrador', 'Secretaria', 'Técnico', 'Cliente')
   @ApiOperation({
     summary: 'Obtener todos los módulos',
     description:

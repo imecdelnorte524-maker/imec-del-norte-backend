@@ -4,12 +4,14 @@ import { Repository } from 'typeorm';
 import { AirConditionerType } from './entities/air-conditioner-type.entity';
 import { CreateAirConditionerTypeDto } from './dto/create-air-conditioner-type.dto';
 import { UpdateAirConditionerTypeDto } from './dto/update-air-conditioner-type.dto';
+import { WebsocketGateway } from '../websockets/websocket.gateway'; // <-- NUEVO
 
 @Injectable()
 export class AirConditionerTypesService {
   constructor(
     @InjectRepository(AirConditionerType)
     private readonly acTypeRepository: Repository<AirConditionerType>,
+    private readonly websocketGateway: WebsocketGateway,              // <-- NUEVO
   ) {}
 
   async create(
@@ -22,7 +24,12 @@ export class AirConditionerTypesService {
       throw new ConflictException('El nombre del tipo ya existe');
     }
     const acType = this.acTypeRepository.create(createDto);
-    return await this.acTypeRepository.save(acType);
+    const saved = await this.acTypeRepository.save(acType);
+
+    // Emitir evento de creación
+    this.websocketGateway.emit('airConditionerTypes.created', saved);
+
+    return saved;
   }
 
   async findAll(): Promise<AirConditionerType[]> {
@@ -55,12 +62,19 @@ export class AirConditionerTypesService {
     }
 
     Object.assign(acType, updateDto);
-    return await this.acTypeRepository.save(acType);
+    const updated = await this.acTypeRepository.save(acType);
+
+    // Emitir evento de actualización
+    this.websocketGateway.emit('airConditionerTypes.updated', updated);
+
+    return updated;
   }
 
   async remove(id: number): Promise<void> {
     const acType = await this.findOne(id);
-    // Podrías validar si hay equipos usando este tipo antes de borrar
     await this.acTypeRepository.remove(acType);
+
+    // Emitir evento de eliminación (enviamos solo el id)
+    this.websocketGateway.emit('airConditionerTypes.deleted', { id });
   }
 }

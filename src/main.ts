@@ -36,7 +36,6 @@ async function bootstrap() {
     'https://imec-del-norte-sandbox.onrender.com',
     'https://imec-del-norte-backend.onrender.com',
     'https://m3h6rtnz-3032.use.devtunnels.ms',
-    'https://imec-del-norte.netlify.app',
     'http://localhost:5173',
     'http://localhost:3000',
   ];

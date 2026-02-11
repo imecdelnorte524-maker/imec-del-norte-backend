@@ -17,6 +17,7 @@ import { DeleteToolDto } from './dto/delete-tool.dto';
 import { ToolStatus, ToolType } from '../shared/enums/inventory.enum';
 import { ImagesService } from '../images/images.service';
 import { SequenceHelperService } from '../common/services/sequence-helper.service';
+import { WebsocketGateway } from '../websockets/websocket.gateway';
 
 @Injectable()
 export class ToolService {
@@ -35,6 +36,7 @@ export class ToolService {
     private dataSource: DataSource,
     private readonly imagesService: ImagesService,
     private readonly sequenceHelper: SequenceHelperService,
+    private readonly websocketGateway: WebsocketGateway,
   ) {
     // Verificar secuencia al inicializar
     this.initializeSequence().catch((error) => {
@@ -117,15 +119,16 @@ export class ToolService {
 
       // Información adicional específica de herramientas
       const stats = await this.getEquipmentStats();
-      
+
       return {
         sequence: diagnosis.sequence,
         uniqueConstraints: diagnosis.uniqueConstraints,
         duplicateData: diagnosis.duplicateData,
         stats,
-        recommendations: diagnosis.duplicateData.length > 0
-          ? ['Existen valores duplicados que podrían violar constraints']
-          : [],
+        recommendations:
+          diagnosis.duplicateData.length > 0
+            ? ['Existen valores duplicados que podrían violar constraints']
+            : [],
       };
     } catch (error) {
       this.logger.error('Error en diagnóstico de herramientas:', error);
@@ -197,33 +200,39 @@ export class ToolService {
 
       await queryRunner.commitTransaction();
 
-      this.logger.log(`Herramienta creada: ${savedTool.herramientaId} - ${savedTool.nombre}`);
-      
-      return this.findOne(savedTool.herramientaId);
+      const full = await this.findOne(savedTool.herramientaId);
+
+      // 🔴 WebSocket
+      this.websocketGateway.emit('tools.created', full);
+
+      return full;
     } catch (error: any) {
       await queryRunner.rollbackTransaction();
-      
+
       // Manejar errores de duplicado en PK
       if (error.code === '23505' && error.constraint === 'tools_pkey') {
         this.logger.warn(
           '⚠️ Error de duplicado en PK de herramientas, corrigiendo secuencia...',
         );
         await this.fixSequenceIfNeeded();
-        
+
         throw new ConflictException(
           'Error de duplicación en ID. La secuencia ha sido corregida. Intente nuevamente.',
         );
       }
-      
+
       // Manejar errores de constraint UNIQUE
       if (error.code === '23505') {
-        const uniqueError = await this.sequenceHelper.handleUniqueConstraintError(error);
+        const uniqueError =
+          await this.sequenceHelper.handleUniqueConstraintError(error);
         if (uniqueError.suggestion) {
-          throw new ConflictException(`${uniqueError.message}. ${uniqueError.suggestion}`);
+          throw new ConflictException(
+            `${uniqueError.message}. ${uniqueError.suggestion}`,
+          );
         }
         throw new ConflictException(uniqueError.message);
       }
-      
+
       throw error;
     } finally {
       await queryRunner.release();
@@ -232,11 +241,7 @@ export class ToolService {
 
   async findAll(includeDeleted = false): Promise<Tool[]> {
     const options: any = {
-      relations: [
-        'inventory',
-        'inventory.bodega',
-        'images'
-      ],
+      relations: ['inventory', 'inventory.bodega', 'images'],
       order: { fechaRegistro: 'DESC' },
     };
 
@@ -250,11 +255,7 @@ export class ToolService {
   async findOne(id: number, includeDeleted = false): Promise<Tool> {
     const options: any = {
       where: { herramientaId: id },
-      relations: [
-        'inventory',
-        'inventory.bodega',
-        'images'
-      ],
+      relations: ['inventory', 'inventory.bodega', 'images'],
     };
 
     if (includeDeleted) {
@@ -291,16 +292,25 @@ export class ToolService {
       // Actualizar datos básicos de la herramienta
       const updateData: Partial<Tool> = {};
 
-      if (updateToolDto.nombre !== undefined) updateData.nombre = updateToolDto.nombre;
-      if (updateToolDto.marca !== undefined) updateData.marca = updateToolDto.marca ?? null;
-      if (updateToolDto.serial !== undefined) updateData.serial = updateToolDto.serial ?? null;
-      if (updateToolDto.modelo !== undefined) updateData.modelo = updateToolDto.modelo ?? null;
-      if (updateToolDto.caracteristicasTecnicas !== undefined) 
-        updateData.caracteristicasTecnicas = updateToolDto.caracteristicasTecnicas ?? null;
-      if (updateToolDto.observacion !== undefined) updateData.observacion = updateToolDto.observacion ?? null;
-      if (updateToolDto.tipo !== undefined) updateData.tipo = updateToolDto.tipo as ToolType;
-      if (updateToolDto.estado !== undefined) updateData.estado = updateToolDto.estado as ToolStatus;
-      if (updateToolDto.valorUnitario !== undefined) updateData.valorUnitario = updateToolDto.valorUnitario;
+      if (updateToolDto.nombre !== undefined)
+        updateData.nombre = updateToolDto.nombre;
+      if (updateToolDto.marca !== undefined)
+        updateData.marca = updateToolDto.marca ?? null;
+      if (updateToolDto.serial !== undefined)
+        updateData.serial = updateToolDto.serial ?? null;
+      if (updateToolDto.modelo !== undefined)
+        updateData.modelo = updateToolDto.modelo ?? null;
+      if (updateToolDto.caracteristicasTecnicas !== undefined)
+        updateData.caracteristicasTecnicas =
+          updateToolDto.caracteristicasTecnicas ?? null;
+      if (updateToolDto.observacion !== undefined)
+        updateData.observacion = updateToolDto.observacion ?? null;
+      if (updateToolDto.tipo !== undefined)
+        updateData.tipo = updateToolDto.tipo as ToolType;
+      if (updateToolDto.estado !== undefined)
+        updateData.estado = updateToolDto.estado as ToolStatus;
+      if (updateToolDto.valorUnitario !== undefined)
+        updateData.valorUnitario = updateToolDto.valorUnitario;
 
       if (Object.keys(updateData).length > 0) {
         await queryRunner.manager.update(Tool, id, updateData);
@@ -323,27 +333,35 @@ export class ToolService {
           }
           inventoryUpdate.bodega = bodega;
         }
-        
-        await queryRunner.manager.update(Inventory, tool.inventory.inventarioId, inventoryUpdate);
+
+        await queryRunner.manager.update(
+          Inventory,
+          tool.inventory.inventarioId,
+          inventoryUpdate,
+        );
       }
 
-      await queryRunner.commitTransaction();
+      const updated = await this.findOne(id);
 
-      this.logger.log(`Herramienta actualizada: ${id}`);
-      
-      return this.findOne(id);
+      // 🔴 WebSocket
+      this.websocketGateway.emit('tools.updated', updated);
+
+      return updated;
     } catch (error: any) {
       await queryRunner.rollbackTransaction();
-      
+
       // Manejar errores de constraint UNIQUE
       if (error.code === '23505') {
-        const uniqueError = await this.sequenceHelper.handleUniqueConstraintError(error);
+        const uniqueError =
+          await this.sequenceHelper.handleUniqueConstraintError(error);
         if (uniqueError.suggestion) {
-          throw new ConflictException(`${uniqueError.message}. ${uniqueError.suggestion}`);
+          throw new ConflictException(
+            `${uniqueError.message}. ${uniqueError.suggestion}`,
+          );
         }
         throw new ConflictException(uniqueError.message);
       }
-      
+
       throw error;
     } finally {
       await queryRunner.release();
@@ -352,14 +370,15 @@ export class ToolService {
 
   async remove(id: number): Promise<void> {
     const tool = await this.findOne(id);
-    
+
     // Eliminar imágenes asociadas
     await this.imagesService.deleteByTool(tool);
-    
+
     // Eliminación física (solo administrador)
     await this.toolRepository.delete(id);
-    
-    this.logger.log(`Herramienta eliminada físicamente: ${id} - ${tool.nombre}`);
+
+    // 🔴 WebSocket
+    this.websocketGateway.emit('tools.deleted', { id, soft: false });
   }
 
   async softDeleteWithReason(id: number, dto: DeleteToolDto): Promise<void> {
@@ -399,14 +418,18 @@ export class ToolService {
       const inventory = await queryRunner.manager.findOne(Inventory, {
         where: { herramientaId: id },
       });
-      
+
       if (inventory) {
         await queryRunner.manager.softDelete(Inventory, inventory.inventarioId);
       }
 
       await queryRunner.commitTransaction();
 
-      this.logger.log(`Herramienta eliminada (soft): ${id} - Motivo: ${dto.motivo}`);
+      // 🔴 WebSocket
+      this.websocketGateway.emit('tools.softDeleted', {
+        id,
+        motivo: dto.motivo,
+      });
     } catch (error) {
       await queryRunner.rollbackTransaction();
       throw error;
@@ -447,14 +470,18 @@ export class ToolService {
 
     await this.toolRepository.update(id, toolUpdate);
 
-    this.logger.log(`Herramienta restaurada: ${id}`);
-    
-    return this.findOne(id);
+    const restored = await this.findOne(id);
+
+    // 🔴 WebSocket
+    this.websocketGateway.emit('tools.restored', restored);
+    this.websocketGateway.emit('tools.updated', restored);
+
+    return restored;
   }
 
   async updateStatus(id: number, estado: string): Promise<Tool> {
     const validStatuses = Object.values(ToolStatus);
-    
+
     if (!validStatuses.includes(estado as ToolStatus)) {
       throw new BadRequestException(
         `Estado inválido. Estados válidos: ${validStatuses.join(', ')}`,
@@ -462,17 +489,24 @@ export class ToolService {
     }
 
     const tool = await this.findOne(id);
-    
+
     await this.toolRepository.update(id, {
       estado: estado as ToolStatus,
     });
-    
-    this.logger.log(`Estado de herramienta actualizado: ${id} -> ${estado}`);
-    
-    return this.findOne(id);
+
+    const updated = await this.findOne(id);
+
+    // 🔴 WebSocket
+    this.websocketGateway.emit('tools.statusUpdated', updated);
+    this.websocketGateway.emit('tools.updated', updated);
+
+    return updated;
   }
 
-  async searchEquipment(keyword: string, includeDeleted = false): Promise<Tool[]> {
+  async searchEquipment(
+    keyword: string,
+    includeDeleted = false,
+  ): Promise<Tool[]> {
     const queryBuilder = this.toolRepository
       .createQueryBuilder('tool')
       .leftJoinAndSelect('tool.inventory', 'inventory')

@@ -14,6 +14,7 @@ import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { MailService } from '../mail/mail.service';
 import { Genero } from './enums/genero.enum';
+import { WebsocketGateway } from '../websockets/websocket.gateway';
 
 @Injectable()
 export class UsersService {
@@ -25,11 +26,10 @@ export class UsersService {
     @InjectRepository(Role)
     public rolesRepository: Repository<Role>,
     private readonly mailService: MailService,
+    private readonly websocketGateway: WebsocketGateway,
   ) {
     this.initializeSequence().catch((error) => {
-      this.logger.warn(
-        `No se pudo inicializar la secuencia: ${error.message}`,
-      );
+      this.logger.warn(`No se pudo inicializar la secuencia: ${error.message}`);
     });
   }
 
@@ -141,9 +141,7 @@ export class UsersService {
       throw new ConflictException('El correo electrónico ya está registrado');
     }
 
-    const existingUserByUsername = await this.findByUsername(
-      userData.username,
-    );
+    const existingUserByUsername = await this.findByUsername(userData.username);
     if (existingUserByUsername) {
       throw new ConflictException('El nombre de usuario ya está registrado');
     }
@@ -163,7 +161,10 @@ export class UsersService {
     }
 
     // Validar que el género sea válido si se proporciona
-    if (userData.genero && !Object.values(Genero).includes(userData.genero as Genero)) {
+    if (
+      userData.genero &&
+      !Object.values(Genero).includes(userData.genero as Genero)
+    ) {
       throw new BadRequestException('Género inválido');
     }
 
@@ -182,7 +183,9 @@ export class UsersService {
       genero: userData.genero as Genero,
       position: userData.position,
       resetToken: userData.resetToken,
-      resetTokenExpiry: userData.resetTokenExpiry ? new Date(userData.resetTokenExpiry) : undefined,
+      resetTokenExpiry: userData.resetTokenExpiry
+        ? new Date(userData.resetTokenExpiry)
+        : undefined,
       mustChangePassword: true,
 
       // campos adicionales opcionales
@@ -190,9 +193,12 @@ export class UsersService {
       arl: (userData as any).arl ?? null,
       eps: (userData as any).eps ?? null,
       afp: (userData as any).afp ?? null,
-      contactoEmergenciaNombre: (userData as any).contactoEmergenciaNombre ?? null,
-      contactoEmergenciaTelefono: (userData as any).contactoEmergenciaTelefono ?? null,
-      contactoEmergenciaParentesco: (userData as any).contactoEmergenciaParentesco ?? null,
+      contactoEmergenciaNombre:
+        (userData as any).contactoEmergenciaNombre ?? null,
+      contactoEmergenciaTelefono:
+        (userData as any).contactoEmergenciaTelefono ?? null,
+      contactoEmergenciaParentesco:
+        (userData as any).contactoEmergenciaParentesco ?? null,
     });
 
     let savedUser: User;
@@ -223,6 +229,9 @@ export class UsersService {
     if (!userWithRole) {
       throw new NotFoundException('Usuario no encontrado después de guardar');
     }
+
+    // 🔴 WebSocket: usuario creado
+    this.websocketGateway.emit('users.created', userWithRole);
 
     return userWithRole;
   }
@@ -276,9 +285,7 @@ export class UsersService {
         updateUserDto.username,
       );
       if (existingUserByUsername) {
-        throw new ConflictException(
-          'El nombre de usuario ya está registrado',
-        );
+        throw new ConflictException('El nombre de usuario ya está registrado');
       }
     }
 
@@ -367,13 +374,17 @@ export class UsersService {
       );
     }
 
+    // 🔴 WebSocket: usuario actualizado
+    this.websocketGateway.emit('users.updated', updatedUser);
+
     return updatedUser;
   }
 
   async remove(id: number): Promise<void> {
     const user = await this.findOne(id);
     await this.usersRepository.remove(user);
-    this.logger.log(`👤 Usuario eliminado: ${id}`);
+    // 🔴 WebSocket
+    this.websocketGateway.emit('users.deleted', { id });
   }
 
   async deactivate(id: number): Promise<User> {
@@ -392,7 +403,9 @@ export class UsersService {
       );
     }
 
-    this.logger.log(`👤 Usuario desactivado: ${id}`);
+    // 🔴 WebSocket
+    this.websocketGateway.emit('users.updated', deactivatedUser);
+
     return deactivatedUser;
   }
 
@@ -412,7 +425,9 @@ export class UsersService {
       );
     }
 
-    this.logger.log(`👤 Usuario activado: ${id}`);
+    // 🔴 WebSocket
+    this.websocketGateway.emit('users.updated', activatedUser);
+
     return activatedUser;
   }
 

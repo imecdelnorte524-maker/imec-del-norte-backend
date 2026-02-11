@@ -1,4 +1,4 @@
-import { FormStatus, FormType } from '../entities/form.entity';
+import { FormStatus, FormType } from "../enum/check-value.enum";
 
 export class FormResponseDto {
   id: number;

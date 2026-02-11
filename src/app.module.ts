@@ -32,6 +32,7 @@ import { UnitMeasureModule } from './unit-measure/unit-measure.module';
 import { MaintenanceTypesModule } from './maintenance-types/maintenance-types.module';
 import { SequencesModule } from './database/sequences.module';
 import { CommonModule } from './common/common.module';
+import { WebsocketModule } from './websockets/websocket.module';
 @Module({
   imports: [
     ScheduleModule.forRoot(),
@@ -88,6 +89,7 @@ import { CommonModule } from './common/common.module';
     UnitMeasureModule,
     MaintenanceTypesModule,
     CommonModule,
+    WebsocketModule,
   ],
 })
 export class AppModule {}
