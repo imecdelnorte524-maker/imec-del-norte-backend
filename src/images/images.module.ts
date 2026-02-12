@@ -16,6 +16,6 @@ import { Client } from '../client/entities/client.entity';
   ],
   controllers: [ImagesController],
   providers: [ImagesService, CloudinaryService],
-  exports: [ImagesService],
+  exports: [ImagesService, CloudinaryService],
 })
 export class ImagesModule {}

@@ -48,6 +48,8 @@ export class UserInfo {
   cedula?: string | null;
 }
 
+// src/work-orders/dto/work-order-response.dto.ts
+
 export class TechnicianInfo {
   @ApiProperty({ example: 1 })
   id: number;
@@ -60,6 +62,22 @@ export class TechnicianInfo {
 
   @ApiProperty({ type: UserInfo })
   technician: UserInfo;
+
+  // 🔹 NUEVO: calificación (0–5, medias permitidas)
+  @ApiProperty({ example: 4.5, required: false, nullable: true })
+  rating?: number | null;
+
+  // 🔹 NUEVO: quién calificó
+  @ApiProperty({ example: 12, required: false, nullable: true })
+  ratedByUserId?: number | null;
+
+  // 🔹 NUEVO: fecha de calificación
+  @ApiProperty({
+    example: '2024-01-01T12:00:00.000Z',
+    required: false,
+    nullable: true,
+  })
+  ratedAt?: Date | null;
 }
 
 export class ClientCompanyInfo {

@@ -43,6 +43,7 @@ import { diskStorage } from 'multer';
 import { FileInterceptor } from '@nestjs/platform-express';
 import * as path from 'path';
 import { ServiceCategory } from 'src/services/enums/service.enums';
+import { RateTechniciansDto } from './dto/rate-technicians.dto';
 
 @ApiTags('work-orders')
 @Controller('work-orders')
@@ -506,6 +507,32 @@ export class WorkOrdersController {
     };
   }
 
+  @Post(':id/rate-technicians')
+  @Roles('Administrador', 'Supervisor')
+  @ApiOperation({
+    summary: 'Calificar el desempeño de los técnicos de una orden completada',
+  })
+  async rateTechnicians(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: RateTechniciansDto,
+    @Req() req: any,
+  ) {
+    const workOrder = await this.workOrdersService.rateTechnicians(
+      id,
+      dto,
+      req.user,
+    );
+    const costs = await this.workOrdersService.calculateTotalCost(id);
+
+    return {
+      message: 'Técnicos calificados correctamente',
+      data: {
+        ...this.mapToResponseDto(workOrder),
+        ...costs,
+      },
+    };
+  }
+
   private mapToResponseDto(workOrder: WorkOrder): WorkOrderResponseDto {
     const technicians =
       workOrder.technicians?.map((tech) => ({
@@ -520,6 +547,10 @@ export class WorkOrdersController {
           telefono: tech.technician?.telefono ?? undefined,
           cedula: tech.technician?.cedula ?? undefined,
         },
+        // 🔹 NUEVO
+        rating: tech.rating ?? null,
+        ratedByUserId: tech.ratedByUserId ?? null,
+        ratedAt: tech.ratedAt ?? null,
       })) || [];
 
     const supplyDetails =

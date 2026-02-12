@@ -1,6 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { v2 as cloudinary } from 'cloudinary';
 
+type CloudinaryResourceType = 'image' | 'raw' | 'video';
+
 @Injectable()
 export class CloudinaryService {
   constructor() {
@@ -11,19 +13,28 @@ export class CloudinaryService {
     });
   }
 
-  upload(file: Express.Multer.File, folder: string) {
+  upload(
+    file: Express.Multer.File,
+    folder: string,
+    resourceType: CloudinaryResourceType = 'image',
+  ) {
     return new Promise<any>((resolve, reject) => {
-      cloudinary.uploader.upload_stream(
-        { folder },
-        (error, result) => {
-          if (error) return reject(error);
-          resolve(result);
-        },
-      ).end(file.buffer);
+      cloudinary.uploader
+        .upload_stream(
+          {
+            folder,
+            resource_type: resourceType,
+          },
+          (error, result) => {
+            if (error) return reject(error);
+            resolve(result);
+          },
+        )
+        .end(file.buffer);
     });
   }
 
-  delete(publicId: string) {
-    return cloudinary.uploader.destroy(publicId);
+  delete(publicId: string, resourceType: CloudinaryResourceType = 'image') {
+    return cloudinary.uploader.destroy(publicId, { resource_type: resourceType });
   }
 }
