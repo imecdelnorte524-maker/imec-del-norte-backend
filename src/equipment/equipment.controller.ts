@@ -12,8 +12,10 @@ import {
   Req,
   Res,
   BadRequestException,
+  UploadedFile,
+  UseInterceptors,
 } from '@nestjs/common';
-import { Response } from 'express';
+import { Request, Response } from 'express';
 import {
   ApiTags,
   ApiOperation,
@@ -29,13 +31,19 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { Equipment } from './entities/equipment.entity';
+import { EquipmentDocumentsService } from './equipment-documents.service';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { memoryStorage } from 'multer';
 
 @ApiTags('equipment')
 @Controller('equipment')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @ApiBearerAuth()
 export class EquipmentController {
-  constructor(private readonly equipmentService: EquipmentService) {}
+  constructor(
+    private readonly equipmentService: EquipmentService,
+    private readonly equipmentDocumentsService: EquipmentDocumentsService,
+  ) {}
 
   @Post()
   @Roles('Administrador', 'Técnico')
@@ -201,13 +209,6 @@ export class EquipmentController {
   @Roles('Administrador', 'Técnico')
   @ApiOperation({
     summary: 'Avanzar plan de mantenimiento del equipo',
-    description:
-      'Calcula y actualiza la próxima fecha programada del plan de mantenimiento de este equipo (evitando domingos).',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Plan de mantenimiento actualizado',
-    type: EquipmentResponseDto,
   })
   async advanceMaintenancePlan(@Param('id', ParseIntPipe) id: number) {
     const equipment =
@@ -219,8 +220,44 @@ export class EquipmentController {
     };
   }
 
+  @Get(':id/documents')
+  @Roles('Administrador', 'Secretaria', 'Técnico', 'Cliente')
+  async listDocuments(@Param('id', ParseIntPipe) id: number) {
+    const docs = await this.equipmentDocumentsService.listByEquipment(id);
+    return { message: 'Documentos obtenidos', data: docs };
+  }
+
+  @Post(':id/documents')
+  @Roles('Administrador', 'Técnico')
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: memoryStorage(),
+      limits: { fileSize: 20 * 1024 * 1024 }, // 20MB
+      fileFilter: (req, file, cb) => {
+        const isPdf =
+          file.mimetype === 'application/pdf' ||
+          file.originalname.toLowerCase().endsWith('.pdf');
+
+        if (!isPdf) {
+          return cb(
+            new BadRequestException('Solo se permiten PDFs') as any,
+            false,
+          );
+        }
+        cb(null, true);
+      },
+    }),
+  )
+  async uploadDocument(
+    @Param('id', ParseIntPipe) id: number,
+    @UploadedFile() file: Express.Multer.File,
+  ) {
+    const saved = await this.equipmentDocumentsService.upload(id, file);
+    return { message: 'Documento subido', data: saved };
+  }
+
+  // ===== tu mapToResponseDto igual (no lo toqué) =====
   private mapToResponseDto(equipment: Equipment): EquipmentResponseDto {
-    // Obtener work orders desde la relación intermedia
     const workOrders =
       equipment.equipmentWorkOrders?.map((ewo) => ({
         workOrderId: ewo.workOrder?.ordenId,
@@ -247,8 +284,7 @@ export class EquipmentController {
             nombreSubArea: equipment.subArea.nombreSubArea,
           }
         : undefined,
-      // Ahora tenemos un array de work orders en lugar de un solo workOrderId
-      workOrders: workOrders,
+      workOrders,
       category: equipment.category,
       airConditionerTypeId: equipment.airConditionerTypeId,
       airConditionerType: equipment.airConditionerType
@@ -275,8 +311,6 @@ export class EquipmentController {
           description: null,
           createdAt: img.created_at.toISOString(),
         })) ?? [],
-
-      // Nueva estructura anidada
       evaporators: equipment.evaporators?.map((evap) => ({
         marca: evap.marca,
         modelo: evap.modelo,
@@ -296,7 +330,6 @@ export class EquipmentController {
           frecuencia: m.frecuencia,
         })),
       })),
-
       condensers: equipment.condensers?.map((cond) => ({
         marca: cond.marca,
         modelo: cond.modelo,
@@ -340,7 +373,6 @@ export class EquipmentController {
           vac: c.vac,
         })),
       })),
-
       planMantenimiento: equipment.planMantenimiento
         ? {
             unidadFrecuencia: equipment.planMantenimiento.unidadFrecuencia,

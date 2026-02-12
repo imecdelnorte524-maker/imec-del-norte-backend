@@ -15,6 +15,10 @@ import { EquipmentCompressor } from './entities/compressor.entity';
 import { PlanMantenimiento } from './entities/plan-mantenimiento.entity';
 import { WorkOrdersModule } from 'src/work-orders/work-orders.module';
 
+import { EquipmentDocumentsService } from './equipment-documents.service';
+import { EquipmentDocumentsController } from './equipment-documents.controller';
+import { EquipmentDocument } from './entities/equipment-document.entity';
+
 @Module({
   imports: [
     TypeOrmModule.forFeature([
@@ -27,13 +31,14 @@ import { WorkOrdersModule } from 'src/work-orders/work-orders.module';
       EquipmentEvaporator,
       EquipmentCondenser,
       EquipmentCompressor,
-      PlanMantenimiento
+      PlanMantenimiento,
+      EquipmentDocument,
     ]),
     ImagesModule,
     WorkOrdersModule,
   ],
-  controllers: [EquipmentController],
-  providers: [EquipmentService],
+  controllers: [EquipmentController, EquipmentDocumentsController],
+  providers: [EquipmentService, EquipmentDocumentsService],
   exports: [EquipmentService, TypeOrmModule],
 })
 export class EquipmentModule {}

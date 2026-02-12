@@ -20,6 +20,7 @@ import { EquipmentEvaporator } from './evaporator.entity';
 import { EquipmentCondenser } from './condenser.entity';
 import { PlanMantenimiento } from './plan-mantenimiento.entity';
 import { EquipmentWorkOrder } from '../../work-orders/entities/equipment-work-order.entity';
+import { EquipmentDocument } from './equipment-document.entity';
 
 @Entity('equipos')
 export class Equipment {
@@ -110,7 +111,6 @@ export class Equipment {
   })
   images?: Image[];
 
-  // ⚠️ NUEVA RELACIÓN: Tabla intermedia para relación N:M con WorkOrder
   @OneToMany(() => EquipmentWorkOrder, (ewo) => ewo.equipment, {
     cascade: true,
   })
@@ -133,4 +133,9 @@ export class Equipment {
     eager: true,
   })
   condensers?: EquipmentCondenser[];
+
+  @OneToMany(() => EquipmentDocument, (d) => d.equipment, {
+    cascade: true,
+  })
+  documents: EquipmentDocument[];
 }

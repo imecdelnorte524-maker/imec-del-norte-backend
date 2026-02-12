@@ -26,10 +26,10 @@ import { EquipmentStatus } from './enums/equipment-status.enum';
 import { BaseSequenceService } from '../common/services/base-sequence.service';
 import { SequenceHelperService } from '../common/services/sequence-helper.service';
 import { PlanMantenimientoDto } from './dto/plan-mantenimiento.dto';
-import { WorkOrdersService } from '../work-orders/work-orders.service';
 import { UnidadFrecuencia } from './enums/frecuency-unity.enum';
 import * as ExcelJS from 'exceljs';
 import { WebsocketGateway } from '../websockets/websocket.gateway';
+import { EquipmentDocumentsService } from './equipment-documents.service';
 
 interface OrphanedRecordIssue {
   table: string;
@@ -90,6 +90,7 @@ export class EquipmentService
     private readonly imagesService: ImagesService,
     private readonly dataSource: DataSource,
     private readonly websocketGateway: WebsocketGateway,
+    private readonly equipmentDocumentsServices: EquipmentDocumentsService,
   ) {
     super(sequenceHelper);
 
@@ -1435,6 +1436,9 @@ export class EquipmentService
 
       // Eliminar imágenes asociadas
       await this.imagesService.deleteByEquipment(id);
+
+      // Eliminar documentos PDF asociados (físico + BD)
+      await this.equipmentDocumentsServices.deleteDocument(id);
 
       // Eliminar equipo (las relaciones cascade deberían eliminar el resto)
       await queryRunner.manager.remove(Equipment, eq);

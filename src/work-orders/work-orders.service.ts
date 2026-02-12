@@ -35,6 +35,7 @@ import { PlanMantenimiento } from '../equipment/entities/plan-mantenimiento.enti
 import { CreateEmergencyOrderDto } from './dto/create-emergency-order.dto';
 import { AssignTechniciansDto } from './dto/assign-technicians.dto';
 import { WebsocketGateway } from '../websockets/websocket.gateway';
+import { RateTechniciansDto } from './dto/rate-technicians.dto';
 
 @Injectable()
 export class WorkOrdersService {
@@ -404,6 +405,40 @@ export class WorkOrdersService {
     const workOrder = await this.findOne(id);
     const currentRoleName = this.getRoleName(currentUser);
 
+    // Verificar permisos para actualizar estado de facturación
+    if (updateWorkOrderDto.estadoFacturacion !== undefined) {
+      if (
+        currentRoleName !== 'Administrador' &&
+        currentRoleName !== 'Secretaria'
+      ) {
+        throw new ForbiddenException(
+          'Solo Administrador o Secretaria pueden modificar el estado de facturación',
+        );
+      }
+
+      // 🔹 NUEVO: solo órdenes completadas pueden tener estado de facturación
+      if (workOrder.estado !== WorkOrderStatus.COMPLETED) {
+        throw new BadRequestException(
+          'Solo se puede definir el estado de facturación para órdenes finalizadas',
+        );
+      }
+
+      // 🔹 NUEVO: exigir que todos los técnicos estén calificados
+      if (
+        updateWorkOrderDto.estadoFacturacion !== null &&
+        workOrder.technicians &&
+        workOrder.technicians.length > 0
+      ) {
+        const hasUnrated = workOrder.technicians.some(
+          (t) => t.rating === null || t.rating === undefined,
+        );
+        if (hasUnrated) {
+          throw new BadRequestException(
+            'Debe calificar a todos los técnicos antes de definir el estado de facturación de la orden',
+          );
+        }
+      }
+    }
     // Verificar permisos para actualizar estado de facturación
     if (updateWorkOrderDto.estadoFacturacion !== undefined) {
       if (
@@ -1913,6 +1948,18 @@ export class WorkOrdersService {
       );
     }
 
+    // 🔹 NUEVO: exigir técnicos calificados antes de facturar
+    if (workOrder.technicians && workOrder.technicians.length > 0) {
+      const hasUnrated = workOrder.technicians.some(
+        (t) => t.rating === null || t.rating === undefined,
+      );
+      if (hasUnrated) {
+        throw new BadRequestException(
+          'Debe calificar a todos los técnicos antes de subir la factura de la orden',
+        );
+      }
+    }
+
     if (
       workOrder.estadoFacturacion !== BillingStatus.NOT_BILLED &&
       workOrder.facturaPdfUrl
@@ -1935,7 +1982,6 @@ export class WorkOrdersService {
 
     return updated;
   }
-
   async existeOrdenParaPlanEnFecha(
     planMantenimientoId: number,
     fechaProgramada: Date,
@@ -2105,5 +2151,106 @@ export class WorkOrdersService {
         options.extraPayload ?? workOrder,
       );
     }
+  }
+
+  // src/work-orders/work-orders.service.ts
+
+  async rateTechnicians(
+    ordenId: number,
+    dto: RateTechniciansDto,
+    currentUser: any,
+  ): Promise<WorkOrder> {
+    const workOrder = await this.findOne(ordenId);
+    const roleName = this.getRoleName(currentUser);
+
+    // Solo Admin o Supervisor pueden calificar
+    if (!['Administrador', 'Supervisor'].includes(roleName)) {
+      throw new ForbiddenException(
+        'Solo Administrador o Supervisor pueden calificar técnicos',
+      );
+    }
+
+    // Solo órdenes completadas se pueden calificar
+    if (workOrder.estado !== WorkOrderStatus.COMPLETED) {
+      throw new BadRequestException(
+        'Solo se pueden calificar órdenes que estén finalizadas',
+      );
+    }
+
+    const technicians = workOrder.technicians || [];
+    if (technicians.length === 0) {
+      throw new BadRequestException(
+        'La orden no tiene técnicos asignados para calificar',
+      );
+    }
+
+    const assignedIds = technicians.map((t) => t.tecnicoId);
+
+    const bodyIds = dto.ratings.map((r) => r.technicianId);
+    const uniqueBodyIds = new Set(bodyIds);
+
+    // Debe venir una calificación por cada técnico asignado, sin duplicados
+    if (
+      uniqueBodyIds.size !== bodyIds.length ||
+      assignedIds.length !== uniqueBodyIds.size ||
+      assignedIds.some((id) => !uniqueBodyIds.has(id))
+    ) {
+      throw new BadRequestException(
+        'Debe enviar una calificación para cada técnico asignado, sin duplicados',
+      );
+    }
+
+    // Validar y aplicar calificaciones
+    for (const ratingDto of dto.ratings) {
+      const { technicianId, rating } = ratingDto;
+
+      // Validar incremento de 0.5
+      if (Math.round(rating * 2) !== rating * 2) {
+        throw new BadRequestException(
+          'La calificación debe estar en incrementos de 0.5',
+        );
+      }
+
+      const technicianRelation =
+        technicians.find((t) => t.tecnicoId === technicianId) ||
+        (await this.workOrderTechnicianRepository.findOne({
+          where: { ordenId, tecnicoId: technicianId },
+        }));
+
+      if (!technicianRelation) {
+        throw new BadRequestException(
+          `El técnico ${technicianId} no está asignado a esta orden`,
+        );
+      }
+
+      // Solo una calificación por técnico y orden
+      if (
+        technicianRelation.rating !== null &&
+        technicianRelation.rating !== undefined
+      ) {
+        throw new ConflictException(
+          `El técnico ${technicianId} ya fue calificado en esta orden`,
+        );
+      }
+
+      technicianRelation.rating = rating;
+      technicianRelation.ratedByUserId = currentUser.userId;
+      technicianRelation.ratedAt = this.getColombiaTime();
+
+      await this.workOrderTechnicianRepository.save(technicianRelation);
+    }
+
+    this.eventEmitter.emit('work-order.technicians-rated', {
+      ordenId,
+      ratedBy: currentUser.userId,
+    });
+
+    // 🔴 WebSocket
+    await this.emitWorkOrderUpdated(ordenId, {
+      extraEvent: 'workOrders.techniciansRated',
+      extraPayload: { ordenId },
+    });
+
+    return this.findOne(ordenId);
   }
 }
