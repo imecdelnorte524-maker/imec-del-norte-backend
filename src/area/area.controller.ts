@@ -41,7 +41,6 @@ export class AreaController {
   }
 
   @Get()
-  @Roles('Administrador', 'Secretaria', 'Técnico')
   @ApiOperation({ summary: 'Obtener todas las áreas', description: 'Obtiene la lista de todas las áreas' })
   @ApiQuery({ name: 'clienteId', required: false, description: 'Filtrar por ID de cliente' })
   @ApiResponse({ status: 200, description: 'Lista de áreas obtenida exitosamente' })
@@ -61,7 +60,6 @@ export class AreaController {
   }
 
   @Get(':id')
-  @Roles('Administrador', 'Secretaria', 'Técnico')
   @ApiOperation({ summary: 'Obtener área por ID', description: 'Obtiene un área específica por su ID' })
   @ApiResponse({ status: 200, description: 'Área obtenida exitosamente' })
   @ApiResponse({ status: 404, description: 'Área no encontrada' })
@@ -74,7 +72,6 @@ export class AreaController {
   }
 
   @Get(':id/subareas-count')
-  @Roles('Administrador', 'Secretaria', 'Técnico')
   @ApiOperation({ summary: 'Contar subáreas de un área', description: 'Obtiene el número de subáreas de un área' })
   @ApiResponse({ status: 200, description: 'Conteo obtenido exitosamente' })
   @ApiResponse({ status: 404, description: 'Área no encontrada' })
@@ -87,7 +84,6 @@ export class AreaController {
   }
 
   @Get(':id/with-subareas')
-  @Roles('Administrador', 'Secretaria', 'Técnico')
   @ApiOperation({ summary: 'Obtener área con subáreas', description: 'Obtiene un área con todas sus subáreas' })
   @ApiResponse({ status: 200, description: 'Área obtenida exitosamente' })
   @ApiResponse({ status: 404, description: 'Área no encontrada' })

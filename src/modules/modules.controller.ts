@@ -81,7 +81,6 @@ export class ModulesController {
   }
 
   @Get(':id')
-  @Roles('Administrador', 'Secretaria', 'Técnico', 'Cliente')
   @ApiOperation({
     summary: 'Obtener módulo por ID',
     description:

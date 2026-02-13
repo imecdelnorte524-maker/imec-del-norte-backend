@@ -94,7 +94,6 @@ export class UsersController {
   }
 
   @Get()
-  @Roles('Administrador', 'Secretaria', 'Técnico', 'SGSST')
   @ApiOperation({
     summary: 'Obtener todos los usuarios',
     description:
@@ -176,7 +175,6 @@ export class UsersController {
   }
 
   @Get(':id')
-  @Roles('Administrador', 'Secretaria')
   @ApiOperation({
     summary: 'Obtener usuario por ID',
     description: 'Obtiene un usuario específico por su ID',

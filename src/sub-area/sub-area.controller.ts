@@ -52,7 +52,6 @@ export class SubAreaController {
   }
 
   @Get()
-  @Roles('Administrador', 'Secretaria', 'Técnico')
   @ApiOperation({
     summary: 'Obtener todas las subáreas',
     description: 'Obtiene la lista de todas las subáreas',
@@ -92,7 +91,6 @@ export class SubAreaController {
   }
 
   @Get(':id')
-  @Roles('Administrador', 'Secretaria', 'Técnico')
   @ApiOperation({
     summary: 'Obtener subárea por ID',
     description: 'Obtiene una subárea específica por su ID',
@@ -108,7 +106,6 @@ export class SubAreaController {
   }
 
   @Get(':id/hierarchy')
-  @Roles('Administrador', 'Secretaria', 'Técnico')
   @ApiOperation({
     summary: 'Obtjer jerarquía completa',
     description: 'Obtiene la subárea con su área y cliente correspondientes',
@@ -162,7 +159,6 @@ export class SubAreaController {
   }
 
   @Get('by-parent/:id')
-  @Roles('Administrador', 'Secretaria', 'Técnico')
   @ApiOperation({
     summary: 'Obtener subáreas hijas de una subárea padre',
     description:
@@ -179,7 +175,6 @@ export class SubAreaController {
   }
 
   @Get('tree/:areaId')
-  @Roles('Administrador', 'Secretaria', 'Técnico')
   @ApiOperation({
     summary: 'Obtener árbol de subáreas de un área',
     description:

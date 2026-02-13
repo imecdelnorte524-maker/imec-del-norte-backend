@@ -294,7 +294,6 @@ export class ToolController {
   }
 
   @Get('diagnose/sequence')
-  @Roles('Administrador')
   @ApiOperation({
     summary: 'Diagnóstico de secuencia de herramientas',
     description: 'Verifica el estado de la secuencia de ID de herramientas',
@@ -308,7 +307,6 @@ export class ToolController {
   }
 
   @Get('diagnose/table')
-  @Roles('Administrador')
   @ApiOperation({
     summary: 'Diagnóstico completo de tabla de herramientas',
     description: 'Verifica secuencia, constraints y datos duplicados',

@@ -9,6 +9,7 @@ import { User } from '../users/entities/user.entity';
 import { Equipment } from '../equipment/entities/equipment.entity';
 import { Client } from '../client/entities/client.entity';
 import { WebsocketGateway } from '../websockets/websocket.gateway'; // <-- NUEVO
+import { WorkOrder } from 'src/work-orders/entities/work-order.entity';
 
 @Injectable()
 export class ImagesService {
@@ -35,6 +36,8 @@ export class ImagesService {
 
     private readonly cloudinary: CloudinaryService,
     private readonly websocketGateway: WebsocketGateway,
+    @InjectRepository(WorkOrder)
+    private readonly workOrderRepo: Repository<WorkOrder>,
   ) {}
 
   // =======================
@@ -596,5 +599,95 @@ export class ImagesService {
     this.websocketGateway.emit('images.deleted', imageCopy);
 
     return { message: 'Imagen eliminada correctamente' };
+  }
+
+  async uploadForWorkOrder(ordenId: number, files: Express.Multer.File[]) {
+    const workOrder = await this.workOrderRepo.findOne({
+      where: { ordenId },
+    });
+
+    if (!workOrder) {
+      throw new NotFoundException('Orden de trabajo no encontrada');
+    }
+
+    if (!files || files.length === 0) {
+      throw new NotFoundException('No se han subido archivos');
+    }
+
+    // No borramos evidencias anteriores: se acumulan
+    const uploadPromises = files.map((file, index) =>
+      this.cloudinary.upload(
+        file,
+        `work-orders/${ordenId}/evidence/${Date.now()}_${index}`,
+      ),
+    );
+
+    const uploadResults = await Promise.all(uploadPromises);
+
+    const imageEntities = uploadResults.map((upload) =>
+      this.imageRepo.create({
+        url: upload.secure_url,
+        public_id: upload.public_id,
+        folder: 'work-orders',
+        workOrder,
+      }),
+    );
+
+    const savedImages = await this.imageRepo.save(imageEntities);
+
+    this.websocketGateway.emit('workOrders.imagesUpdated', {
+      ordenId,
+      images: await this.getWorkOrderImages(ordenId),
+    });
+
+    return {
+      message: `${files.length} imagen(es) subida(s) correctamente como evidencia de la orden`,
+      data: savedImages,
+    };
+  }
+
+  async getWorkOrderImages(ordenId: number) {
+    const workOrder = await this.workOrderRepo.findOne({
+      where: { ordenId },
+    });
+
+    if (!workOrder) {
+      throw new NotFoundException('Orden de trabajo no encontrada');
+    }
+
+    const images = await this.imageRepo
+      .createQueryBuilder('image')
+      .where('image.work_order_id = :ordenId', { ordenId })
+      .orderBy('image.created_at', 'DESC')
+      .getMany();
+
+    return images;
+  }
+
+  async deleteByWorkOrder(ordenId: number) {
+    const workOrder = await this.workOrderRepo.findOne({
+      where: { ordenId },
+    });
+
+    if (!workOrder) {
+      throw new NotFoundException('Orden de trabajo no encontrada');
+    }
+
+    const images = await this.imageRepo
+      .createQueryBuilder('image')
+      .where('image.work_order_id = :ordenId', { ordenId })
+      .getMany();
+
+    if (!images.length) return;
+
+    await Promise.all(
+      images.map((img) => this.cloudinary.delete(img.public_id)),
+    );
+    await this.imageRepo.remove(images);
+
+    this.websocketGateway.emit('workOrders.imagesUpdated', {
+      ordenId,
+      images: [],
+    });
   }
 }

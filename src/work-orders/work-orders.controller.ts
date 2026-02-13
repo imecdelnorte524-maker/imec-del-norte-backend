@@ -44,6 +44,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import * as path from 'path';
 import { ServiceCategory } from 'src/services/enums/service.enums';
 import { RateTechniciansDto } from './dto/rate-technicians.dto';
+import { SignWorkOrderDto } from './dto/sign-work-order.dto';
 
 @ApiTags('work-orders')
 @Controller('work-orders')
@@ -102,7 +103,6 @@ export class WorkOrdersController {
   }
 
   @Get()
-  @Roles('Administrador', 'Técnico', 'Secretaria', 'Cliente', 'Supervisor')
   @ApiOperation({
     summary:
       'Obtener órdenes de trabajo (filtradas por rol: técnico/cliente solo ven las suyas)',
@@ -116,7 +116,7 @@ export class WorkOrdersController {
         req.user.userId,
       );
     } else if (roleName === 'Cliente') {
-      data = await this.workOrdersService.getWorkOrdersByClient(
+      data = await this.workOrdersService.getWorkOrdersForClientUser(
         req.user.userId,
       );
     } else {
@@ -156,8 +156,16 @@ export class WorkOrdersController {
       }
     }
 
-    if (roleName === 'Cliente' && workOrder.clienteId !== req.user.userId) {
-      throw new ForbiddenException();
+    if (roleName === 'Cliente') {
+      // Permitir si la orden pertenece a una empresa del usuario
+      const hasAccess = await this.workOrdersService.userHasAccessToEmpresa(
+        req.user.userId,
+        workOrder.clienteEmpresaId,
+      );
+
+      if (!hasAccess) {
+        throw new ForbiddenException();
+      }
     }
 
     const costs = await this.workOrdersService.calculateTotalCost(id);
@@ -370,7 +378,6 @@ export class WorkOrdersController {
   }
 
   @Get('equipment/:equipmentId')
-  @Roles('Administrador', 'Técnico', 'Secretaria', 'Supervisor', 'Cliente')
   @ApiOperation({ summary: 'Obtener órdenes asociadas a un equipo' })
   async getOrdersByEquipment(
     @Param('equipmentId', ParseIntPipe) equipmentId: number,
@@ -386,7 +393,6 @@ export class WorkOrdersController {
   }
 
   @Get('client/:clienteEmpresaId/category/:category')
-  @Roles('Administrador', 'Secretaria', 'Técnico', 'Cliente')
   @ApiOperation({ summary: 'Obtener órdenes por cliente empresa y categoría' })
   async getWorkOrdersByClientAndCategory(
     @Param('clienteEmpresaId', ParseIntPipe) clienteEmpresaId: number,
@@ -526,6 +532,32 @@ export class WorkOrdersController {
 
     return {
       message: 'Técnicos calificados correctamente',
+      data: {
+        ...this.mapToResponseDto(workOrder),
+        ...costs,
+      },
+    };
+  }
+
+  @Post(':id/sign-receipt')
+  @Roles('Administrador', 'Supervisor', 'Cliente', 'Técnico', 'Secretaria')
+  @ApiOperation({
+    summary: 'Registrar firma de recibido de la orden de servicio',
+  })
+  async signReceipt(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: SignWorkOrderDto,
+    @Req() req: any,
+  ) {
+    const workOrder = await this.workOrdersService.signReceipt(
+      id,
+      dto,
+      req.user,
+    );
+    const costs = await this.workOrdersService.calculateTotalCost(id);
+
+    return {
+      message: 'Firma de recibido registrada exitosamente',
       data: {
         ...this.mapToResponseDto(workOrder),
         ...costs,
@@ -687,6 +719,10 @@ export class WorkOrdersController {
       tiempoTotal: 0,
       isEmergency: workOrder.isEmergency || false,
       planMantenimientoId: workOrder.planMantenimientoId,
+      receivedByName: workOrder.receivedByName ?? null,
+      receivedByPosition: workOrder.receivedByPosition ?? null,
+      receivedBySignatureData: workOrder.receivedBySignatureData ?? null,
+      receivedAt: workOrder.receivedAt ?? null,
     };
   }
 }

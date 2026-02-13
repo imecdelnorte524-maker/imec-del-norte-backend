@@ -9,10 +9,19 @@ import { Supply } from '../supplies/entities/supply.entity';
 import { User } from '../users/entities/user.entity';
 import { Equipment } from '../equipment/entities/equipment.entity';
 import { Client } from '../client/entities/client.entity';
+import { WorkOrder } from 'src/work-orders/entities/work-order.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Image, Tool, Supply, User, Equipment, Client]),
+    TypeOrmModule.forFeature([
+      Image,
+      Tool,
+      Supply,
+      User,
+      Equipment,
+      Client,
+      WorkOrder,
+    ]),
   ],
   controllers: [ImagesController],
   providers: [ImagesService, CloudinaryService],

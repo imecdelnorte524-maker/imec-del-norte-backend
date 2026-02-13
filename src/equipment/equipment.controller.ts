@@ -45,8 +45,11 @@ export class EquipmentController {
     private readonly equipmentDocumentsService: EquipmentDocumentsService,
   ) {}
 
+  private getRoleName(user: any): string {
+    return user?.role?.nombreRol || user?.role || '';
+  }
+
   @Post()
-  @Roles('Administrador', 'Técnico')
   @ApiOperation({ summary: 'Crear equipo (hoja de vida)' })
   @ApiResponse({
     status: 201,
@@ -73,7 +76,6 @@ export class EquipmentController {
   }
 
   @Get()
-  @Roles('Administrador', 'Secretaria', 'Técnico')
   @ApiOperation({ summary: 'Obtener todos los equipos' })
   @ApiQuery({ name: 'clientId', required: false, type: Number })
   @ApiQuery({ name: 'areaId', required: false, type: Number })
@@ -89,13 +91,42 @@ export class EquipmentController {
     @Query('areaId') areaId?: string,
     @Query('subAreaId') subAreaId?: string,
     @Query('search') search?: string,
+    @Req() req?: Request, // 👈 NUEVO
   ) {
-    const equipments = await this.equipmentService.findAll({
-      clientId: clientId ? parseInt(clientId, 10) : undefined,
-      areaId: areaId ? parseInt(areaId, 10) : undefined,
-      subAreaId: subAreaId ? parseInt(subAreaId, 10) : undefined,
-      search,
-    });
+    const user: any = (req as any)?.user;
+    const roleName = this.getRoleName(user);
+
+    let equipments: Equipment[];
+
+    if (roleName === 'Cliente') {
+      // 1) Obtener las empresas (Client.idCliente) asignadas a este usuario
+      const empresaIds = await this.equipmentService.getClientEmpresaIdsForUser(
+        user.userId,
+      );
+
+      if (!empresaIds.length) {
+        return {
+          message: 'No hay empresas asociadas al usuario cliente',
+          data: [],
+        };
+      }
+
+      // 2) Ignoramos clientId de la query para evitar que un cliente vea otra empresa
+      equipments = await this.equipmentService.findAll({
+        clientIds: empresaIds,
+        areaId: areaId ? parseInt(areaId, 10) : undefined,
+        subAreaId: subAreaId ? parseInt(subAreaId, 10) : undefined,
+        search,
+      });
+    } else {
+      // Comportamiento anterior para Admin, Técnico, etc.
+      equipments = await this.equipmentService.findAll({
+        clientId: clientId ? parseInt(clientId, 10) : undefined,
+        areaId: areaId ? parseInt(areaId, 10) : undefined,
+        subAreaId: subAreaId ? parseInt(subAreaId, 10) : undefined,
+        search,
+      });
+    }
 
     return {
       message: 'Equipos obtenidos exitosamente',
@@ -104,7 +135,6 @@ export class EquipmentController {
   }
 
   @Get(':id')
-  @Roles('Administrador', 'Secretaria', 'Técnico')
   @ApiOperation({ summary: 'Obtener equipo por ID' })
   @ApiResponse({
     status: 200,
@@ -120,7 +150,6 @@ export class EquipmentController {
   }
 
   @Get(':id/work-orders')
-  @Roles('Administrador', 'Secretaria', 'Técnico', 'Cliente')
   @ApiOperation({ summary: 'Obtener historial de órdenes del equipo' })
   async getEquipmentWorkOrders(@Param('id', ParseIntPipe) id: number) {
     const workOrders = await this.equipmentService.getEquipmentWorkOrders(id);
@@ -167,7 +196,6 @@ export class EquipmentController {
   }
 
   @Get('maintenance-plan/export')
-  @Roles('Administrador', 'Secretaria', 'Técnico')
   @ApiOperation({
     summary: 'Exportar plan de mantenimiento anual por cliente',
     description:
@@ -221,7 +249,6 @@ export class EquipmentController {
   }
 
   @Get(':id/documents')
-  @Roles('Administrador', 'Secretaria', 'Técnico', 'Cliente')
   async listDocuments(@Param('id', ParseIntPipe) id: number) {
     const docs = await this.equipmentDocumentsService.listByEquipment(id);
     return { message: 'Documentos obtenidos', data: docs };
