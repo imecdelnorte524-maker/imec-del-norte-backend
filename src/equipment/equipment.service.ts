@@ -1011,6 +1011,7 @@ export class EquipmentService
 
   async findAll(params?: {
     clientId?: number;
+    clientIds?: number[]; // 👈 NUEVO
     areaId?: number;
     subAreaId?: number;
     search?: string;
@@ -1034,7 +1035,11 @@ export class EquipmentService
       .leftJoinAndSelect('e.planMantenimiento', 'plan')
       .orderBy('e.createdAt', 'DESC');
 
-    if (params?.clientId) {
+    if (params?.clientIds && params.clientIds.length > 0) {
+      qb.andWhere('e.clientId IN (:...clientIds)', {
+        clientIds: params.clientIds,
+      });
+    } else if (params?.clientId) {
       qb.andWhere('e.clientId = :clientId', { clientId: params.clientId });
     }
 
@@ -1951,5 +1956,15 @@ export class EquipmentService
     );
 
     return updatedEquipment;
+  }
+
+  async getClientEmpresaIdsForUser(userId: number): Promise<number[]> {
+    const empresas = await this.clientRepository
+      .createQueryBuilder('cliente')
+      .innerJoin('cliente.usuariosContacto', 'usuario')
+      .where('usuario.usuarioId = :userId', { userId })
+      .getMany();
+
+    return empresas.map((c) => c.idCliente);
   }
 }

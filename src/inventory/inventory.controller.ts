@@ -58,7 +58,6 @@ export class InventoryController {
   }
 
   @Get()
-  @Roles('Administrador', 'Técnico', 'Secretaria')
   @ApiOperation({
     summary: 'Obtener todo el inventario',
     description: 'Obtiene la lista de todos los registros de inventario',
@@ -144,7 +143,6 @@ export class InventoryController {
   }
 
   @Get(':id')
-  @Roles('Administrador', 'Técnico', 'Secretaria')
   @ApiOperation({
     summary: 'Obtener registro de inventario por ID',
     description: 'Obtiene un registro específico de inventario por su ID',

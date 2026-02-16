@@ -19,6 +19,7 @@ import {
 } from '@nestjs/swagger';
 import { ImagesService } from './images.service';
 import { UploadImageSwaggerDto } from './dto/upload-image.dto';
+import { Roles } from 'src/common/decorators/roles.decorator';
 
 @ApiTags('Images')
 @Controller('images')
@@ -246,5 +247,57 @@ export class ImagesController {
   @ApiResponse({ status: 404, description: 'Imagen no encontrada' })
   deleteImage(@Param('id', ParseIntPipe) id: number) {
     return this.imagesService.deleteImage(id);
+  }
+
+  @Post('work-order/:id')
+  @Roles('Administrador', 'Técnico', 'Secretaria', 'Supervisor')
+  @ApiOperation({
+    summary: 'Subir evidencias (imágenes) de una orden de trabajo',
+  })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        files: {
+          type: 'array',
+          items: {
+            type: 'string',
+            format: 'binary',
+          },
+        },
+      },
+    },
+  })
+  @UseInterceptors(FilesInterceptor('files', 10))
+  uploadWorkOrderImages(
+    @Param('id', ParseIntPipe) id: number,
+    @UploadedFiles() files: Express.Multer.File[],
+  ) {
+    return this.imagesService.uploadForWorkOrder(id, files);
+  }
+
+  @Get('work-order/:id')
+  @ApiOperation({
+    summary: 'Obtener evidencias (imágenes) de una orden de trabajo',
+  })
+  async getWorkOrderImages(@Param('id', ParseIntPipe) id: number) {
+    const images = await this.imagesService.getWorkOrderImages(id);
+    return {
+      message: 'Imágenes de la orden obtenidas',
+      data: images,
+    };
+  }
+
+  @Delete('work-order/:id')
+  @Roles('Administrador')
+  @ApiOperation({
+    summary: 'Eliminar todas las evidencias de una orden de trabajo',
+  })
+  async deleteWorkOrderImages(@Param('id', ParseIntPipe) id: number) {
+    await this.imagesService.deleteByWorkOrder(id);
+    return {
+      message: 'Imágenes de la orden eliminadas correctamente',
+    };
   }
 }

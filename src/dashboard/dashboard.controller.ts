@@ -30,7 +30,6 @@ export class DashboardController {
   }
 
   @Get('metricas')
-  @Roles('Administrador', 'Técnico', 'Secretaria', 'Supervisor', 'Cliente')
   @ApiOperation({ summary: 'Obtener métricas generales del dashboard' })
   async getMetrics(@Req() req: any) {
     const metrics = await this.dashboardService.getMetrics(req.user);
@@ -42,7 +41,6 @@ export class DashboardController {
   }
 
   @Get('ordenes-servicio')
-  @Roles('Administrador', 'Secretaria', 'Supervisor')
   @ApiOperation({
     summary:
       'Obtener órdenes de servicio para el dashboard (vista administrador)',
@@ -104,7 +102,6 @@ export class DashboardController {
   }
 
   @Get('mis-servicios')
-  @Roles('Técnico', 'Cliente')
   @ApiOperation({
     summary:
       'Obtener órdenes de servicio del usuario actual (técnico o cliente)',
@@ -171,8 +168,7 @@ export class DashboardController {
     };
   }
 
-  @Get('orders') // ← NUEVA RUTA EN INGLÉS
-  @Roles('Administrador', 'Secretaria', 'Supervisor', 'Técnico', 'Cliente')
+  @Get('orders')
   @ApiOperation({
     summary: 'Obtener órdenes de servicio para el dashboard (alias en inglés)',
   })

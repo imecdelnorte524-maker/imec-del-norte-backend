@@ -36,6 +36,7 @@ import { CreateEmergencyOrderDto } from './dto/create-emergency-order.dto';
 import { AssignTechniciansDto } from './dto/assign-technicians.dto';
 import { WebsocketGateway } from '../websockets/websocket.gateway';
 import { RateTechniciansDto } from './dto/rate-technicians.dto';
+import { SignWorkOrderDto } from './dto/sign-work-order.dto';
 
 @Injectable()
 export class WorkOrdersService {
@@ -488,6 +489,17 @@ export class WorkOrdersService {
         workOrder.estado,
         updateWorkOrderDto.estado,
         currentRoleName,
+      );
+    }
+
+    if (
+      updateWorkOrderDto.estado === WorkOrderStatus.COMPLETED &&
+      (!workOrder.receivedByName ||
+        !workOrder.receivedByPosition ||
+        !workOrder.receivedBySignatureData)
+    ) {
+      throw new BadRequestException(
+        'Debe registrar la firma de recibido antes de completar la orden',
       );
     }
 
@@ -2252,5 +2264,131 @@ export class WorkOrdersService {
     });
 
     return this.findOne(ordenId);
+  }
+
+  async signReceipt(
+    ordenId: number,
+    dto: SignWorkOrderDto,
+    currentUser: any,
+  ): Promise<WorkOrder> {
+    const workOrder = await this.findOne(ordenId);
+
+    const roleName = this.getRoleName(currentUser);
+    if (
+      ![
+        'Administrador',
+        'Supervisor',
+        'Cliente',
+        'Técnico',
+        'Secretaria',
+      ].includes(roleName)
+    ) {
+      throw new ForbiddenException('No tiene permisos para firmar esta orden');
+    }
+
+    // No permitir firma si ya está completada o cancelada
+    if (
+      workOrder.estado === WorkOrderStatus.COMPLETED ||
+      workOrder.estado === WorkOrderStatus.CANCELED
+    ) {
+      throw new BadRequestException(
+        'No se puede firmar una orden finalizada o cancelada',
+      );
+    }
+
+    workOrder.receivedByName = dto.name;
+    workOrder.receivedByPosition = dto.position;
+    workOrder.receivedBySignatureData = dto.signatureData;
+    workOrder.receivedAt = this.getColombiaTime();
+
+    await this.workOrdersRepository.save(workOrder);
+
+    // WebSocket
+    await this.emitWorkOrderUpdated(ordenId, {
+      extraEvent: 'workOrders.receiptSigned',
+      extraPayload: { ordenId },
+    });
+
+    return this.findOne(ordenId);
+  }
+
+  async getEmpresaIdsForClientUser(userId: number): Promise<number[]> {
+    const empresas = await this.clientsRepository
+      .createQueryBuilder('cliente')
+      .innerJoin('cliente.usuariosContacto', 'usuario')
+      .where('usuario.usuarioId = :userId', { userId })
+      .getMany();
+
+    return empresas.map((c) => c.idCliente);
+  }
+
+  /**
+   * Lista todas las órdenes de trabajo de las empresas a las que pertenece un usuario cliente.
+   */
+  async getWorkOrdersForClientUser(userId: number): Promise<WorkOrder[]> {
+    const empresaIds = await this.getEmpresaIdsForClientUser(userId);
+    if (!empresaIds.length) return [];
+
+    return await this.workOrdersRepository
+      .createQueryBuilder('workOrder')
+      .leftJoinAndSelect('workOrder.service', 'service')
+      .leftJoinAndSelect('workOrder.cliente', 'cliente')
+      .leftJoinAndSelect('workOrder.clienteEmpresa', 'clienteEmpresa')
+      .leftJoinAndSelect('workOrder.technicians', 'technicians')
+      .leftJoinAndSelect('technicians.technician', 'technician')
+      .leftJoinAndSelect('workOrder.equipmentWorkOrders', 'equipmentWorkOrders')
+      .leftJoinAndSelect('equipmentWorkOrders.equipment', 'equipment')
+      .leftJoinAndSelect('equipment.area', 'area')
+      .leftJoinAndSelect('equipment.subArea', 'subArea')
+      .leftJoinAndSelect('workOrder.supplyDetails', 'supplyDetails')
+      .leftJoinAndSelect('supplyDetails.supply', 'supply')
+      .leftJoinAndSelect('workOrder.toolDetails', 'toolDetails')
+      .leftJoinAndSelect('toolDetails.tool', 'tool')
+      .leftJoinAndSelect('workOrder.maintenanceType', 'maintenanceType')
+      .leftJoinAndSelect('workOrder.timers', 'timers')
+      .leftJoinAndSelect('workOrder.pauses', 'pauses')
+      .leftJoinAndSelect('pauses.user', 'pauseUser')
+      .leftJoinAndSelect('clienteEmpresa.usuariosContacto', 'usuariosContacto')
+      .where('workOrder.clienteEmpresaId IN (:...empresaIds)', { empresaIds })
+      .orderBy(
+        `
+        CASE
+          WHEN workOrder.estado = :unassigned THEN 1
+          WHEN workOrder.estado = :assigned THEN 2
+          WHEN workOrder.estado = :inProgress THEN 3
+          WHEN workOrder.estado = :paused THEN 4
+          WHEN workOrder.estado = :completed THEN 5
+          WHEN workOrder.estado = :canceled THEN 6
+          ELSE 7
+        END
+      `,
+        'ASC',
+      )
+      .addOrderBy('workOrder.fechaSolicitud', 'DESC')
+      .setParameters({
+        unassigned: WorkOrderStatus.REQUESTED_UNASSIGNED,
+        assigned: WorkOrderStatus.REQUESTED_ASSIGNED,
+        inProgress: WorkOrderStatus.IN_PROGRESS,
+        paused: WorkOrderStatus.PAUSED,
+        completed: WorkOrderStatus.COMPLETED,
+        canceled: WorkOrderStatus.CANCELED,
+      })
+      .getMany();
+  }
+
+  /**
+   * Verifica si un usuario cliente tiene acceso a una empresa concreta.
+   */
+  async userHasAccessToEmpresa(
+    userId: number,
+    empresaId?: number,
+  ): Promise<boolean> {
+    if (!empresaId) {
+      // Si la orden no tiene empresa asociada, considera que NO tiene acceso
+      return false;
+    }
+
+    const empresaIds = await this.getEmpresaIdsForClientUser(userId);
+    return empresaIds.includes(empresaId);
   }
 }

@@ -54,7 +54,6 @@ export class SuppliesController {
   }
 
   @Get()
-  @Roles('Administrador', 'Técnico', 'Secretaria')
   @ApiOperation({ summary: 'Obtener insumos' })
   @ApiQuery({ name: 'search', required: false })
   @ApiQuery({ name: 'categoria', required: false })
@@ -100,7 +99,6 @@ export class SuppliesController {
   }
 
   @Get(':id')
-  @Roles('Administrador', 'Técnico', 'Secretaria')
   @ApiOperation({ summary: 'Obtener insumo por ID' })
   @ApiResponse({
     status: 200,

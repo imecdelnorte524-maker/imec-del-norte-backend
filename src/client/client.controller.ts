@@ -50,7 +50,6 @@ export class ClientController {
   }
 
   @Get()
-  @Roles('Administrador', 'Secretaria', 'Técnico')
   @ApiOperation({
     summary: 'Obtener todos los clientes',
     description: 'Obtiene la lista de todos los clientes',
@@ -68,7 +67,6 @@ export class ClientController {
   }
 
   @Get('my')
-  @Roles('Cliente')
   @ApiOperation({
     summary: 'Obtener mis clientes empresa',
     description:
@@ -88,7 +86,6 @@ export class ClientController {
   }
 
   @Get(':id')
-  @Roles('Administrador', 'Secretaria', 'Técnico')
   @ApiOperation({
     summary: 'Obtener cliente por ID',
     description: 'Obtiene un cliente específico por su ID',
@@ -104,7 +101,6 @@ export class ClientController {
   }
 
   @Get('nit/:nit')
-  @Roles('Administrador', 'Secretaria', 'Técnico')
   @ApiOperation({
     summary: 'Obtener cliente por NIT',
     description: 'Obtiene un cliente por su NIT',
@@ -126,7 +122,6 @@ export class ClientController {
   }
 
   @Get('usuario-contacto/:usuarioId')
-  @Roles('Administrador', 'Secretaria', 'Técnico')
   @ApiOperation({
     summary: 'Obtener clientes por usuario contacto',
     description:

@@ -276,4 +276,28 @@ export class WorkOrderResponseDto {
 
   @ApiProperty({ example: 1, required: false, nullable: true })
   planMantenimientoId?: number | null;
+
+  @ApiProperty({ example: 'Carlos Pérez', required: false, nullable: true })
+  receivedByName?: string | null;
+
+  @ApiProperty({
+    example: 'Jefe de Mantenimiento',
+    required: false,
+    nullable: true,
+  })
+  receivedByPosition?: string | null;
+
+  @ApiProperty({
+    example: 'data:image/png;base64,iVBORw0KGgo...',
+    required: false,
+    nullable: true,
+  })
+  receivedBySignatureData?: string | null;
+
+  @ApiProperty({
+    example: '2024-01-01T12:00:00.000Z',
+    required: false,
+    nullable: true,
+  })
+  receivedAt?: Date | null;
 }

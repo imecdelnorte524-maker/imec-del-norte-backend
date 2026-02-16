@@ -51,7 +51,6 @@ export class RolesController {
   }
 
   @Get()
-  @Roles('Administrador', 'Secretaria', 'Técnico', 'SGSST')
   @ApiOperation({ 
     summary: 'Obtener todos los roles', 
     description: 'Obtiene la lista de todos los roles' 
@@ -66,7 +65,6 @@ export class RolesController {
   }
 
   @Get(':id')
-  @Roles('Administrador', 'Secretaria', 'Técnico', 'SGSST')
   @ApiOperation({ 
     summary: 'Obtener rol por ID', 
     description: 'Obtiene un rol específico por su ID' 
@@ -117,12 +115,8 @@ export class RolesController {
     };
   }
 
-  /**
-   * --- Nuevos endpoints para gestionar módulos asignados a un rol ---
-   */
 
   @Get(':id/modulos')
-  @Roles('Administrador', 'Secretaria', 'Técnico', 'SGSST')
   @ApiOperation({ summary: 'Obtener módulos asociados a un rol', description: 'Retorna la lista de módulos que tiene asociado un rol.' })
   @ApiResponse({ status: HttpStatus.OK, description: 'Módulos obtenidos exitosamente', type: [ModuleResponseDto] })
   async getModules(@Param('id', ParseIntPipe) id: number) {
