@@ -12,6 +12,7 @@ import { User } from '../../users/entities/user.entity';
 import { Equipment } from '../../equipment/entities/equipment.entity';
 import { Client } from '../../client/entities/client.entity';
 import { WorkOrder } from 'src/work-orders/entities/work-order.entity';
+import { WorkOrderEvidencePhase } from 'src/work-orders/enums/ac-inspection-phase.enum';
 
 @Entity('images')
 export class Image {
@@ -73,6 +74,17 @@ export class Image {
   @JoinColumn({ name: 'client_id' })
   client?: Client;
 
+  @Column({
+    name: 'evidence_phase',
+    type: 'enum',
+    enum: WorkOrderEvidencePhase,
+    nullable: true,
+  })
+  evidencePhase?: WorkOrderEvidencePhase | null;
+
+  @Column({ type: 'text', nullable: true })
+  observation?: string | null;
+  
   @ManyToOne(() => WorkOrder, (wo) => wo.images, {
     nullable: true,
     onDelete: 'CASCADE',

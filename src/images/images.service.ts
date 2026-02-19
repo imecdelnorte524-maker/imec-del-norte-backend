@@ -10,6 +10,7 @@ import { Equipment } from '../equipment/entities/equipment.entity';
 import { Client } from '../client/entities/client.entity';
 import { WebsocketGateway } from '../websockets/websocket.gateway'; // <-- NUEVO
 import { WorkOrder } from 'src/work-orders/entities/work-order.entity';
+import { WorkOrderEvidencePhase } from 'src/work-orders/enums/ac-inspection-phase.enum';
 
 @Injectable()
 export class ImagesService {
@@ -601,7 +602,12 @@ export class ImagesService {
     return { message: 'Imagen eliminada correctamente' };
   }
 
-  async uploadForWorkOrder(ordenId: number, files: Express.Multer.File[]) {
+  async uploadForWorkOrder(
+    ordenId: number,
+    files: Express.Multer.File[],
+    phase?: WorkOrderEvidencePhase,
+    observation?: string,
+  ) {
     const workOrder = await this.workOrderRepo.findOne({
       where: { ordenId },
     });
@@ -614,7 +620,8 @@ export class ImagesService {
       throw new NotFoundException('No se han subido archivos');
     }
 
-    // No borramos evidencias anteriores: se acumulan
+    const effectivePhase = phase || WorkOrderEvidencePhase.DURING;
+
     const uploadPromises = files.map((file, index) =>
       this.cloudinary.upload(
         file,
@@ -630,6 +637,8 @@ export class ImagesService {
         public_id: upload.public_id,
         folder: 'work-orders',
         workOrder,
+        evidencePhase: effectivePhase,
+        observation: observation || null,
       }),
     );
 

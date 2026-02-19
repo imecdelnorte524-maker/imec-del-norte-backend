@@ -23,6 +23,7 @@ import { WorkOrderTechnician } from './work-order-technician.entity';
 import { WorkOrderTimer } from './work-order-timer.entity';
 import { WorkOrderPause } from './work-order-pause.entity';
 import { Image } from 'src/images/entities/image.entity';
+import { AcInspection } from './ac-inspection.entity';
 
 @Entity('ordenes_trabajo')
 export class WorkOrder {
@@ -136,10 +137,20 @@ export class WorkOrder {
   })
   pauses!: WorkOrderPause[];
 
-  @Column({ name: 'received_by_name', type: 'varchar', length: 255, nullable: true })
+  @Column({
+    name: 'received_by_name',
+    type: 'varchar',
+    length: 255,
+    nullable: true,
+  })
   receivedByName?: string | null;
 
-  @Column({ name: 'received_by_position', type: 'varchar', length: 255, nullable: true })
+  @Column({
+    name: 'received_by_position',
+    type: 'varchar',
+    length: 255,
+    nullable: true,
+  })
   receivedByPosition?: string | null;
 
   @Column({ name: 'received_by_signature_data', type: 'text', nullable: true })
@@ -151,4 +162,7 @@ export class WorkOrder {
   // Evidencias (imágenes)
   @OneToMany(() => Image, (image) => image.workOrder)
   images?: Image[];
+
+  @OneToMany(() => AcInspection, (insp) => insp.workOrder)
+  acInspections: AcInspection[];
 }

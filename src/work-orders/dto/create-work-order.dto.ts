@@ -113,7 +113,7 @@ export class CreateWorkOrderDto {
     default: null,
   })
   @IsOptional()
-  estadoFacturacion?: null;
+  estadoFacturacion?: BillingStatus | null;
 
   @ApiProperty({
     description: 'Indica si es una orden de emergencia',

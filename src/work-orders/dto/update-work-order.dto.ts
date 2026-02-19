@@ -55,7 +55,7 @@ export class UpdateWorkOrderDto extends PartialType(CreateWorkOrderDto) {
   })
   @IsOptional()
   @IsEnum(BillingStatus)
-  estadoFacturacion?: null | undefined;
+  estadoFacturacion?: BillingStatus | null;
 
   @ApiProperty({
     example: [1, 2],

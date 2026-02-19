@@ -20,6 +20,8 @@ import { Equipment } from '../equipment/entities/equipment.entity';
 import { PlanMantenimiento } from '../equipment/entities/plan-mantenimiento.entity';
 import { MailModule } from '../mail/mail.module';
 import { MaintenanceSchedulerService } from './maintenance-scheduler.service';
+import { AcInspection } from './entities/ac-inspection.entity';
+import { Image } from 'src/images/entities/image.entity';
 
 @Module({
   imports: [
@@ -39,6 +41,8 @@ import { MaintenanceSchedulerService } from './maintenance-scheduler.service';
       Client,
       Equipment,
       PlanMantenimiento,
+      AcInspection,
+      Image,
     ]),
     MailModule,
   ],

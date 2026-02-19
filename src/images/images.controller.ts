@@ -8,6 +8,7 @@ import {
   UploadedFile,
   UseInterceptors,
   ParseIntPipe,
+  Body,
 } from '@nestjs/common';
 import { FilesInterceptor, FileInterceptor } from '@nestjs/platform-express';
 import {
@@ -20,6 +21,7 @@ import {
 import { ImagesService } from './images.service';
 import { UploadImageSwaggerDto } from './dto/upload-image.dto';
 import { Roles } from 'src/common/decorators/roles.decorator';
+import { WorkOrderEvidencePhase } from 'src/work-orders/enums/ac-inspection-phase.enum';
 
 @ApiTags('Images')
 @Controller('images')
@@ -266,6 +268,16 @@ export class ImagesController {
             format: 'binary',
           },
         },
+        phase: {
+          type: 'string',
+          enum: ['BEFORE', 'DURING', 'AFTER'],
+          description:
+            'Fase de la evidencia: BEFORE (antes), DURING (durante), AFTER (después)',
+        },
+        observation: {
+          type: 'string',
+          description: 'Observación para este conjunto de evidencias',
+        },
       },
     },
   })
@@ -273,8 +285,13 @@ export class ImagesController {
   uploadWorkOrderImages(
     @Param('id', ParseIntPipe) id: number,
     @UploadedFiles() files: Express.Multer.File[],
+    @Body() body: { phase?: WorkOrderEvidencePhase; observation?: string },
   ) {
-    return this.imagesService.uploadForWorkOrder(id, files);
+    const phase =
+      (body.phase as WorkOrderEvidencePhase) || WorkOrderEvidencePhase.DURING;
+    const observation = body.observation || undefined;
+
+    return this.imagesService.uploadForWorkOrder(id, files, phase, observation);
   }
 
   @Get('work-order/:id')

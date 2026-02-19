@@ -1,4 +1,3 @@
-// src/work-orders/work-orders.controller.ts
 import {
   Controller,
   Get,
@@ -21,6 +20,7 @@ import {
   ApiOperation,
   ApiResponse,
   ApiBearerAuth,
+  ApiQuery,
 } from '@nestjs/swagger';
 import { WorkOrdersService } from './work-orders.service';
 import { CreateWorkOrderDto } from './dto/create-work-order.dto';
@@ -45,6 +45,8 @@ import * as path from 'path';
 import { ServiceCategory } from 'src/services/enums/service.enums';
 import { RateTechniciansDto } from './dto/rate-technicians.dto';
 import { SignWorkOrderDto } from './dto/sign-work-order.dto';
+import { AcInspectionPhase } from './enums/ac-inspection-phase.enum';
+import { CreateAcInspectionDto } from './dto/create-ac-inspection.dto';
 
 @ApiTags('work-orders')
 @Controller('work-orders')
@@ -105,13 +107,25 @@ export class WorkOrdersController {
   @Get()
   @ApiOperation({
     summary:
-      'Obtener órdenes de trabajo (filtradas por rol: técnico/cliente solo ven las suyas)',
+      'Obtener órdenes de trabajo (filtradas por rol: técnico/cliente solo ven las suyas, a menos que se use ?all=true)',
   })
-  async findAll(@Req() req: any) {
+  @ApiQuery({
+    name: 'all',
+    required: false,
+    type: Boolean,
+    description:
+      'Si es true y el usuario es técnico, devuelve todas las órdenes',
+  })
+  async findAll(@Req() req: any, @Query('all') all?: string) {
     const roleName = this.getRoleName(req.user);
+    const showAll = all === 'true';
+
     let data: WorkOrder[];
 
-    if (roleName === 'Técnico') {
+    // Si es técnico y se solicita all=true, devolver todas las órdenes
+    if (roleName === 'Técnico' && showAll) {
+      data = await this.workOrdersService.findAll();
+    } else if (roleName === 'Técnico') {
       data = await this.workOrdersService.getWorkOrdersByTechnician(
         req.user.userId,
       );
@@ -187,7 +201,13 @@ export class WorkOrdersController {
     @Body() dto: UpdateWorkOrderDto,
     @Req() req: any,
   ) {
-    const workOrder = await this.workOrdersService.update(id, dto, req.user);
+    const clientId = req.headers['x-socket-id'] as string;
+    const workOrder = await this.workOrdersService.update(
+      id,
+      dto,
+      req.user,
+      clientId,
+    );
     const costs = await this.workOrdersService.calculateTotalCost(id);
 
     return {
@@ -565,6 +585,54 @@ export class WorkOrdersController {
     };
   }
 
+  @Post(':id/ac-inspections/before')
+  @Roles('Administrador', 'Técnico', 'Secretaria', 'Supervisor')
+  @ApiOperation({
+    summary:
+      'Registrar inspección inicial (antes del mantenimiento) para aire acondicionado',
+  })
+  async createAcInspectionBefore(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: CreateAcInspectionDto,
+    @Req() req: any,
+  ) {
+    const inspection = await this.workOrdersService.createAcInspection(
+      id,
+      AcInspectionPhase.BEFORE,
+      dto,
+      req.user,
+    );
+
+    return {
+      message: 'Inspección inicial registrada correctamente',
+      data: inspection,
+    };
+  }
+
+  @Post(':id/ac-inspections/after')
+  @Roles('Administrador', 'Técnico', 'Secretaria', 'Supervisor')
+  @ApiOperation({
+    summary:
+      'Registrar inspección final (después del mantenimiento) para aire acondicionado',
+  })
+  async createAcInspectionAfter(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: CreateAcInspectionDto,
+    @Req() req: any,
+  ) {
+    const inspection = await this.workOrdersService.createAcInspection(
+      id,
+      AcInspectionPhase.AFTER,
+      dto,
+      req.user,
+    );
+
+    return {
+      message: 'Inspección final registrada correctamente',
+      data: inspection,
+    };
+  }
+
   private mapToResponseDto(workOrder: WorkOrder): WorkOrderResponseDto {
     const technicians =
       workOrder.technicians?.map((tech) => ({
@@ -579,7 +647,6 @@ export class WorkOrdersController {
           telefono: tech.technician?.telefono ?? undefined,
           cedula: tech.technician?.cedula ?? undefined,
         },
-        // 🔹 NUEVO
         rating: tech.rating ?? null,
         ratedByUserId: tech.ratedByUserId ?? null,
         ratedAt: tech.ratedAt ?? null,
@@ -605,21 +672,19 @@ export class WorkOrdersController {
       workOrder.equipmentWorkOrders?.map((ewo) => {
         const equipment = ewo.equipment;
 
-        // Área - CORREGIDO: usar 'nombre' en lugar de 'nombreArea'
         let area = null as AreaInfo | null;
         if (equipment?.area && equipment.areaId) {
           area = {
             areaId: equipment.areaId,
-            nombre: equipment.area.nombreArea || '', // 👈 CAMBIADO de 'nombreArea' a 'nombre'
+            nombre: equipment.area.nombreArea || '',
           };
         }
 
-        // Subárea - CORREGIDO: usar 'nombre' en lugar de 'nombreSubArea'
         let subArea = null as SubAreaInfo | null;
         if (equipment?.subArea && equipment.subAreaId) {
           subArea = {
             subAreaId: equipment.subAreaId,
-            nombre: equipment.subArea.nombreSubArea || '', // 👈 CAMBIADO de 'nombreSubArea' a 'nombre'
+            nombre: equipment.subArea.nombreSubArea || '',
           };
         }
 
@@ -657,7 +722,6 @@ export class WorkOrdersController {
         },
       })) || [];
 
-    // CORRECCIÓN: Manejar el caso cuando service es null
     const serviceInfo = workOrder.service
       ? {
           servicioId: workOrder.service.servicioId,
@@ -670,6 +734,39 @@ export class WorkOrdersController {
           categoriaServicio: undefined,
         };
 
+    const acInspections =
+      workOrder.acInspections?.map((insp) => ({
+        id: insp.id,
+        equipmentId: insp.equipmentId,
+        phase: insp.phase,
+        evapTempSupply: insp.evapTempSupply,
+        evapTempReturn: insp.evapTempReturn,
+        evapTempAmbient: insp.evapTempAmbient,
+        evapTempOutdoor: insp.evapTempOutdoor,
+        evapMotorRpm: insp.evapMotorRpm,
+        evapMicrofarads: insp.evapMicrofarads ?? null,
+        condHighPressure: insp.condHighPressure,
+        condLowPressure: insp.condLowPressure,
+        condAmperage: insp.condAmperage,
+        condVoltage: insp.condVoltage,
+        condTempIn: insp.condTempIn,
+        condTempDischarge: insp.condTempDischarge,
+        condMotorRpm: insp.condMotorRpm,
+        condMicrofarads: insp.condMicrofarads ?? null,
+        compressorOhmio: insp.compressorOhmio ?? null,
+        observation: insp.observation ?? null,
+        createdAt: insp.createdAt,
+      })) || [];
+
+    const images =
+      workOrder.images?.map((img) => ({
+        id: img.id,
+        url: img.url,
+        evidencePhase: img.evidencePhase ?? null,
+        observation: img.observation ?? null,
+        createdAt: img.created_at,
+      })) || [];
+
     return {
       ordenId: workOrder.ordenId,
       fechaSolicitud: workOrder.fechaSolicitud,
@@ -677,18 +774,16 @@ export class WorkOrdersController {
       fechaFinalizacion: workOrder.fechaFinalizacion,
       estado: workOrder.estado,
       tipoServicio: workOrder.tipoServicio ?? null,
-
       maintenanceType: workOrder.maintenanceType
         ? {
             id: workOrder.maintenanceType.id,
             nombre: workOrder.maintenanceType.nombre,
           }
         : null,
-
       comentarios: workOrder.comentarios,
       estadoFacturacion: workOrder.estadoFacturacion,
       facturaPdfUrl: workOrder.facturaPdfUrl,
-      service: serviceInfo, // Usar la variable corregida
+      service: serviceInfo,
       cliente: workOrder.cliente
         ? {
             usuarioId: workOrder.cliente.usuarioId,
@@ -723,6 +818,8 @@ export class WorkOrdersController {
       receivedByPosition: workOrder.receivedByPosition ?? null,
       receivedBySignatureData: workOrder.receivedBySignatureData ?? null,
       receivedAt: workOrder.receivedAt ?? null,
+      acInspections,
+      images,
     };
   }
 }
