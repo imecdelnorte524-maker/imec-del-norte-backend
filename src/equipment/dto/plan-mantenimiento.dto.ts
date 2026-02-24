@@ -8,7 +8,7 @@ import {
   Min,
   Max,
 } from 'class-validator';
-import { UnidadFrecuencia } from '../enums/frecuency-unity.enum';
+import { UnidadFrecuencia } from '../../shared/index';
 import { Type } from 'class-transformer';
 
 export class PlanMantenimientoDto {

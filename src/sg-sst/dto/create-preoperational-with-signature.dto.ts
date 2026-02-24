@@ -10,7 +10,7 @@ import {
 import { Type } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
 import { SignerType } from './sign-form.dto';
-import { CheckValue } from '../enum/check-value.enum';
+import { CheckValue } from '../../shared/index';
 
 export class PreoperationalCheckWithSignatureDto {
   @ApiProperty({ description: 'Parámetro a verificar', example: 'Estado de bisagras' })

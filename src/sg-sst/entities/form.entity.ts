@@ -17,7 +17,7 @@ import { Signature } from './signature.entity';
 import { GeneratedPdf } from './generated-pdf.entity';
 import { User } from '../../users/entities/user.entity';
 import { WorkOrder } from '../../work-orders/entities/work-order.entity';
-import { FormStatus, FormType } from '../enum/check-value.enum';
+import { FormStatus, FormType } from '../../shared/index';
 
 @Entity('forms')
 export class Form {

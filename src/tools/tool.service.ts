@@ -14,7 +14,7 @@ import { Warehouse } from '../warehouses/entities/warehouse.entity';
 import { CreateToolDto } from './dto/create-tools.dto';
 import { UpdateToolDto } from './dto/update-tools.dto';
 import { DeleteToolDto } from './dto/delete-tool.dto';
-import { ToolStatus, ToolType } from '../shared/enums/inventory.enum';
+import { ToolStatus, ToolType } from '../shared/index';
 import { ImagesService } from '../images/images.service';
 import { SequenceHelperService } from '../common/services/sequence-helper.service';
 import { WebsocketGateway } from '../websockets/websocket.gateway';
@@ -24,7 +24,6 @@ export class ToolService {
   private readonly logger = new Logger(ToolService.name);
   private readonly tableName = 'herramientas';
   private readonly idColumn = 'herramienta_id';
-  private readonly sequenceName = 'tools_herramienta_id_seq';
 
   constructor(
     @InjectRepository(Tool)
@@ -54,7 +53,6 @@ export class ToolService {
       const sequenceInfo = await this.sequenceHelper.checkAndFixSequence(
         this.tableName,
         this.idColumn,
-        this.sequenceName,
       );
 
       if (sequenceInfo.corrected) {
@@ -84,7 +82,6 @@ export class ToolService {
       const sequenceInfo = await this.sequenceHelper.checkAndFixSequence(
         this.tableName,
         this.idColumn,
-        this.sequenceName,
       );
 
       if (sequenceInfo.corrected) {
@@ -113,7 +110,7 @@ export class ToolService {
       const diagnosis = await this.sequenceHelper.diagnoseTable(
         this.tableName,
         this.idColumn,
-        this.sequenceName,
+        undefined,
         ['serial'], // columnas que deberían ser únicas
       );
 
@@ -145,7 +142,7 @@ export class ToolService {
       // Verificar secuencia antes de crear
       await this.fixSequenceIfNeeded();
 
-      // Validar serial único
+      // Validar serial único (si se proporciona)
       if (createToolDto.serial) {
         const existing = await queryRunner.manager.findOne(Tool, {
           where: { serial: createToolDto.serial },
@@ -166,7 +163,7 @@ export class ToolService {
         }
       }
 
-      // Crear herramienta - valores undefined se convierten a null
+      // ===== 1. CREAR LA HERRAMIENTA =====
       const toolData: Partial<Tool> = {
         nombre: createToolDto.nombre,
         marca: createToolDto.marca ?? null,
@@ -182,47 +179,101 @@ export class ToolService {
       const tool = queryRunner.manager.create(Tool, toolData);
       const savedTool = await queryRunner.manager.save(tool);
 
-      // Crear inventario asociado
-      const inventoryData: Partial<Inventory> = {
-        herramientaId: savedTool.herramientaId,
-        cantidadActual: 1, // Siempre 1 para herramientas
-        bodega: bodega,
-        fechaUltimaActualizacion: new Date(),
-        tool: savedTool,
-      };
+      // ===== 2. MANEJO DEL INVENTARIO =====
+      const existingInventory = await queryRunner.manager.findOne(Inventory, {
+        where: { herramientaId: savedTool.herramientaId },
+      });
 
-      const inventory = queryRunner.manager.create(Inventory, inventoryData);
-      const savedInventory = await queryRunner.manager.save(inventory);
+      let inventory: Inventory;
 
-      // Asociar inventario a la herramienta
-      savedTool.inventory = savedInventory;
+      if (existingInventory) {
+        this.logger.warn(
+          `⚠️ Inventario ya existente para herramienta ${savedTool.herramientaId}, actualizando...`,
+        );
+
+        existingInventory.cantidadActual = 1; // Siempre 1 para herramientas
+        existingInventory.fechaUltimaActualizacion = new Date();
+        existingInventory.bodega = bodega;
+        existingInventory.tool = savedTool;
+
+        inventory = await queryRunner.manager.save(existingInventory);
+      } else {
+        // Crear nuevo inventario
+        const inventoryData: Partial<Inventory> = {
+          herramientaId: savedTool.herramientaId,
+          cantidadActual: 1, // Siempre 1 para herramientas
+          bodega: bodega,
+          ubicacion: createToolDto.ubicacion ?? null,
+          fechaUltimaActualizacion: new Date(),
+          tool: savedTool,
+        };
+
+        inventory = queryRunner.manager.create(Inventory, inventoryData);
+
+        try {
+          inventory = await queryRunner.manager.save(inventory);
+        } catch (error) {
+          if ((error as any).code === '23505') {
+            this.logger.error(
+              `Error de duplicado al crear inventario: ${(error as any).detail}`,
+            );
+
+            const recoveredInventory = await queryRunner.manager.findOne(
+              Inventory,
+              {
+                where: { herramientaId: savedTool.herramientaId },
+              },
+            );
+
+            if (recoveredInventory) {
+              this.logger.log(
+                `✅ Inventario recuperado para herramienta ${savedTool.herramientaId}`,
+              );
+              inventory = recoveredInventory;
+
+              recoveredInventory.cantidadActual = 1;
+              recoveredInventory.fechaUltimaActualizacion = new Date();
+              recoveredInventory.bodega = bodega;
+              recoveredInventory.tool = savedTool;
+
+              inventory = await queryRunner.manager.save(recoveredInventory);
+            } else {
+              throw error;
+            }
+          } else {
+            throw error;
+          }
+        }
+      }
+
+      // ===== 3. ASOCIAR INVENTARIO A LA HERRAMIENTA =====
+      savedTool.inventory = inventory;
       await queryRunner.manager.save(savedTool);
 
+      // ===== 4. COMMIT DE LA TRANSACCIÓN =====
       await queryRunner.commitTransaction();
 
+      // ===== 5. OBTENER LA HERRAMIENTA COMPLETA CON RELACIONES =====
       const full = await this.findOne(savedTool.herramientaId);
 
-      // 🔴 WebSocket
+      // ===== 6. EMITIR EVENTO WEBSOCKET =====
       this.websocketGateway.emit('tools.created', full);
 
       return full;
     } catch (error: any) {
       await queryRunner.rollbackTransaction();
 
-      // Manejar errores de duplicado en PK
-      if (error.code === '23505' && error.constraint === 'tools_pkey') {
-        this.logger.warn(
-          '⚠️ Error de duplicado en PK de herramientas, corrigiendo secuencia...',
-        );
-        await this.fixSequenceIfNeeded();
-
-        throw new ConflictException(
-          'Error de duplicación en ID. La secuencia ha sido corregida. Intente nuevamente.',
-        );
-      }
-
-      // Manejar errores de constraint UNIQUE
       if (error.code === '23505') {
+        if (error.constraint === 'herramientas_pkey') {
+          this.logger.warn(
+            '⚠️ Error de duplicado en PK de herramientas, corrigiendo secuencia...',
+          );
+          await this.fixSequenceIfNeeded();
+          throw new ConflictException(
+            'Error de duplicación en ID. La secuencia ha sido corregida. Intente nuevamente.',
+          );
+        }
+
         const uniqueError =
           await this.sequenceHelper.handleUniqueConstraintError(error);
         if (uniqueError.suggestion) {
@@ -341,16 +392,18 @@ export class ToolService {
         );
       }
 
+      // Commit de la transacción antes de recargar la herramienta
+      await queryRunner.commitTransaction();
+
       const updated = await this.findOne(id);
 
-      // 🔴 WebSocket
+      // WebSocket
       this.websocketGateway.emit('tools.updated', updated);
 
       return updated;
     } catch (error: any) {
       await queryRunner.rollbackTransaction();
 
-      // Manejar errores de constraint UNIQUE
       if (error.code === '23505') {
         const uniqueError =
           await this.sequenceHelper.handleUniqueConstraintError(error);
@@ -377,7 +430,7 @@ export class ToolService {
     // Eliminación física (solo administrador)
     await this.toolRepository.delete(id);
 
-    // 🔴 WebSocket
+    // WebSocket
     this.websocketGateway.emit('tools.deleted', { id, soft: false });
   }
 
@@ -425,7 +478,7 @@ export class ToolService {
 
       await queryRunner.commitTransaction();
 
-      // 🔴 WebSocket
+      // WebSocket
       this.websocketGateway.emit('tools.softDeleted', {
         id,
         motivo: dto.motivo,
@@ -472,7 +525,7 @@ export class ToolService {
 
     const restored = await this.findOne(id);
 
-    // 🔴 WebSocket
+    // WebSocket
     this.websocketGateway.emit('tools.restored', restored);
     this.websocketGateway.emit('tools.updated', restored);
 
@@ -488,7 +541,7 @@ export class ToolService {
       );
     }
 
-    const tool = await this.findOne(id);
+    await this.findOne(id); // Verifica existencia
 
     await this.toolRepository.update(id, {
       estado: estado as ToolStatus,
@@ -496,7 +549,7 @@ export class ToolService {
 
     const updated = await this.findOne(id);
 
-    // 🔴 WebSocket
+    // WebSocket
     this.websocketGateway.emit('tools.statusUpdated', updated);
     this.websocketGateway.emit('tools.updated', updated);
 

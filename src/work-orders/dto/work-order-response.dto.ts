@@ -1,13 +1,14 @@
 // src/work-orders/dto/work-order-response.dto.ts
 import { ApiProperty } from '@nestjs/swagger';
-import { WorkOrderStatus } from '../enums/work-order-status.enum';
-import { ServiceCategory } from '../../services/enums/service.enums';
-import { BillingStatus } from '../enums/billing-status.enum';
-import { ServiceRequestType } from '../enums/service-request-type.enum';
+import { WorkOrderStatus } from '../../shared/index';
+import { ServiceCategory } from '../../shared/index';
+import { BillingStatus } from '../../shared/index';
+import { ServiceRequestType } from '../../shared/index';
 import {
   AcInspectionPhase,
   WorkOrderEvidencePhase,
-} from '../enums/ac-inspection-phase.enum';
+} from '../../shared/index';
+import { CostStatus } from '../../shared/index';
 
 export class ServiceInfo {
   @ApiProperty({ example: 1 })
@@ -355,6 +356,9 @@ export class WorkOrderResponseDto {
 
   @ApiProperty({ enum: BillingStatus, nullable: true })
   estadoFacturacion: BillingStatus | null;
+
+  @ApiProperty({ enum: CostStatus, nullable: true })
+  estadoPago: CostStatus | null;
 
   @ApiProperty({ required: false, nullable: true })
   facturaPdfUrl?: string | null;

@@ -21,12 +21,12 @@ import { CreateAtsWithSignatureDto } from './dto/create-ats-with-signature.dto';
 import { CreatePreoperationalWithSignatureDto } from './dto/create-preoperational-with-signature.dto';
 import { CreateHeightWorkWithSignatureDto } from './dto/create-height-work-with-signature.dto';
 import { WorkOrder } from '../work-orders/entities/work-order.entity';
-import { WorkOrderStatus } from '../work-orders/enums/work-order-status.enum';
+import { WorkOrderStatus } from '../shared/index';
 import { PreoperationalChecklistTemplate } from './entities/preoperational-checklist-template.entity';
 import { PreoperationalChecklistParameter } from './entities/preoperational-checklist-parameter.entity';
 import { CreatePreoperationalChecklistTemplateDto } from './dto/create-preoperational-checklist-template.dto';
 import { Form } from './entities/form.entity';
-import { FormStatus, FormType } from './enum/check-value.enum';
+import { FormStatus, FormType } from '../shared/index';
 import { RejectFormDto } from './dto/reject-form.dto';
 import { WebsocketGateway } from '../websockets/websocket.gateway';
 

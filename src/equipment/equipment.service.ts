@@ -16,17 +16,17 @@ import { Area } from '../area/entities/area.entity';
 import { SubArea } from '../sub-area/entities/sub-area.entity';
 import { ImagesService } from '../images/images.service';
 import { AirConditionerType } from '../air-conditioner-types/entities/air-conditioner-type.entity';
-import { ServiceCategory } from '../services/enums/service.enums';
+import { ServiceCategory } from '../shared/index';
 import { EquipmentMotor } from './entities/motor.entity';
 import { EquipmentEvaporator } from './entities/evaporator.entity';
 import { EquipmentCondenser } from './entities/condenser.entity';
 import { EquipmentCompressor } from './entities/compressor.entity';
 import { PlanMantenimiento } from './entities/plan-mantenimiento.entity';
-import { EquipmentStatus } from './enums/equipment-status.enum';
+import { EquipmentStatus } from '../shared/index';
 import { BaseSequenceService } from '../common/services/base-sequence.service';
 import { SequenceHelperService } from '../common/services/sequence-helper.service';
 import { PlanMantenimientoDto } from './dto/plan-mantenimiento.dto';
-import { UnidadFrecuencia } from './enums/frecuency-unity.enum';
+import { UnidadFrecuencia } from '../shared/index';
 import * as ExcelJS from 'exceljs';
 import { WebsocketGateway } from '../websockets/websocket.gateway';
 import { EquipmentDocumentsService } from './equipment-documents.service';
@@ -40,7 +40,6 @@ interface OrphanedRecordIssue {
 
 interface SequenceCorrection {
   table: string;
-  sequence: string;
   corrected: boolean;
   message: string;
 }
@@ -97,7 +96,6 @@ export class EquipmentService
     // Configurar secuencia principal para equipos
     this.tableName = 'equipos';
     this.idColumn = 'equipo_id';
-    this.sequenceName = 'equipos_equipo_id_seq';
   }
 
   async onModuleInit() {
@@ -1120,30 +1118,32 @@ export class EquipmentService
     await queryRunner.startTransaction();
 
     try {
-      // Obtener equipo existente
+      // Obtener equipo existente (con relaciones necesarias)
       let equipment = await this.findOne(id);
 
-      // Validar y actualizar cliente si es necesario
+      // Validar y actualizar cliente si cambia
       if (dto.clientId !== undefined && dto.clientId !== equipment.clientId) {
         await this.validateAndUpdateClient(equipment, dto.clientId);
       }
 
-      // Validar y actualizar ubicación si es necesario
+      // Manejar cambio de ubicación (área/subárea) y posible recálculo de código
       const locationChanged = await this.handleLocationUpdate(
         equipment,
         dto,
         queryRunner,
       );
 
-      // Validar categoría y tipo de aire
-      await this.validateCategoryAndAirConditionerType(dto, equipment.category);
-      await this.handleCategoryUpdate(equipment, dto);
-
-      // Actualizar campos simples
+      // ────────────────────────────────────────────────
+      // Actualizar campos simples primero (incluye airConditionerTypeId)
+      // ────────────────────────────────────────────────
       const { evaporators, condensers, planMantenimiento, ...rest } = dto;
+
       Object.entries(rest).forEach(([key, value]) => {
         if (value !== undefined) {
-          (equipment as any)[key] = value;
+          // Asignación segura
+          if (key in equipment) {
+            (equipment as any)[key] = value;
+          }
         }
       });
 
@@ -1151,10 +1151,29 @@ export class EquipmentService
         equipment.updatedBy = updatedBy;
       }
 
-      // Guardar cambios del equipo
+      // ────────────────────────────────────────────────
+      // Ahora manejar categoría y tipo de aire (después de los campos básicos)
+      // ────────────────────────────────────────────────
+      await this.validateCategoryAndAirConditionerType(dto, equipment.category);
+      await this.handleCategoryUpdate(equipment, dto);
+
+      // Si se cambió el tipo de aire, cargar la entidad para la respuesta
+      if (
+        dto.airConditionerTypeId !== undefined &&
+        equipment.airConditionerTypeId
+      ) {
+        const acType = await this.acTypeRepository.findOne({
+          where: { id: equipment.airConditionerTypeId },
+        });
+        if (acType) {
+          equipment.airConditionerType = acType;
+        }
+      }
+
+      // Guardar cambios del equipo base
       await queryRunner.manager.save(Equipment, equipment);
 
-      // Actualizar componentes si fueron proporcionados
+      // Actualizar componentes si fueron enviados
       if (
         evaporators !== undefined ||
         condensers !== undefined ||
@@ -1169,9 +1188,10 @@ export class EquipmentService
       }
 
       await queryRunner.commitTransaction();
+
       const fullEquipment = await this.findOne(id);
 
-      // 🔴 Evento WebSocket: equipo actualizado
+      // Evento WebSocket
       this.websocketGateway.emit('equipment.updated', fullEquipment);
 
       return fullEquipment;
@@ -1182,7 +1202,6 @@ export class EquipmentService
         error.stack,
       );
 
-      // Manejar errores de constraint UNIQUE
       const constraintResult =
         await this.sequenceHelper.handleUniqueConstraintError(error);
       if (!constraintResult.handled && constraintResult.suggestion) {
@@ -1317,26 +1336,45 @@ export class EquipmentService
     equipment: Equipment,
     dto: UpdateEquipmentDto,
   ): Promise<void> {
-    if (dto.category !== undefined && dto.category !== equipment.category) {
+    // Actualizar categoría si viene
+    if (dto.category !== undefined) {
       equipment.category = dto.category;
+    }
 
-      if (dto.category === ServiceCategory.AIRES_ACONDICIONADOS) {
-        if (dto.airConditionerTypeId == null) {
-          throw new BadRequestException('Tipo de aire requerido');
-        }
+    const finalCategory = equipment.category; // ya actualizada
 
-        equipment.airConditionerTypeId = dto.airConditionerTypeId;
-      } else {
-        equipment.airConditionerTypeId = undefined;
-      }
-    } else if (dto.airConditionerTypeId !== undefined) {
-      if (equipment.category !== ServiceCategory.AIRES_ACONDICIONADOS) {
+    // Manejo del tipo de aire
+    if (dto.airConditionerTypeId !== undefined) {
+      // Validación de categoría
+      if (finalCategory !== ServiceCategory.AIRES_ACONDICIONADOS) {
         throw new BadRequestException(
-          'Solo aires acondicionados pueden tener tipo de aire',
+          'Solo equipos de aires acondicionados pueden tener tipo de aire',
         );
       }
 
+      // Asignar el nuevo ID
       equipment.airConditionerTypeId = dto.airConditionerTypeId;
+
+      // Opcional: precargar la relación para la respuesta inmediata
+      // (aunque findOne lo hará de nuevo, esto ayuda en consistencia)
+      if (dto.airConditionerTypeId !== null) {
+        const acType = await this.acTypeRepository.findOne({
+          where: { id: dto.airConditionerTypeId },
+        });
+        if (!acType) {
+          throw new BadRequestException(
+            `Tipo de aire ${dto.airConditionerTypeId} no encontrado`,
+          );
+        }
+        equipment.airConditionerType = acType;
+      } else {
+        equipment.airConditionerType = undefined;
+      }
+    }
+    // Si la categoría ya no es de aires y no se envió tipo → limpiar
+    else if (finalCategory !== ServiceCategory.AIRES_ACONDICIONADOS) {
+      equipment.airConditionerTypeId = undefined;
+      equipment.airConditionerType = undefined;
     }
   }
 
@@ -1614,7 +1652,6 @@ export class EquipmentService
       const mainSequence = await this.fixSequenceIfNeeded();
       corrections.push({
         table: this.tableName,
-        sequence: this.sequenceName,
         corrected: mainSequence.corrected,
         message: mainSequence.message,
       });
@@ -1658,7 +1695,6 @@ export class EquipmentService
 
           corrections.push({
             table: seq.table,
-            sequence: seq.sequence,
             corrected: result.corrected,
             message: result.corrected
               ? `Corregida de ${result.lastValue - 1} a ${result.maxId}`
@@ -1667,7 +1703,6 @@ export class EquipmentService
         } catch (error: any) {
           corrections.push({
             table: seq.table,
-            sequence: seq.sequence,
             corrected: false,
             message: `Error: ${error.message}`,
           });

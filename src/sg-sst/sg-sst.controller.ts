@@ -25,7 +25,7 @@ import { CreatePreoperationalWithSignatureDto } from './dto/create-preoperationa
 import { CreateHeightWorkWithSignatureDto } from './dto/create-height-work-with-signature.dto';
 import { AuthorizeHeightWorkDto } from './dto/authorize-height-work.dto';
 import { CreatePreoperationalChecklistTemplateDto } from './dto/create-preoperational-checklist-template.dto';
-import { FormStatus, FormType } from './enum/check-value.enum';
+import { FormStatus, FormType } from '../shared/index';
 import { RejectFormDto } from './dto/reject-form.dto';
 
 @Controller('sg-sst')

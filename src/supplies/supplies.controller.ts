@@ -10,6 +10,7 @@ import {
   UseGuards,
   Query,
   ParseIntPipe,
+  ParseBoolPipe,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -26,6 +27,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { Supply } from './entities/supply.entity';
+import { SupplyCategory, SupplyStatus } from '../shared/index';
 
 @ApiTags('supplies')
 @Controller('supplies')
@@ -65,9 +67,11 @@ export class SuppliesController {
     @Query('search') search?: string,
     @Query('categoria') categoria?: string,
     @Query('estado') estado?: string,
-    @Query('low-stock') lowStock?: boolean,
-    @Query('stats') stats?: boolean,
-    @Query('deleted') deleted?: boolean,
+    @Query('low-stock', new ParseBoolPipe({ optional: true }))
+    lowStock?: boolean,
+    @Query('stats', new ParseBoolPipe({ optional: true })) stats?: boolean,
+    @Query('deleted', new ParseBoolPipe({ optional: true }))
+    deleted?: boolean,
   ) {
     if (stats) {
       const data = await this.suppliesService.getSuppliesStats();
@@ -85,9 +89,11 @@ export class SuppliesController {
     } else if (search) {
       data = await this.suppliesService.searchSupplies(search);
     } else if (categoria) {
-      data = await this.suppliesService.getSuppliesByCategory(categoria);
+      const categoriaEnum = categoria as SupplyCategory;
+      data = await this.suppliesService.getSuppliesByCategory(categoriaEnum);
     } else if (estado) {
-      data = await this.suppliesService.getSuppliesByStatus(estado);
+      const estadoEnum = estado as SupplyStatus;
+      data = await this.suppliesService.getSuppliesByStatus(estadoEnum);
     } else {
       data = await this.suppliesService.findAll();
     }
@@ -228,24 +234,26 @@ export class SuppliesController {
   }
 
   private mapToResponseDto(supply: Supply): SupplyResponseDto {
+    const inventory = supply.inventories?.[0];
+
     const response: SupplyResponseDto = {
       insumoId: supply.insumoId,
       nombre: supply.nombre,
       categoria: supply.categoria,
       unidadMedida: supply.unidadMedida ? supply.unidadMedida.nombre : '',
-      stock: supply.inventory?.cantidadActual ?? 0,
+      stock: inventory?.cantidadActual ?? 0,
       estado: supply.estado,
       fechaRegistro: supply.fechaRegistro,
       stockMin: supply.stockMin,
       valorUnitario: supply.valorUnitario,
-      cantidadActual: supply.inventory?.cantidadActual ?? 0,
-      inventarioId: supply.inventory?.inventarioId,
+      cantidadActual: inventory?.cantidadActual ?? 0,
+      inventarioId: inventory?.inventarioId,
     };
 
-    if (supply.inventory?.bodega) {
+    if (inventory?.bodega) {
       response.bodega = {
-        bodegaId: supply.inventory.bodega.bodegaId,
-        nombre: supply.inventory.bodega.nombre,
+        bodegaId: inventory.bodega.bodegaId,
+        nombre: inventory.bodega.nombre,
       };
     }
 

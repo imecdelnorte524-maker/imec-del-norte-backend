@@ -424,6 +424,7 @@ export class UsersController {
       contactoEmergenciaParentesco:
         (user as any).contactoEmergenciaParentesco ?? null,
       mustChangePassword: user.mustChangePassword,
+      position: user.position,
     } as UserResponseDto;
   }
 }

@@ -1,7 +1,7 @@
 // src/tools/dto/delete-tool.dto.ts
 import { IsEnum, IsOptional, IsString, MaxLength } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
-import { ToolEliminationReason } from '../../shared/enums/inventory.enum';
+import { ToolEliminationReason } from '../../shared/index';
 
 export class DeleteToolDto {
   @ApiProperty({

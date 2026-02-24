@@ -13,8 +13,8 @@ import {
   Matches,
 } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
-import { TipoCedula } from '../enums/Type-cedula.enum';
-import { Genero } from '../enums/genero.enum';
+import { TipoCedula } from '../../shared/index';
+import { Genero } from '../../shared/index';
 
 export class CreateUserDto {
   @ApiProperty({

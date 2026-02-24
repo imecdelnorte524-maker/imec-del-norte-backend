@@ -25,7 +25,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { Service } from './entities/service.entity';
-import { ServiceCategory } from './enums/service.enums';
+import { ServiceCategory } from '../shared/index';
 
 @ApiTags('services')
 @Controller('services')

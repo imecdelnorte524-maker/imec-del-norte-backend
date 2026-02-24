@@ -1,6 +1,6 @@
 // src/services/dto/service-response.dto.ts
 import { ApiProperty } from '@nestjs/swagger';
-import { ServiceCategory } from '../enums/service.enums';
+import { ServiceCategory } from '../../shared/index';
 
 export class ServiceResponseDto {
   @ApiProperty({

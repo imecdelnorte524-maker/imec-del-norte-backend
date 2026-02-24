@@ -26,11 +26,11 @@ import { CreateWorkOrderDto } from './dto/create-work-order.dto';
 import { UpdateWorkOrderDto } from './dto/update-work-order.dto';
 import { AddSupplyDetailDto } from './dto/add-supply-detail.dto';
 import { AddToolDetailDto } from './dto/add-tool-detail.dto';
-import { ToolStatus, SupplyStatus } from '../shared/enums';
-import { WorkOrderStatus } from './enums/work-order-status.enum';
-import { BillingStatus } from './enums/billing-status.enum';
+import { ToolStatus, SupplyStatus } from '../shared/index';
+import { WorkOrderStatus } from '../shared/index';
+import { BillingStatus } from '../shared/index';
 import { EventEmitter2 } from '@nestjs/event-emitter';
-import { ServiceCategory } from '../services/enums/service.enums';
+import { ServiceCategory } from '../shared/index';
 import { PlanMantenimiento } from '../equipment/entities/plan-mantenimiento.entity';
 import { CreateEmergencyOrderDto } from './dto/create-emergency-order.dto';
 import { AssignTechniciansDto } from './dto/assign-technicians.dto';
@@ -38,12 +38,10 @@ import { WebsocketGateway } from '../websockets/websocket.gateway';
 import { RateTechniciansDto } from './dto/rate-technicians.dto';
 import { SignWorkOrderDto } from './dto/sign-work-order.dto';
 import { AcInspection } from './entities/ac-inspection.entity';
-import {
-  AcInspectionPhase,
-  WorkOrderEvidencePhase,
-} from './enums/ac-inspection-phase.enum';
+import { AcInspectionPhase, WorkOrderEvidencePhase } from '../shared/index';
 import { CreateAcInspectionDto } from './dto/create-ac-inspection.dto';
 import { Image } from 'src/images/entities/image.entity';
+import { CostStatus } from '../shared/index';
 
 @Injectable()
 export class WorkOrdersService {
@@ -422,6 +420,7 @@ export class WorkOrdersService {
     const workOrder = await this.findOne(id);
     const currentRoleName = this.getRoleName(currentUser);
     const isAC = this.isAirConditioningService(workOrder);
+    const previousStatus = workOrder.estado;
 
     // --- 1. VALIDACIONES ESPECÍFICAS AC POR EQUIPO ---
     if (
@@ -472,10 +471,10 @@ export class WorkOrdersService {
       }
     }
 
-    // --- 2. BLOQUEOS DE SEGURIDAD (FACTURACIÓN Y ROLES) ---
     if (
       workOrder.estadoFacturacion !== null &&
-      workOrder.estadoFacturacion !== undefined
+      workOrder.estadoFacturacion !== undefined &&
+      workOrder.estadoPago === CostStatus.PAYMENTH
     ) {
       throw new BadRequestException(
         'No se puede editar una orden que ya tiene un estado de facturación asignado',
@@ -515,7 +514,7 @@ export class WorkOrdersService {
         throw new ForbiddenException('No está asignado a esta orden');
     }
 
-    // --- 3. TRANSICIONES Y FIRMA ---
+    // --- 2. VALIDAR TRANSICIÓN DE ESTADO ---
     if (updateWorkOrderDto.estado) {
       this.validateEstadoTransition(
         workOrder.estado,
@@ -524,6 +523,7 @@ export class WorkOrdersService {
       );
     }
 
+    // --- 3. VALIDAR FIRMA PARA COMPLETAR ---
     if (
       updateWorkOrderDto.estado === WorkOrderStatus.COMPLETED &&
       (!workOrder.receivedByName || !workOrder.receivedBySignatureData)
@@ -540,6 +540,14 @@ export class WorkOrdersService {
     ) {
       updateWorkOrderDto.fechaInicio = this.getColombiaTime();
       await this.startTimer(id, currentUser.userId);
+
+      // 🔥 EVENTO: Orden iniciada (EN PROCESO)
+      this.eventEmitter.emit('work-order.started', {
+        workOrderId: id,
+        clienteId: workOrder.clienteId,
+        fechaInicio: updateWorkOrderDto.fechaInicio,
+        iniciadoPor: currentUser.userId,
+      });
     }
 
     if (
@@ -566,6 +574,8 @@ export class WorkOrdersService {
     }
 
     // --- 5. ACTUALIZACIÓN DE RELACIONES (EQUIPOS Y TÉCNICOS) ---
+    let hasChanges = false;
+
     if (updateWorkOrderDto.equipmentIds !== undefined) {
       if (!workOrder.clienteEmpresaId)
         throw new BadRequestException('La orden no tiene cliente asignado');
@@ -574,6 +584,7 @@ export class WorkOrdersService {
         updateWorkOrderDto.equipmentIds,
         workOrder.clienteEmpresaId,
       );
+      hasChanges = true;
     }
 
     if (
@@ -585,33 +596,99 @@ export class WorkOrdersService {
         updateWorkOrderDto.technicianIds,
         updateWorkOrderDto.leaderTechnicianId,
       );
+      hasChanges = true;
     }
 
+    // Caso legacy: tecnicoId (un solo técnico)
+    if (updateWorkOrderDto.tecnicoId !== undefined) {
+      await this.updateTechnicianAssociations(
+        id,
+        [updateWorkOrderDto.tecnicoId],
+        updateWorkOrderDto.tecnicoId,
+      );
+      hasChanges = true;
+    }
+
+    // --- 6. CAMPOS DIRECTOS (los que van al update principal) ---
     const {
-      pauseObservation,
+      pauseObservation, // ya manejado en pauseOrder
       equipmentIds,
       technicianIds,
       leaderTechnicianId,
       tecnicoId,
-      ...columnData
+      ...directFields // ← resto de campos (estado, comentarios, fechas, etc.)
     } = updateWorkOrderDto;
 
-    if (Object.keys(columnData).length > 0) {
-      await this.workOrdersRepository.update(id, columnData);
+    if (Object.keys(directFields).length > 0) {
+      await this.workOrdersRepository.update(id, directFields);
+      hasChanges = true;
     }
 
+    // Si NO hubo ningún cambio → lanzamos error controlado
+    if (!hasChanges) {
+      throw new BadRequestException(
+        'No se proporcionaron campos válidos para actualizar esta orden',
+      );
+    }
+
+    // Obtener la orden actualizada para los eventos
+    const updatedWorkOrder = await this.findOne(id);
+
+    // --- 7. EVENTOS DE NOTIFICACIÓN ---
+
+    // Evento genérico de actualización
     this.eventEmitter.emit('work-order.updated', {
       ordenId: id,
       action: 'update',
+      previousStatus,
     });
 
-    // 🔴 WebSocket
+    // 🔥 EVENTO: Orden finalizada
+    if (
+      updateWorkOrderDto.estado === WorkOrderStatus.COMPLETED &&
+      previousStatus !== WorkOrderStatus.COMPLETED
+    ) {
+      this.eventEmitter.emit('work-order.completed', {
+        workOrderId: id,
+        fechaFinalizacion: updatedWorkOrder.fechaFinalizacion || new Date(),
+        completedBy: currentUser?.userId,
+        clienteId: updatedWorkOrder.clienteId, // IMPORTANTE: para notificar al cliente
+        clienteEmpresaId: updatedWorkOrder.clienteEmpresaId,
+      });
+    }
+
+    // 🔥 EVENTO: Orden cancelada
+    if (
+      updateWorkOrderDto.estado === WorkOrderStatus.CANCELED &&
+      previousStatus !== WorkOrderStatus.CANCELED
+    ) {
+      this.eventEmitter.emit('work-order.cancelled', {
+        workOrderId: id,
+        clienteId: updatedWorkOrder.clienteId,
+        canceladoPor: currentUser?.userId,
+      });
+    }
+
+    // 🔥 EVENTO: Cambio de estado general (útil para tracking)
+    if (
+      updateWorkOrderDto.estado &&
+      updateWorkOrderDto.estado !== previousStatus
+    ) {
+      this.eventEmitter.emit('work-order.status-changed', {
+        workOrderId: id,
+        previousStatus,
+        newStatus: updateWorkOrderDto.estado,
+        updatedBy: currentUser?.userId,
+      });
+    }
+
+    // --- 8. WEB SOCKET ---
     await this.emitWorkOrderUpdated(id, {
-      previousStatus: workOrder.estado,
-      clientId, // 👈 Pasar el clientId
+      previousStatus,
+      clientId,
     });
 
-    return this.findOne(id);
+    return updatedWorkOrder;
   }
 
   private async updateEquipmentAssociations(
@@ -733,9 +810,8 @@ export class WorkOrdersService {
       });
 
       for (const detail of supplyDetails) {
-        const inventory = await queryRunner.manager.findOne(Inventory, {
-          where: { insumoId: detail.insumoId },
-        });
+        // CORRECCIÓN: usar inventories[0]
+        const inventory = detail.supply?.inventories?.[0];
 
         if (inventory) {
           const cantidadUsada = Number(detail.cantidadUsada);
@@ -1411,11 +1487,13 @@ export class WorkOrdersService {
     } | null = null;
 
     try {
+      // Verificar que la orden existe
       await this.findOne(ordenId);
 
+      // Buscar el insumo con su inventario - CORRECCIÓN: usar 'inventories' en lugar de 'inventory'
       const supply = await queryRunner.manager.findOne(Supply, {
         where: { insumoId: addSupplyDetailDto.insumoId },
-        relations: ['inventory'],
+        relations: ['inventories', 'unidadMedida'], // 👈 CAMBIADO: 'inventories' en lugar de 'inventory'
       });
 
       if (!supply) {
@@ -1424,55 +1502,81 @@ export class WorkOrdersService {
         );
       }
 
-      if (!supply.inventory) {
+      // CORRECCIÓN: Acceder al primer inventario (o al que corresponda)
+      const inventory = supply.inventories?.[0]; // 👈 CAMBIADO: inventories[0] en lugar de inventory
+
+      if (!inventory) {
         throw new NotFoundException(
           `Inventario para insumo ID ${addSupplyDetailDto.insumoId} no encontrado`,
         );
       }
 
-      const cantidadActual = Number(supply.inventory.cantidadActual);
+      const cantidadActual = Number(inventory.cantidadActual); // 👈 CAMBIADO
       const cantidadSolicitada = Number(addSupplyDetailDto.cantidadUsada);
 
       if (cantidadActual < cantidadSolicitada) {
         throw new ConflictException(
-          `Stock insuficiente. Disponible: ${cantidadActual}, Solicitado: ${cantidadSolicitada}`,
+          `Stock insuficiente para ${supply.nombre}. Disponible: ${cantidadActual} ${supply.unidadMedida?.nombre || ''}, Solicitado: ${cantidadSolicitada}`,
         );
       }
 
+      // Verificar si ya existe un detalle similar
+      const existingDetail = await queryRunner.manager.findOne(SupplyDetail, {
+        where: {
+          ordenId,
+          insumoId: addSupplyDetailDto.insumoId,
+        },
+      });
+
+      if (existingDetail) {
+        // Opcional: actualizar cantidad en lugar de crear nuevo
+        // o simplemente continuar según tu lógica de negocio
+      }
+
+      // Crear el detalle de insumo
       const supplyDetail = queryRunner.manager.create(SupplyDetail, {
-        ...addSupplyDetailDto,
         ordenId,
+        insumoId: addSupplyDetailDto.insumoId,
+        cantidadUsada: cantidadSolicitada,
         costoUnitarioAlMomento:
           addSupplyDetailDto.costoUnitarioAlMomento || supply.valorUnitario,
       });
 
       const savedDetail = await queryRunner.manager.save(supplyDetail);
 
-      supply.inventory.cantidadActual = cantidadActual - cantidadSolicitada;
-      supply.inventory.fechaUltimaActualizacion = new Date();
-      await queryRunner.manager.save(supply.inventory);
+      // Actualizar inventario - CORRECCIÓN: usar inventory en lugar de supply.inventory
+      const nuevoStock = cantidadActual - cantidadSolicitada;
+      inventory.cantidadActual = nuevoStock; // 👈 CAMBIADO
+      inventory.fechaUltimaActualizacion = new Date(); // 👈 CAMBIADO
+      await queryRunner.manager.save(inventory); // 👈 CAMBIADO
 
+      // Actualizar estado del insumo según nuevo stock
       const estadoAnterior = supply.estado;
-      const nuevoStock = supply.inventory.cantidadActual;
-      const estado = this.calculateSupplyStatus(nuevoStock, supply.stockMin);
-
-      await queryRunner.manager.update(
-        Supply,
-        { insumoId: supply.insumoId },
-        { estado },
+      const nuevoEstado = this.calculateSupplyStatus(
+        nuevoStock,
+        supply.stockMin,
       );
 
-      if (
-        estado !== estadoAnterior &&
-        (estado === SupplyStatus.STOCK_BAJO || estado === SupplyStatus.AGOTADO)
-      ) {
-        shouldEmitStockBelowMin = true;
-        belowMinEventPayload = {
-          insumoId: supply.insumoId,
-          nombre: supply.nombre,
-          cantidadActual: Number(nuevoStock),
-          stockMin: supply.stockMin,
-        };
+      if (nuevoEstado !== estadoAnterior) {
+        await queryRunner.manager.update(
+          Supply,
+          { insumoId: supply.insumoId },
+          { estado: nuevoEstado },
+        );
+
+        // Emitir evento si el stock está bajo o agotado
+        if (
+          nuevoEstado === SupplyStatus.STOCK_BAJO ||
+          nuevoEstado === SupplyStatus.AGOTADO
+        ) {
+          shouldEmitStockBelowMin = true;
+          belowMinEventPayload = {
+            insumoId: supply.insumoId,
+            nombre: supply.nombre,
+            cantidadActual: nuevoStock,
+            stockMin: supply.stockMin,
+          };
+        }
       }
 
       await queryRunner.commitTransaction();
@@ -1486,7 +1590,7 @@ export class WorkOrdersService {
         action: 'addSupply',
       });
 
-      // 🔴 WebSocket
+      // WebSocket
       await this.emitWorkOrderUpdated(ordenId);
 
       return savedDetail;
@@ -1568,7 +1672,7 @@ export class WorkOrdersService {
     try {
       const supplyDetail = await queryRunner.manager.findOne(SupplyDetail, {
         where: { detalleInsumoId, ordenId },
-        relations: ['supply', 'supply.inventory'],
+        relations: ['supply', 'supply.inventories'], // 👈 CAMBIADO: inventories
       });
 
       if (!supplyDetail) {
@@ -1577,22 +1681,21 @@ export class WorkOrdersService {
         );
       }
 
-      if (supplyDetail.supply?.inventory) {
+      // CORRECCIÓN: usar inventories[0]
+      const inventory = supplyDetail.supply?.inventories?.[0]; // 👈 CAMBIADO
+
+      if (inventory) {
         const cantidadUsada = Number(supplyDetail.cantidadUsada);
-        const cantidadActual = Number(
-          supplyDetail.supply.inventory.cantidadActual,
-        );
+        inventory.cantidadActual =
+          Number(inventory.cantidadActual) + cantidadUsada;
+        inventory.fechaUltimaActualizacion = new Date();
 
-        supplyDetail.supply.inventory.cantidadActual =
-          cantidadActual + cantidadUsada;
-        supplyDetail.supply.inventory.fechaUltimaActualizacion = new Date();
+        await queryRunner.manager.save(inventory);
 
-        await queryRunner.manager.save(supplyDetail.supply.inventory);
-
-        const nuevoStock = supplyDetail.supply.inventory.cantidadActual;
+        const nuevoStock = inventory.cantidadActual;
         const estado = this.calculateSupplyStatus(
           nuevoStock,
-          supplyDetail.supply.stockMin,
+          supplyDetail.supply?.stockMin || 0,
         );
         await queryRunner.manager.update(
           Supply,
@@ -1602,7 +1705,6 @@ export class WorkOrdersService {
       }
 
       await queryRunner.manager.remove(supplyDetail);
-
       await queryRunner.commitTransaction();
 
       this.eventEmitter.emit('work-order.updated', {
@@ -1610,7 +1712,6 @@ export class WorkOrdersService {
         action: 'removeSupply',
       });
 
-      // 🔴 WebSocket
       await this.emitWorkOrderUpdated(ordenId);
     } catch (error) {
       await queryRunner.rollbackTransaction();
@@ -2008,9 +2109,28 @@ export class WorkOrdersService {
     return result;
   }
 
+  async removeInvoice(ordenId: number): Promise<WorkOrder> {
+    const workOrder = await this.findOne(ordenId);
+
+    workOrder.facturaPdfUrl = undefined;
+    workOrder.estadoFacturacion = BillingStatus.NULL;
+    workOrder.estadoPago = CostStatus.NULL;
+
+    await this.workOrdersRepository.save(workOrder);
+
+    const updated = await this.findOne(ordenId);
+
+    // 🔴 WebSocket
+    this.websocketGateway.emit('workOrders.updated', updated);
+    this.websocketGateway.emit('workOrders.invoiceRemoved', updated);
+
+    return updated;
+  }
+
   async uploadInvoice(
     ordenId: number,
-    file: Express.Multer.File,
+    invoiceUrl: string,
+    estadoPago?: string,
   ): Promise<WorkOrder> {
     const workOrder = await this.findOne(ordenId);
 
@@ -2020,7 +2140,7 @@ export class WorkOrdersService {
       );
     }
 
-    // 🔹 NUEVO: exigir técnicos calificados antes de facturar
+    // Validar que todos los técnicos estén calificados
     if (workOrder.technicians && workOrder.technicians.length > 0) {
       const hasUnrated = workOrder.technicians.some(
         (t) => t.rating === null || t.rating === undefined,
@@ -2032,21 +2152,27 @@ export class WorkOrdersService {
       }
     }
 
-    if (
-      workOrder.estadoFacturacion !== BillingStatus.NOT_BILLED &&
-      workOrder.facturaPdfUrl
-    ) {
-      throw new BadRequestException(
-        'La orden ya tiene un estado de facturación asignado',
-      );
+    // Validar que no tenga ya una factura
+    if (workOrder.facturaPdfUrl) {
+      throw new BadRequestException('La orden ya tiene una factura asociada');
     }
 
-    workOrder.facturaPdfUrl = `/api/uploads/invoices/${file.filename}`;
+    // Actualizar la orden con la URL de Cloudinary
+    workOrder.facturaPdfUrl = invoiceUrl;
     workOrder.estadoFacturacion = BillingStatus.BILLED;
+    workOrder.estadoPago =
+      estadoPago === 'Pagado' ? CostStatus.PAYMENTH : CostStatus.NOT_PAYMENTH;
 
     await this.workOrdersRepository.save(workOrder);
 
     const updated = await this.findOne(ordenId);
+
+    this.eventEmitter.emit('work-order.invoiced', {
+      workOrderId: ordenId,
+      facturaPdfUrl: invoiceUrl,
+      estadoPago,
+      fechaFacturacion: new Date(),
+    });
 
     // 🔴 WebSocket
     this.websocketGateway.emit('workOrders.updated', updated);
@@ -2054,6 +2180,7 @@ export class WorkOrdersService {
 
     return updated;
   }
+
   async existeOrdenParaPlanEnFecha(
     planMantenimientoId: number,
     fechaProgramada: Date,

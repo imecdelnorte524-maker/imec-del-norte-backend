@@ -1,7 +1,9 @@
+// notifications/notifications.module.ts
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Notification } from './entities/notification.entity';
 import { User } from '../users/entities/user.entity';
+import { Client } from '../client/entities/client.entity';
 import { NotificationsService } from './notifications.service';
 import { NotificationsGateway } from './notifications.gateway';
 import { NotificationsController } from './notifications.controller';
@@ -11,7 +13,7 @@ import { ConfigModule } from '@nestjs/config';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Notification, User]),
+    TypeOrmModule.forFeature([Notification, User, Client]),
     ConfigModule,
   ],
   providers: [
@@ -21,6 +23,6 @@ import { ConfigModule } from '@nestjs/config';
     InventoryNotificationsListener,
   ],
   controllers: [NotificationsController],
-  exports: [NotificationsService],
+  exports: [NotificationsService, NotificationsGateway],
 })
 export class NotificationsModule {}

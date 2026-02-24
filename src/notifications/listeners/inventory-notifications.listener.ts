@@ -4,7 +4,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { User } from '../../users/entities/user.entity';
 import { NotificationsService } from '../notifications.service';
-import { NotificationType } from '../enums/notification-types.enum';
+import { NotificationType } from '../../shared/index';
 
 interface StockBelowMinEvent {
   insumoId: number;

@@ -22,6 +22,7 @@ import { MailModule } from '../mail/mail.module';
 import { MaintenanceSchedulerService } from './maintenance-scheduler.service';
 import { AcInspection } from './entities/ac-inspection.entity';
 import { Image } from 'src/images/entities/image.entity';
+import { CloudinaryService } from 'src/images/cloudinary.service';
 
 @Module({
   imports: [
@@ -47,7 +48,7 @@ import { Image } from 'src/images/entities/image.entity';
     MailModule,
   ],
   controllers: [WorkOrdersController],
-  providers: [WorkOrdersService, MaintenanceSchedulerService],
-  exports: [WorkOrdersService, MaintenanceSchedulerService],
+  providers: [WorkOrdersService, MaintenanceSchedulerService, CloudinaryService],
+  exports: [WorkOrdersService, MaintenanceSchedulerService, CloudinaryService],
 })
 export class WorkOrdersModule {}

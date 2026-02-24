@@ -9,7 +9,7 @@ import { Repository } from 'typeorm';
 import { Service } from './entities/service.entity';
 import { CreateServiceDto } from './dto/create-service.dto';
 import { UpdateServiceDto } from './dto/update-service.dto';
-import { ServiceCategory } from './enums/service.enums';
+import { ServiceCategory } from '../shared/index';
 import { WebsocketGateway } from '../websockets/websocket.gateway';
 
 @Injectable()

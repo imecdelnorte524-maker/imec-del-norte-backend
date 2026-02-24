@@ -21,7 +21,7 @@ import {
 import { ImagesService } from './images.service';
 import { UploadImageSwaggerDto } from './dto/upload-image.dto';
 import { Roles } from 'src/common/decorators/roles.decorator';
-import { WorkOrderEvidencePhase } from 'src/work-orders/enums/ac-inspection-phase.enum';
+import { WorkOrderEvidencePhase } from 'src/shared/index';
 
 @ApiTags('Images')
 @Controller('images')

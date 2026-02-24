@@ -13,7 +13,7 @@ import { Role } from '../roles/entities/role.entity';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { MailService } from '../mail/mail.service';
-import { Genero } from './enums/genero.enum';
+import { Genero } from '../shared/index';
 import { WebsocketGateway } from '../websockets/websocket.gateway';
 
 @Injectable()

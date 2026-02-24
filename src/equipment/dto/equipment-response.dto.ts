@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { EquipmentStatus } from '../enums/equipment-status.enum';
-import { ServiceCategory } from '../../services/enums/service.enums';
+import { EquipmentStatus } from '../../shared/index';
+import { ServiceCategory } from '../../shared/index';
 
 // Sub-DTOs para respuesta (similares a los de creación pero con datos reales)
 
@@ -75,6 +75,9 @@ class MotorResponseDto {
 
   @ApiPropertyOptional({ example: '1' })
   numeroFases?: string;
+
+  @ApiPropertyOptional({ example: '#3' })
+  numeroParte?: string;
 
   @ApiPropertyOptional({ example: '19mm' })
   diametroEje?: string;

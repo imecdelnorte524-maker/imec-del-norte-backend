@@ -1,4 +1,3 @@
-// src/inventory/dto/update-inventory.dto.ts
 import { IsOptional, IsNumber, Min, IsString } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
@@ -34,13 +33,4 @@ export class UpdateInventoryDto {
   @IsOptional()
   @IsString({ message: 'La ubicación debe ser una cadena de texto' })
   ubicacion?: string;
-
-  @ApiProperty({
-    example: 'Stock Bajo',
-    description: 'Estado del inventario',
-    required: false,
-  })
-  @IsOptional()
-  @IsString({ message: 'El estado debe ser una cadena de texto' })
-  estado?: string;
 }

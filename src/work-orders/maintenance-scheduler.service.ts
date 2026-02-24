@@ -7,7 +7,7 @@ import { PlanMantenimiento } from '../equipment/entities/plan-mantenimiento.enti
 import { WorkOrdersService } from './work-orders.service';
 import { User } from '../users/entities/user.entity';
 import { MailService } from '../mail/mail.service';
-import { UnidadFrecuencia } from '../equipment/enums/frecuency-unity.enum';
+import { UnidadFrecuencia } from '../shared/index';
 
 function startOfDay(d: Date): Date {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate());

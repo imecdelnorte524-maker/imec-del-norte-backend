@@ -1,7 +1,15 @@
 // src/tools/dto/create-tools.dto.ts
-import { IsNotEmpty, IsString, IsNumber, IsOptional, Min, IsEnum } from 'class-validator';
+import {
+  IsNotEmpty,
+  IsString,
+  IsNumber,
+  IsOptional,
+  Min,
+  IsEnum,
+  MaxLength,
+} from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
-import { ToolType, ToolStatus } from '../../shared/enums/inventory.enum';
+import { ToolType, ToolStatus } from '../../shared/index';
 
 export class CreateToolDto {
   @ApiProperty({
@@ -9,7 +17,9 @@ export class CreateToolDto {
     description: 'Nombre de la herramienta',
   })
   @IsNotEmpty({ message: 'El nombre de la herramienta es requerido' })
-  @IsString({ message: 'El nombre de la herramienta debe ser una cadena de texto' })
+  @IsString({
+    message: 'El nombre de la herramienta debe ser una cadena de texto',
+  })
   nombre: string;
 
   @ApiProperty({
@@ -45,7 +55,9 @@ export class CreateToolDto {
     required: false,
   })
   @IsOptional()
-  @IsString({ message: 'Las características técnicas deben ser una cadena de texto' })
+  @IsString({
+    message: 'Las características técnicas deben ser una cadena de texto',
+  })
   caracteristicasTecnicas?: string;
 
   @ApiProperty({
@@ -76,7 +88,7 @@ export class CreateToolDto {
   estado: ToolStatus;
 
   @ApiProperty({
-    example: 1200000.00,
+    example: 1200000.0,
     description: 'Valor unitario de la herramienta',
   })
   @IsNotEmpty({ message: 'El valor unitario es requerido' })
@@ -92,4 +104,15 @@ export class CreateToolDto {
   @IsOptional()
   @IsNumber({}, { message: 'El ID de la bodega debe ser un número' })
   bodegaId?: number;
+
+  @ApiProperty({
+    example: 'Estante 2A, Sección 1B',
+    description: 'Ubicación detallada en la bodega',
+    required: false,
+    maxLength: 200,
+  })
+  @IsOptional()
+  @IsString({ message: 'La ubicación debe ser una cadena de texto' })
+  @MaxLength(200, { message: 'La ubicación no puede exceder 200 caracteres' })
+  ubicacion?: string;
 }

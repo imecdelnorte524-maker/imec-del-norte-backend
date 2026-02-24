@@ -10,7 +10,7 @@ import { Equipment } from '../equipment/entities/equipment.entity';
 import { Client } from '../client/entities/client.entity';
 import { WebsocketGateway } from '../websockets/websocket.gateway'; // <-- NUEVO
 import { WorkOrder } from 'src/work-orders/entities/work-order.entity';
-import { WorkOrderEvidencePhase } from 'src/work-orders/enums/ac-inspection-phase.enum';
+import { WorkOrderEvidencePhase } from 'src/shared/index';
 
 @Injectable()
 export class ImagesService {

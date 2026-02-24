@@ -8,7 +8,7 @@ import {
   CreateDateColumn,
 } from 'typeorm';
 import { WorkOrder } from './work-order.entity';
-import { AcInspectionPhase } from '../enums/ac-inspection-phase.enum';
+import { AcInspectionPhase } from '../../shared/index';
 import { User } from '../../users/entities/user.entity';
 import { Equipment } from 'src/equipment/entities/equipment.entity';
 

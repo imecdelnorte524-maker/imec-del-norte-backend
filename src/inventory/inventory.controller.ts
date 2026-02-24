@@ -1,4 +1,3 @@
-// src/inventory/inventory.controller.ts
 import {
   Controller,
   Get,
@@ -10,6 +9,7 @@ import {
   UseGuards,
   Query,
   ParseIntPipe,
+  ParseBoolPipe,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -103,10 +103,11 @@ export class InventoryController {
   })
   async findAll(
     @Query('search') search?: string,
-    @Query('bodega') bodegaId?: number,
-    @Query('low-stock') lowStock?: boolean,
-    @Query('stats') stats?: boolean,
-    @Query('deleted') deleted?: boolean,
+    @Query('bodega', new ParseIntPipe({ optional: true })) bodegaId?: number,
+    @Query('low-stock', new ParseBoolPipe({ optional: true }))
+    lowStock?: boolean,
+    @Query('stats', new ParseBoolPipe({ optional: true })) stats?: boolean,
+    @Query('deleted', new ParseBoolPipe({ optional: true })) deleted?: boolean,
     @Query('tipo') tipo?: 'insumo' | 'herramienta',
   ) {
     let data;
@@ -131,14 +132,15 @@ export class InventoryController {
       data = await this.inventoryService.findAll();
     }
 
-    // Filtrar por tipo si se especifica
-    if (tipo) {
-      data = data.filter((item) => item.tipo === tipo);
+    if (tipo && ['insumo', 'herramienta'].includes(tipo)) {
+      data = data.filter((item: Inventory) => item.tipo === tipo);
     }
 
     return {
       message: 'Inventario obtenido exitosamente',
-      data: data.map((inventory) => this.mapToResponseDto(inventory)),
+      data: data.map((inventory: Inventory) =>
+        this.mapToResponseDto(inventory),
+      ),
     };
   }
 
@@ -236,7 +238,7 @@ export class InventoryController {
     const result = await this.inventoryService.removeComplete(id);
 
     let message = 'Registro de inventario eliminado exitosamente';
-    if (result.deletedItem) {
+    if (result?.deletedItem) {
       message += ` y ${
         result.deletedItem.tipo === 'insumo' ? 'insumo' : 'herramienta'
       } asociado`;
@@ -297,15 +299,25 @@ export class InventoryController {
   }
 
   private mapToResponseDto(inventory: Inventory): InventoryResponseDto {
+    let estado: string | undefined;
+
+    if (inventory.insumoId && inventory.supply) {
+      estado = this.inventoryService.getInventoryStatus(
+        Number(inventory.cantidadActual),
+        inventory.supply.stockMin,
+      );
+    }
+
     const response: InventoryResponseDto = {
       inventarioId: inventory.inventarioId,
-      cantidadActual: inventory.cantidadActual,
-      ubicacion: inventory.ubicacion,
+      cantidadActual: Number(inventory.cantidadActual),
+      ubicacion: inventory.ubicacion ?? undefined,
       fechaUltimaActualizacion: inventory.fechaUltimaActualizacion,
       tipo: inventory.tipo,
       nombreItem: inventory.nombreItem,
       unidadMedida: inventory.unidadMedida,
       valorUnitario: inventory.valorUnitario,
+      estado,
     };
 
     if (inventory.bodega) {
@@ -343,6 +355,8 @@ export class InventoryController {
         modelo: inventory.tool.modelo || '',
         estado: inventory.tool.estado,
         valorUnitario: inventory.tool.valorUnitario,
+        caracteristicasTecnicas: inventory.tool.caracteristicasTecnicas || '',
+        observacion: inventory.tool.observacion || '',
       };
     }
 

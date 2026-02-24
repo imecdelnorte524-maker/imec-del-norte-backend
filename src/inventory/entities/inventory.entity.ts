@@ -7,8 +7,8 @@ import {
   UpdateDateColumn,
   DeleteDateColumn,
   Index,
-  OneToOne,
   ManyToOne,
+  OneToOne,
   JoinColumn,
 } from 'typeorm';
 import { Tool } from '../../tools/entities/tool.entity';
@@ -16,39 +16,39 @@ import { Supply } from '../../supplies/entities/supply.entity';
 import { Warehouse } from '../../warehouses/entities/warehouse.entity';
 
 @Entity('inventario')
-@Index('IDX_INVENTARIO_BODEGA_EQUIPO', ['bodega', 'herramientaId'], {
-  unique: true,
-  where: 'herramienta_id IS NOT NULL AND bodega_id IS NOT NULL',
-})
-@Index('IDX_INVENTARIO_BODEGA_INSUMO', ['bodega', 'insumoId'], {
+@Index('UQ_INVENTARIO_INSUMO_BODEGA', ['insumoId', 'bodega'], {
   unique: true,
   where: 'insumo_id IS NOT NULL AND bodega_id IS NOT NULL',
+})
+@Index('UQ_INVENTARIO_HERRAMIENTA', ['herramientaId'], {
+  unique: true,
+  where: 'herramienta_id IS NOT NULL',
 })
 export class Inventory {
   @PrimaryGeneratedColumn({ name: 'inventario_id' })
   inventarioId: number;
 
   @Column({ name: 'insumo_id', nullable: true })
-  insumoId: number;
+  insumoId: number | null;
 
   @Column({ name: 'herramienta_id', nullable: true })
-  herramientaId: number;
+  herramientaId: number | null;
 
-  // RELACIÓN UNO A UNO CON INSUMO (ELIMINACIÓN EN CASCADA)
-  @OneToOne(() => Supply, (supply) => supply.inventory, {
+  // MUCHOS inventarios pueden apuntar al mismo insumo
+  @ManyToOne(() => Supply, (supply) => supply.inventories, {
     nullable: true,
     onDelete: 'CASCADE',
   })
   @JoinColumn({ name: 'insumo_id' })
-  supply: Supply;
+  supply: Supply | null;
 
-  // RELACIÓN UNO A UNO CON HERRAMIENTA (ELIMINACIÓN EN CASCADA)
+  // UNA sola fila de inventario por herramienta
   @OneToOne(() => Tool, (tool) => tool.inventory, {
     nullable: true,
     onDelete: 'CASCADE',
   })
   @JoinColumn({ name: 'herramienta_id' })
-  tool: Tool;
+  tool: Tool | null;
 
   @Column({
     name: 'cantidad_actual',
@@ -60,9 +60,8 @@ export class Inventory {
   cantidadActual: number;
 
   @Column({ name: 'ubicacion', type: 'varchar', length: 200, nullable: true })
-  ubicacion: string;
+  ubicacion: string | null;
 
-  // RELACIÓN CON BODEGA (nullable)
   @ManyToOne(() => Warehouse, (warehouse) => warehouse.inventarios, {
     eager: true,
     nullable: true,
@@ -74,9 +73,9 @@ export class Inventory {
   fechaUltimaActualizacion: Date;
 
   @DeleteDateColumn({ name: 'fecha_eliminacion' })
-  fechaEliminacion: Date;
+  fechaEliminacion: Date | null;
 
-  // Helper methods
+  // Helpers
   get tipo(): string {
     return this.insumoId ? 'insumo' : 'herramienta';
   }
@@ -88,7 +87,7 @@ export class Inventory {
   }
 
   get unidadMedida(): string {
-    if (this.supply && this.supply.unidadMedida) return this.supply.unidadMedida.nombre;
+    if (this.supply?.unidadMedida) return this.supply.unidadMedida.nombre;
     if (this.tool) return 'Unidad';
     return '';
   }
@@ -99,11 +98,24 @@ export class Inventory {
     return 0;
   }
 
-  // Método para calcular estado basado en cantidad
-  calcularEstado(): string {
-    if (this.cantidadActual <= 0) return 'Sin Stock';
-    if (this.cantidadActual <= 5) return 'Stock Crítico';
-    if (this.cantidadActual <= 10) return 'Stock Bajo';
-    return 'Stock Óptimo';
+  // Estado calculado del inventario (para vistas / dashboards)
+  get estadoInventario(): string {
+    if (this.insumoId && this.supply) {
+      const cantidad = Number(this.cantidadActual || 0);
+      const stockMin = this.supply.stockMin || 0;
+
+      if (cantidad <= 0) return 'Sin Stock';
+      if (stockMin > 0 && cantidad <= stockMin) return 'Stock Bajo';
+      if (cantidad <= 5) return 'Stock Crítico';
+      if (cantidad <= 10) return 'Stock Bajo';
+      return 'Stock Óptimo';
+    }
+
+    if (this.herramientaId && this.tool) {
+      // Reutilizamos el estado de la herramienta
+      return this.tool.estado;
+    }
+
+    return '';
   }
 }

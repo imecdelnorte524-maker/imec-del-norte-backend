@@ -8,11 +8,13 @@ import { Inventory } from '../inventory/entities/inventory.entity';
 import { UnitMeasure } from '../unit-measure/entities/unit-measure.entity';
 import { Warehouse } from '../warehouses/entities/warehouse.entity';
 import { ImagesModule } from '../images/images.module';
+import { CommonModule } from '../common/common.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([Supply, Inventory, UnitMeasure, Warehouse]),
     ImagesModule,
+    CommonModule,
   ],
   controllers: [SuppliesController],
   providers: [SuppliesService],

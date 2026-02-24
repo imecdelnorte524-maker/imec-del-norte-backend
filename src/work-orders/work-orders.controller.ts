@@ -21,6 +21,8 @@ import {
   ApiResponse,
   ApiBearerAuth,
   ApiQuery,
+  ApiConsumes,
+  ApiBody,
 } from '@nestjs/swagger';
 import { WorkOrdersService } from './work-orders.service';
 import { CreateWorkOrderDto } from './dto/create-work-order.dto';
@@ -42,18 +44,22 @@ import { WorkOrder } from './entities/work-order.entity';
 import { diskStorage } from 'multer';
 import { FileInterceptor } from '@nestjs/platform-express';
 import * as path from 'path';
-import { ServiceCategory } from 'src/services/enums/service.enums';
+import { ServiceCategory } from 'src/shared/index';
 import { RateTechniciansDto } from './dto/rate-technicians.dto';
 import { SignWorkOrderDto } from './dto/sign-work-order.dto';
-import { AcInspectionPhase } from './enums/ac-inspection-phase.enum';
+import { AcInspectionPhase } from '../shared/index';
 import { CreateAcInspectionDto } from './dto/create-ac-inspection.dto';
+import { CloudinaryService } from 'src/images/cloudinary.service';
 
 @ApiTags('work-orders')
 @Controller('work-orders')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @ApiBearerAuth()
 export class WorkOrdersController {
-  constructor(private readonly workOrdersService: WorkOrdersService) {}
+  constructor(
+    private readonly workOrdersService: WorkOrdersService,
+    private readonly cloudinaryService: CloudinaryService,
+  ) {}
 
   private getRoleName(user: any): string {
     return user?.role?.nombreRol || user?.role || '';
@@ -500,36 +506,99 @@ export class WorkOrdersController {
   @Post(':id/invoice')
   @Roles('Administrador', 'Secretaria')
   @ApiOperation({ summary: 'Subir factura PDF para una orden finalizada' })
-  @UseInterceptors(
-    FileInterceptor('file', {
-      storage: diskStorage({
-        destination: './uploads/invoices',
-        filename: (req, file, cb) => {
-          const uniqueSuffix =
-            Date.now() + '-' + Math.round(Math.random() * 1e9);
-          const ext = path.extname(file.originalname) || '.pdf';
-          cb(null, `invoice-${req.params.id}-${uniqueSuffix}${ext}`);
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        file: {
+          type: 'string',
+          format: 'binary',
         },
-      }),
-    }),
-  )
+      },
+    },
+  })
+  @UseInterceptors(FileInterceptor('file'))
   async uploadInvoice(
     @Param('id', ParseIntPipe) id: number,
     @UploadedFile() file: Express.Multer.File,
+    @Body('estadoPago') estadoPago?: string, // ← Recibir el estado de pago del frontend
   ) {
     if (!file) {
       throw new BadRequestException('No se ha subido ningún archivo');
     }
 
-    const workOrder = await this.workOrdersService.uploadInvoice(id, file);
-    const costs = await this.workOrdersService.calculateTotalCost(id);
+    // Validar que sea un PDF
+    if (file.mimetype !== 'application/pdf') {
+      throw new BadRequestException('El archivo debe ser un PDF');
+    }
+
+    // Validar tamaño máximo (10MB)
+    const maxSize = 10 * 1024 * 1024; // 10MB
+    if (file.size > maxSize) {
+      throw new BadRequestException('El archivo no puede ser mayor a 10MB');
+    }
+
+    try {
+      // Subir a Cloudinary como tipo 'raw' para PDFs
+      const uploadResult = await this.cloudinaryService.upload(
+        file,
+        `invoices/${id}`,
+        'raw',
+      );
+
+      // Actualizar la orden con la URL de Cloudinary y el estado de pago seleccionado
+      const workOrder = await this.workOrdersService.uploadInvoice(
+        id,
+        uploadResult.secure_url,
+        estadoPago, // ← Pasar el estado al servicio
+      );
+
+      const costs = await this.workOrdersService.calculateTotalCost(id);
+
+      return {
+        message: 'Factura subida correctamente a Cloudinary',
+        data: {
+          ...this.mapToResponseDto(workOrder),
+          ...costs,
+          invoiceUrl: uploadResult.secure_url,
+        },
+      };
+    } catch (error) {
+      throw new BadRequestException(
+        `Error al subir la factura: ${error.message}`,
+      );
+    }
+  }
+
+  // Opcional: Endpoint para eliminar factura
+  @Delete(':id/invoice')
+  @Roles('Administrador', 'Secretaria')
+  @ApiOperation({ summary: 'Eliminar factura de una orden' })
+  async deleteInvoice(@Param('id', ParseIntPipe) id: number) {
+    const workOrder = await this.workOrdersService.findOne(id);
+
+    if (!workOrder.facturaPdfUrl) {
+      throw new BadRequestException('La orden no tiene factura asociada');
+    }
+
+    const urlParts = workOrder.facturaPdfUrl.split('/');
+    const publicIdWithExt = urlParts
+      .slice(urlParts.indexOf('upload') + 2)
+      .join('/');
+    const publicId = publicIdWithExt.replace(/\.[^/.]+$/, ''); // Quitar extensión
+
+    try {
+      await this.cloudinaryService.delete(publicId, 'raw');
+    } catch (error) {
+      console.error('Error eliminando de Cloudinary:', error);
+    }
+
+    const updated = await this.workOrdersService.removeInvoice(id);
 
     return {
-      message: 'Factura subida correctamente',
-      data: {
-        ...this.mapToResponseDto(workOrder),
-        ...costs,
-      },
+      message: 'Factura eliminada correctamente',
+      data: this.mapToResponseDto(updated),
     };
   }
 
@@ -782,6 +851,7 @@ export class WorkOrdersController {
         : null,
       comentarios: workOrder.comentarios,
       estadoFacturacion: workOrder.estadoFacturacion,
+      estadoPago: workOrder.estadoPago,
       facturaPdfUrl: workOrder.facturaPdfUrl,
       service: serviceInfo,
       cliente: workOrder.cliente

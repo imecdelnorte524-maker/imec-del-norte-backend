@@ -6,9 +6,10 @@ import {
   IsOptional,
   Min,
   IsEnum,
+  MaxLength,
 } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
-import { SupplyCategory, SupplyStatus } from '../../shared/enums/inventory.enum';
+import { SupplyCategory, SupplyStatus } from '../../shared/index';
 
 export class CreateSupplyDto {
   @ApiProperty({
@@ -34,7 +35,7 @@ export class CreateSupplyDto {
   })
   @IsNotEmpty({ message: 'La unidad de medida es requerida' })
   @IsString({ message: 'La unidad de medida debe ser una cadena de texto' })
-  unidadMedida: string; // Ahora es string, se buscará/creará la entidad
+  unidadMedida: string;
 
   @ApiProperty({
     example: 'Disponible',
@@ -83,4 +84,16 @@ export class CreateSupplyDto {
   @IsOptional()
   @IsNumber({}, { message: 'El ID de la bodega debe ser un número' })
   bodegaId?: number;
+
+  // 👇 NUEVO CAMPO
+  @ApiProperty({
+    example: 'Estante 2A, Sección 1B',
+    description: 'Ubicación detallada en la bodega',
+    required: false,
+    maxLength: 200,
+  })
+  @IsOptional()
+  @IsString({ message: 'La ubicación debe ser una cadena de texto' })
+  @MaxLength(200, { message: 'La ubicación no puede exceder 200 caracteres' })
+  ubicacion?: string;
 }

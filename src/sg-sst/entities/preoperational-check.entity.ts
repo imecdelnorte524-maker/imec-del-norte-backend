@@ -1,6 +1,6 @@
 import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, ManyToOne, JoinColumn } from 'typeorm';
 import { Form } from './form.entity';
-import { CheckValue } from '../enum/check-value.enum';
+import { CheckValue } from '../../shared/index';
 @Entity('preoperational_checks')
 export class PreoperationalCheck {
   @PrimaryGeneratedColumn()

@@ -11,6 +11,7 @@ import {
   Query,
   ParseIntPipe,
   NotFoundException,
+  ParseBoolPipe,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -29,7 +30,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { Tool } from './entities/tool.entity';
-import { ToolEliminationReason } from '../shared/enums/inventory.enum';
+import { ToolEliminationReason } from '../shared/index';
 
 @ApiTags('tools')
 @Controller('tools')
@@ -95,8 +96,8 @@ export class ToolController {
     @Query('search') search?: string,
     @Query('estado') estado?: string,
     @Query('tipo') tipo?: string,
-    @Query('stats') stats?: boolean,
-    @Query('deleted') deleted?: boolean,
+    @Query('stats', new ParseBoolPipe({ optional: true })) stats?: boolean,
+    @Query('deleted', new ParseBoolPipe({ optional: true })) deleted?: boolean,
   ) {
     if (stats) {
       const data = await this.toolService.getEquipmentStats();
