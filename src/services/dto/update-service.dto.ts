@@ -3,7 +3,7 @@ import { PartialType } from '@nestjs/swagger';
 import { CreateServiceDto } from './create-service.dto';
 import { IsOptional, IsString, IsEnum } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
-import { ServiceCategory } from '../enums/service.enums';
+import { ServiceCategory } from '../../shared/index';
 
 export class UpdateServiceDto extends PartialType(CreateServiceDto) {
   @ApiProperty({

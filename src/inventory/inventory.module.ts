@@ -7,10 +7,12 @@ import { Inventory } from './entities/inventory.entity';
 import { Tool } from '../tools/entities/tool.entity';
 import { Supply } from '../supplies/entities/supply.entity';
 import { Warehouse } from '../warehouses/entities/warehouse.entity';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([Inventory, Tool, Supply, Warehouse]),
+    NotificationsModule,
   ],
   controllers: [InventoryController],
   providers: [InventoryService],

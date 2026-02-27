@@ -1,4 +1,3 @@
-// src/work-orders/work-orders.controller.ts
 import {
   Controller,
   Get,
@@ -15,12 +14,17 @@ import {
   BadRequestException,
   UploadedFile,
   UseInterceptors,
+  Res,
+  HttpStatus,
 } from '@nestjs/common';
 import {
   ApiTags,
   ApiOperation,
   ApiResponse,
   ApiBearerAuth,
+  ApiQuery,
+  ApiConsumes,
+  ApiBody,
 } from '@nestjs/swagger';
 import { WorkOrdersService } from './work-orders.service';
 import { CreateWorkOrderDto } from './dto/create-work-order.dto';
@@ -42,16 +46,27 @@ import { WorkOrder } from './entities/work-order.entity';
 import { diskStorage } from 'multer';
 import { FileInterceptor } from '@nestjs/platform-express';
 import * as path from 'path';
-import { ServiceCategory } from 'src/services/enums/service.enums';
+import { ServiceCategory } from 'src/shared/index';
 import { RateTechniciansDto } from './dto/rate-technicians.dto';
 import { SignWorkOrderDto } from './dto/sign-work-order.dto';
+import { AcInspectionPhase } from '../shared/index';
+import { CreateAcInspectionDto } from './dto/create-ac-inspection.dto';
+import { CloudinaryService } from 'src/images/cloudinary.service';
+import { Response } from 'express';
+import { Public } from 'src/common/decorators/public.decorator';
+import { SendWorkOrderReportsDto } from './dto/send-work-order-reports.dto';
+import { SendWorkOrderReportsToClientsDto } from './dto/send-work-order-reports-to-clients.dto';
+import { DownloadWorkOrderReportsDto } from './dto/download-work-order-reports.dto';
 
 @ApiTags('work-orders')
 @Controller('work-orders')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @ApiBearerAuth()
 export class WorkOrdersController {
-  constructor(private readonly workOrdersService: WorkOrdersService) {}
+  constructor(
+    private readonly workOrdersService: WorkOrdersService,
+    private readonly cloudinaryService: CloudinaryService,
+  ) {}
 
   private getRoleName(user: any): string {
     return user?.role?.nombreRol || user?.role || '';
@@ -105,13 +120,25 @@ export class WorkOrdersController {
   @Get()
   @ApiOperation({
     summary:
-      'Obtener órdenes de trabajo (filtradas por rol: técnico/cliente solo ven las suyas)',
+      'Obtener órdenes de trabajo (filtradas por rol: técnico/cliente solo ven las suyas, a menos que se use ?all=true)',
   })
-  async findAll(@Req() req: any) {
+  @ApiQuery({
+    name: 'all',
+    required: false,
+    type: Boolean,
+    description:
+      'Si es true y el usuario es técnico, devuelve todas las órdenes',
+  })
+  async findAll(@Req() req: any, @Query('all') all?: string) {
     const roleName = this.getRoleName(req.user);
+    const showAll = all === 'true';
+
     let data: WorkOrder[];
 
-    if (roleName === 'Técnico') {
+    // Si es técnico y se solicita all=true, devolver todas las órdenes
+    if (roleName === 'Técnico' && showAll) {
+      data = await this.workOrdersService.findAll();
+    } else if (roleName === 'Técnico') {
       data = await this.workOrdersService.getWorkOrdersByTechnician(
         req.user.userId,
       );
@@ -187,7 +214,13 @@ export class WorkOrdersController {
     @Body() dto: UpdateWorkOrderDto,
     @Req() req: any,
   ) {
-    const workOrder = await this.workOrdersService.update(id, dto, req.user);
+    const clientId = req.headers['x-socket-id'] as string;
+    const workOrder = await this.workOrdersService.update(
+      id,
+      dto,
+      req.user,
+      clientId,
+    );
     const costs = await this.workOrdersService.calculateTotalCost(id);
 
     return {
@@ -480,36 +513,99 @@ export class WorkOrdersController {
   @Post(':id/invoice')
   @Roles('Administrador', 'Secretaria')
   @ApiOperation({ summary: 'Subir factura PDF para una orden finalizada' })
-  @UseInterceptors(
-    FileInterceptor('file', {
-      storage: diskStorage({
-        destination: './uploads/invoices',
-        filename: (req, file, cb) => {
-          const uniqueSuffix =
-            Date.now() + '-' + Math.round(Math.random() * 1e9);
-          const ext = path.extname(file.originalname) || '.pdf';
-          cb(null, `invoice-${req.params.id}-${uniqueSuffix}${ext}`);
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        file: {
+          type: 'string',
+          format: 'binary',
         },
-      }),
-    }),
-  )
+      },
+    },
+  })
+  @UseInterceptors(FileInterceptor('file'))
   async uploadInvoice(
     @Param('id', ParseIntPipe) id: number,
     @UploadedFile() file: Express.Multer.File,
+    @Body('estadoPago') estadoPago?: string, // ← Recibir el estado de pago del frontend
   ) {
     if (!file) {
       throw new BadRequestException('No se ha subido ningún archivo');
     }
 
-    const workOrder = await this.workOrdersService.uploadInvoice(id, file);
-    const costs = await this.workOrdersService.calculateTotalCost(id);
+    // Validar que sea un PDF
+    if (file.mimetype !== 'application/pdf') {
+      throw new BadRequestException('El archivo debe ser un PDF');
+    }
+
+    // Validar tamaño máximo (10MB)
+    const maxSize = 10 * 1024 * 1024; // 10MB
+    if (file.size > maxSize) {
+      throw new BadRequestException('El archivo no puede ser mayor a 10MB');
+    }
+
+    try {
+      // Subir a Cloudinary como tipo 'raw' para PDFs
+      const uploadResult = await this.cloudinaryService.upload(
+        file,
+        `invoices/${id}`,
+        'raw',
+      );
+
+      // Actualizar la orden con la URL de Cloudinary y el estado de pago seleccionado
+      const workOrder = await this.workOrdersService.uploadInvoice(
+        id,
+        uploadResult.secure_url,
+        estadoPago, // ← Pasar el estado al servicio
+      );
+
+      const costs = await this.workOrdersService.calculateTotalCost(id);
+
+      return {
+        message: 'Factura subida correctamente a Cloudinary',
+        data: {
+          ...this.mapToResponseDto(workOrder),
+          ...costs,
+          invoiceUrl: uploadResult.secure_url,
+        },
+      };
+    } catch (error) {
+      throw new BadRequestException(
+        `Error al subir la factura: ${error.message}`,
+      );
+    }
+  }
+
+  // Opcional: Endpoint para eliminar factura
+  @Delete(':id/invoice')
+  @Roles('Administrador', 'Secretaria')
+  @ApiOperation({ summary: 'Eliminar factura de una orden' })
+  async deleteInvoice(@Param('id', ParseIntPipe) id: number) {
+    const workOrder = await this.workOrdersService.findOne(id);
+
+    if (!workOrder.facturaPdfUrl) {
+      throw new BadRequestException('La orden no tiene factura asociada');
+    }
+
+    const urlParts = workOrder.facturaPdfUrl.split('/');
+    const publicIdWithExt = urlParts
+      .slice(urlParts.indexOf('upload') + 2)
+      .join('/');
+    const publicId = publicIdWithExt.replace(/\.[^/.]+$/, ''); // Quitar extensión
+
+    try {
+      await this.cloudinaryService.delete(publicId, 'raw');
+    } catch (error) {
+      console.error('Error eliminando de Cloudinary:', error);
+    }
+
+    const updated = await this.workOrdersService.removeInvoice(id);
 
     return {
-      message: 'Factura subida correctamente',
-      data: {
-        ...this.mapToResponseDto(workOrder),
-        ...costs,
-      },
+      message: 'Factura eliminada correctamente',
+      data: this.mapToResponseDto(updated),
     };
   }
 
@@ -565,6 +661,226 @@ export class WorkOrdersController {
     };
   }
 
+  @Post(':id/ac-inspections/before')
+  @Roles('Administrador', 'Técnico', 'Secretaria', 'Supervisor')
+  @ApiOperation({
+    summary:
+      'Registrar inspección inicial (antes del mantenimiento) para aire acondicionado',
+  })
+  async createAcInspectionBefore(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: CreateAcInspectionDto,
+    @Req() req: any,
+  ) {
+    const inspection = await this.workOrdersService.createAcInspection(
+      id,
+      AcInspectionPhase.BEFORE,
+      dto,
+      req.user,
+    );
+
+    return {
+      message: 'Inspección inicial registrada correctamente',
+      data: inspection,
+    };
+  }
+
+  @Post(':id/ac-inspections/after')
+  @Roles('Administrador', 'Técnico', 'Secretaria', 'Supervisor')
+  @ApiOperation({
+    summary:
+      'Registrar inspección final (después del mantenimiento) para aire acondicionado',
+  })
+  async createAcInspectionAfter(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: CreateAcInspectionDto,
+    @Req() req: any,
+  ) {
+    const inspection = await this.workOrdersService.createAcInspection(
+      id,
+      AcInspectionPhase.AFTER,
+      dto,
+      req.user,
+    );
+
+    return {
+      message: 'Inspección final registrada correctamente',
+      data: inspection,
+    };
+  }
+
+  @Get(':id/informe')
+  @Roles('Administrador', 'Supervisor', 'Secretaria', 'Técnico')
+  @ApiOperation({
+    summary: 'Generar informe PDF interno de la orden de trabajo',
+  })
+  async generarInforme(
+    @Param('id', ParseIntPipe) id: number,
+    @Res() res: Response,
+    @Req() req: any,
+  ) {
+    try {
+      const workOrder = await this.workOrdersService.findOne(id);
+      const roleName = this.getRoleName(req.user);
+
+      // Mismas validaciones que en GET /:id
+
+      // Si es Técnico: solo si está asignado
+      if (roleName === 'Técnico') {
+        const isAssigned = workOrder.technicians?.some(
+          (t) => t.tecnicoId === req.user.userId,
+        );
+        if (!isAssigned) {
+          throw new ForbiddenException();
+        }
+      }
+
+      // Por seguridad extra (aunque aquí no incluimos rol Cliente en @Roles)
+      if (roleName === 'Cliente') {
+        const hasAccess = await this.workOrdersService.userHasAccessToEmpresa(
+          req.user.userId,
+          workOrder.clienteEmpresaId,
+        );
+        if (!hasAccess) {
+          throw new ForbiddenException();
+        }
+      }
+
+      const pdfBuffer = await this.workOrdersService.generarInformeOrden(id);
+
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader(
+        'Content-Disposition',
+        `inline; filename="OT-${id}-interno.pdf"`,
+      );
+      res.setHeader('Content-Length', pdfBuffer.length);
+
+      return res.status(HttpStatus.OK).send(pdfBuffer);
+    } catch (error) {
+      return res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
+        error: error.message,
+      });
+    }
+  }
+
+  @Get(':id/informe-client')
+  @Roles('Administrador', 'Supervisor', 'Cliente', 'Secretaria', 'Técnico')
+  @ApiOperation({
+    summary: 'Generar informe PDF versión cliente de la orden de trabajo',
+  })
+  async generarInformeClient(
+    @Param('id', ParseIntPipe) id: number,
+    @Res() res: Response,
+    @Req() req: any,
+  ) {
+    try {
+      const workOrder = await this.workOrdersService.findOne(id);
+      const roleName = this.getRoleName(req.user);
+
+      // Mismas validaciones de acceso que en GET /:id
+      if (roleName === 'Técnico') {
+        const isAssigned = workOrder.technicians?.some(
+          (t) => t.tecnicoId === req.user.userId,
+        );
+        if (!isAssigned) {
+          throw new ForbiddenException();
+        }
+      }
+
+      if (roleName === 'Cliente') {
+        const hasAccess = await this.workOrdersService.userHasAccessToEmpresa(
+          req.user.userId,
+          workOrder.clienteEmpresaId,
+        );
+        if (!hasAccess) {
+          throw new ForbiddenException();
+        }
+      }
+
+      const pdfBuffer =
+        await this.workOrdersService.generarInformeOrdenCliente(id);
+
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader(
+        'Content-Disposition',
+        `inline; filename="Informe-Orden-Servicio-${id}-${workOrder.clienteEmpresa?.nombre}.pdf"`,
+      );
+      res.setHeader('Content-Length', pdfBuffer.length);
+
+      return res.status(HttpStatus.OK).send(pdfBuffer);
+    } catch (error) {
+      return res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
+        error: error.message,
+      });
+    }
+  }
+
+  @Post('send-reports')
+  @Roles('Administrador', 'Supervisor', 'Secretaria', 'Cliente', 'Técnico')
+  @ApiOperation({
+    summary:
+      'Enviar por correo electrónico los informes PDF de varias órdenes de trabajo',
+  })
+  async sendReportsByEmail(
+    @Body() dto: SendWorkOrderReportsDto,
+    @Req() req: any,
+  ) {
+    const result = await this.workOrdersService.sendReportsByEmail(
+      dto,
+      req.user,
+    );
+
+    return {
+      message: 'Informes enviados correctamente',
+      data: result,
+    };
+  }
+
+  @Post('send-reports-to-clients')
+  @Roles('Administrador', 'Supervisor', 'Secretaria')
+  @ApiOperation({
+    summary:
+      'Enviar por correo electrónico informes PDF de órdenes completadas a los clientes (usuarios contacto de cada empresa)',
+  })
+  async sendReportsToClients(
+    @Body() dto: SendWorkOrderReportsToClientsDto,
+    @Req() req: any,
+  ) {
+    const result = await this.workOrdersService.sendReportsToClientsByEmail(
+      dto,
+      req.user,
+    );
+
+    return {
+      message: 'Informes enviados a clientes correctamente',
+      data: result,
+    };
+  }
+
+  @Post('download-reports')
+  @Roles('Administrador', 'Supervisor', 'Secretaria', 'Cliente', 'Técnico')
+  @ApiOperation({
+    summary: 'Descargar informes PDF (o ZIP) de varias órdenes de trabajo',
+  })
+  async downloadReports(
+    @Body() dto: DownloadWorkOrderReportsDto,
+    @Req() req: any,
+    @Res() res: Response,
+  ) {
+    const { buffer, fileName, contentType } =
+      await this.workOrdersService.generateBatchReportsFile(
+        dto.orderIds,
+        dto.reportType,
+        req.user,
+      );
+
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    res.setHeader('Content-Length', buffer.length);
+
+    return res.status(HttpStatus.OK).send(buffer);
+  }
+
   private mapToResponseDto(workOrder: WorkOrder): WorkOrderResponseDto {
     const technicians =
       workOrder.technicians?.map((tech) => ({
@@ -579,7 +895,6 @@ export class WorkOrdersController {
           telefono: tech.technician?.telefono ?? undefined,
           cedula: tech.technician?.cedula ?? undefined,
         },
-        // 🔹 NUEVO
         rating: tech.rating ?? null,
         ratedByUserId: tech.ratedByUserId ?? null,
         ratedAt: tech.ratedAt ?? null,
@@ -605,21 +920,19 @@ export class WorkOrdersController {
       workOrder.equipmentWorkOrders?.map((ewo) => {
         const equipment = ewo.equipment;
 
-        // Área - CORREGIDO: usar 'nombre' en lugar de 'nombreArea'
         let area = null as AreaInfo | null;
         if (equipment?.area && equipment.areaId) {
           area = {
             areaId: equipment.areaId,
-            nombre: equipment.area.nombreArea || '', // 👈 CAMBIADO de 'nombreArea' a 'nombre'
+            nombre: equipment.area.nombreArea || '',
           };
         }
 
-        // Subárea - CORREGIDO: usar 'nombre' en lugar de 'nombreSubArea'
         let subArea = null as SubAreaInfo | null;
         if (equipment?.subArea && equipment.subAreaId) {
           subArea = {
             subAreaId: equipment.subAreaId,
-            nombre: equipment.subArea.nombreSubArea || '', // 👈 CAMBIADO de 'nombreSubArea' a 'nombre'
+            nombre: equipment.subArea.nombreSubArea || '',
           };
         }
 
@@ -657,7 +970,6 @@ export class WorkOrdersController {
         },
       })) || [];
 
-    // CORRECCIÓN: Manejar el caso cuando service es null
     const serviceInfo = workOrder.service
       ? {
           servicioId: workOrder.service.servicioId,
@@ -670,6 +982,39 @@ export class WorkOrdersController {
           categoriaServicio: undefined,
         };
 
+    const acInspections =
+      workOrder.acInspections?.map((insp) => ({
+        id: insp.id,
+        equipmentId: insp.equipmentId,
+        phase: insp.phase,
+        evapTempSupply: insp.evapTempSupply,
+        evapTempReturn: insp.evapTempReturn,
+        evapTempAmbient: insp.evapTempAmbient,
+        evapTempOutdoor: insp.evapTempOutdoor,
+        evapMotorRpm: insp.evapMotorRpm,
+        evapMicrofarads: insp.evapMicrofarads ?? null,
+        condHighPressure: insp.condHighPressure,
+        condLowPressure: insp.condLowPressure,
+        condAmperage: insp.condAmperage,
+        condVoltage: insp.condVoltage,
+        condTempIn: insp.condTempIn,
+        condTempDischarge: insp.condTempDischarge,
+        condMotorRpm: insp.condMotorRpm,
+        condMicrofarads: insp.condMicrofarads ?? null,
+        compressorOhmio: insp.compressorOhmio ?? null,
+        observation: insp.observation ?? null,
+        createdAt: insp.createdAt,
+      })) || [];
+
+    const images =
+      workOrder.images?.map((img) => ({
+        id: img.id,
+        url: img.url,
+        evidencePhase: img.evidencePhase ?? null,
+        observation: img.observation ?? null,
+        createdAt: img.created_at,
+      })) || [];
+
     return {
       ordenId: workOrder.ordenId,
       fechaSolicitud: workOrder.fechaSolicitud,
@@ -677,18 +1022,17 @@ export class WorkOrdersController {
       fechaFinalizacion: workOrder.fechaFinalizacion,
       estado: workOrder.estado,
       tipoServicio: workOrder.tipoServicio ?? null,
-
       maintenanceType: workOrder.maintenanceType
         ? {
             id: workOrder.maintenanceType.id,
             nombre: workOrder.maintenanceType.nombre,
           }
         : null,
-
       comentarios: workOrder.comentarios,
       estadoFacturacion: workOrder.estadoFacturacion,
+      estadoPago: workOrder.estadoPago,
       facturaPdfUrl: workOrder.facturaPdfUrl,
-      service: serviceInfo, // Usar la variable corregida
+      service: serviceInfo,
       cliente: workOrder.cliente
         ? {
             usuarioId: workOrder.cliente.usuarioId,
@@ -723,6 +1067,8 @@ export class WorkOrdersController {
       receivedByPosition: workOrder.receivedByPosition ?? null,
       receivedBySignatureData: workOrder.receivedBySignatureData ?? null,
       receivedAt: workOrder.receivedAt ?? null,
+      acInspections,
+      images,
     };
   }
 }

@@ -1,0 +1,38 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>PDF de Prueba</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        margin: 50px;
+        background-color: white;
+      }
+      h1 {
+        color: #333;
+        font-size: 24px;
+      }
+      p {
+        color: #666;
+        font-size: 16px;
+        line-height: 1.5;
+      }
+      .container {
+        border: 2px solid #007bff;
+        padding: 30px;
+        border-radius: 10px;
+        max-width: 600px;
+        margin: 0 auto;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>¡Hola {{NAME}}!</h1>
+      <p>Este es un PDF generado desde el backend NestJS</p>
+      <p>Fecha de generación: {{DATE}}</p>
+      <p>Este contenido debería ser visible en el PDF.</p>
+    </div>
+  </body>
+</html>

@@ -27,6 +27,14 @@ export class CreateMotorDto {
   numeroFases?: string;
 
   @ApiPropertyOptional({
+    example: '#4',
+    description: 'Número de partes',
+  })
+  @IsOptional()
+  @IsString()
+  numeroParte?: string;
+
+  @ApiPropertyOptional({
     example: '19mm',
     description: 'Diámetro del eje',
   })

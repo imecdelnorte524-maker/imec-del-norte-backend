@@ -104,27 +104,65 @@ export class SequenceHelperService {
   /**
    * Verifica y corrige una secuencia específica
    */
+  // src/common/services/sequence-helper.service.ts
   async checkAndFixSequence(
     tableName: string,
     idColumn: string,
-    sequenceName: string,
+    sequenceName?: string, // 👈 ahora opcional
   ): Promise<SequenceInfo> {
     try {
-      // 1. Verificar si existe la secuencia
-      const sequenceExists = await this.dataSource.query(`
-        SELECT EXISTS (
-          SELECT 1 FROM pg_class 
-          WHERE relkind = 'S' 
-          AND relname = '${sequenceName.replace(/"/g, '')}'
-        ) as exists;
-      `);
+      let seqName = sequenceName;
+
+      // 0. Si no viene sequenceName, intentar detectarla automáticamente
+      if (!seqName) {
+        const result = await this.dataSource.query(
+          `SELECT pg_get_serial_sequence($1, $2) AS seq_name`,
+          [tableName, idColumn],
+        );
+
+        seqName = result[0]?.seq_name; // p.ej. 'public.herramientas_herramienta_id_seq'
+
+        if (!seqName) {
+          this.logger.warn(
+            `⚠️ No se encontró secuencia asociada a ${tableName}.${idColumn}`,
+          );
+          return {
+            tableName,
+            idColumn,
+            sequenceName: '',
+            maxId: 0,
+            lastValue: 0,
+            synchronized: true,
+            corrected: false,
+          };
+        }
+
+        this.logger.log(
+          `🔎 Secuencia detectada para ${tableName}.${idColumn}: ${seqName}`,
+        );
+      }
+
+      // Extraer solo el nombre sin esquema para pg_class (relname)
+      const relName = seqName.split('.').pop();
+
+      // 1. Verificar si existe la secuencia en pg_class
+      const sequenceExists = await this.dataSource.query(
+        `
+      SELECT EXISTS (
+        SELECT 1 FROM pg_class 
+        WHERE relkind = 'S' 
+          AND relname = $1
+      ) as exists;
+      `,
+        [relName],
+      );
 
       if (!sequenceExists[0]?.exists) {
-        this.logger.warn(`⚠️  Secuencia ${sequenceName} no existe`);
+        this.logger.warn(`⚠️  Secuencia ${seqName} no existe`);
         return {
           tableName,
           idColumn,
-          sequenceName,
+          sequenceName: seqName,
           maxId: 0,
           lastValue: 0,
           synchronized: true,
@@ -132,15 +170,15 @@ export class SequenceHelperService {
         };
       }
 
-      // 2. Obtener máximo ID
+      // 2. Obtener máximo ID de la tabla
       const maxIdResult = await this.dataSource.query(
         `SELECT MAX("${idColumn}") as max_id FROM ${tableName}`,
       );
       const maxId = maxIdResult[0]?.max_id ?? 0;
 
-      // 3. Obtener último valor de secuencia
+      // 3. Obtener último valor de la secuencia
       const seqResult = await this.dataSource.query(
-        `SELECT last_value FROM ${sequenceName}`,
+        `SELECT last_value FROM ${seqName}`, // puede ser 'public.xxx' y funciona
       );
       const lastValue = seqResult[0]?.last_value ?? 0;
 
@@ -149,15 +187,14 @@ export class SequenceHelperService {
       let corrected = false;
       let newLastValue = lastValue;
 
-      // 5. Corregir si es necesario
       if (needsFix) {
         newLastValue = maxId + 1;
-        await this.dataSource.query(
-          `SELECT setval('${sequenceName}', $1, true)`,
-          [newLastValue],
-        );
+        await this.dataSource.query(`SELECT setval($1, $2, true)`, [
+          seqName,
+          newLastValue,
+        ]);
         this.logger.log(
-          `✅ Secuencia ${sequenceName} corregida: ${lastValue} → ${newLastValue}`,
+          `✅ Secuencia ${seqName} corregida: ${lastValue} → ${newLastValue}`,
         );
         corrected = true;
       }
@@ -165,14 +202,17 @@ export class SequenceHelperService {
       return {
         tableName,
         idColumn,
-        sequenceName,
+        sequenceName: seqName,
         maxId,
         lastValue: newLastValue,
         synchronized: !needsFix,
         corrected,
       };
     } catch (error: any) {
-      this.logger.error(`Error con secuencia ${sequenceName}:`, error);
+      this.logger.error(
+        `Error con secuencia ${sequenceName || `${tableName}.${idColumn}`}:`,
+        error,
+      );
       throw error;
     }
   }
@@ -253,21 +293,18 @@ export class SequenceHelperService {
   async diagnoseTable(
     tableName: string,
     idColumn: string,
-    sequenceName: string,
+    sequenceName?: string, // 👈 ahora opcional
     uniqueColumns?: string[],
   ): Promise<TableDiagnosis> {
     try {
-      // 1. Verificar secuencia
       const sequence = await this.checkAndFixSequence(
         tableName,
         idColumn,
-        sequenceName,
+        sequenceName, // puede ir undefined
       );
 
-      // 2. Verificar constraints UNIQUE
       const constraintsResult = await this.checkUniqueConstraints(tableName);
 
-      // 3. Buscar datos duplicados
       const duplicateData = uniqueColumns?.length
         ? await this.findDuplicateData(tableName, uniqueColumns)
         : [];

@@ -25,7 +25,7 @@ import { CreatePreoperationalWithSignatureDto } from './dto/create-preoperationa
 import { CreateHeightWorkWithSignatureDto } from './dto/create-height-work-with-signature.dto';
 import { AuthorizeHeightWorkDto } from './dto/authorize-height-work.dto';
 import { CreatePreoperationalChecklistTemplateDto } from './dto/create-preoperational-checklist-template.dto';
-import { FormStatus, FormType } from './enum/check-value.enum';
+import { FormStatus, FormType } from '../shared/index';
 import { RejectFormDto } from './dto/reject-form.dto';
 
 @Controller('sg-sst')
@@ -261,54 +261,54 @@ export class SgSstController {
     }
   }
 
-  @Post('forms/:id/generate-pdf')
-  async generatePdf(@Param('id', ParseIntPipe) formId: number) {
-    try {
-      const pdf = await this.sgSstService.generatePdf(formId);
-      return {
-        success: true,
-        message: 'PDF generado exitosamente',
-        data: {
-          fileName: pdf.fileName,
-          filePath: pdf.filePath,
-          fileSize: pdf.fileSize,
-          generatedAt: pdf.generatedAt,
-        },
-      };
-    } catch (error) {
-      return {
-        success: false,
-        message: 'Error al generar PDF',
-        error: (error as any).message,
-      };
-    }
-  }
+  // @Post('forms/:id/generate-pdf')
+  // async generatePdf(@Param('id', ParseIntPipe) formId: number) {
+  //   try {
+  //     const pdf = await this.sgSstService.generatePdf(formId);
+  //     return {
+  //       success: true,
+  //       message: 'PDF generado exitosamente',
+  //       data: {
+  //         fileName: pdf.fileName,
+  //         filePath: pdf.filePath,
+  //         fileSize: pdf.fileSize,
+  //         generatedAt: pdf.generatedAt,
+  //       },
+  //     };
+  //   } catch (error) {
+  //     return {
+  //       success: false,
+  //       message: 'Error al generar PDF',
+  //       error: (error as any).message,
+  //     };
+  //   }
+  // }
 
-  // DESCARGA DIRECTA DEL PDF
-  @Get('forms/:id/download-pdf')
-  async downloadPdf(
-    @Param('id', ParseIntPipe) formId: number,
-    @Res() res: Response,
-  ) {
-    try {
-      const pdf = await this.sgSstService.generatePdf(formId);
+  // // DESCARGA DIRECTA DEL PDF
+  // @Get('forms/:id/download-pdf')
+  // async downloadPdf(
+  //   @Param('id', ParseIntPipe) formId: number,
+  //   @Res() res: Response,
+  // ) {
+  //   try {
+  //     const pdf = await this.sgSstService.generatePdf(formId);
 
-      res.setHeader('Content-Type', 'application/pdf');
-      res.setHeader(
-        'Content-Disposition',
-        `attachment; filename="${pdf.fileName || 'reporte_sgsst.pdf'}"`,
-      );
-      res.setHeader('Content-Length', pdf.fileSize.toString());
+  //     res.setHeader('Content-Type', 'application/pdf');
+  //     res.setHeader(
+  //       'Content-Disposition',
+  //       `attachment; filename="${pdf.fileName || 'reporte_sgsst.pdf'}"`,
+  //     );
+  //     res.setHeader('Content-Length', pdf.fileSize.toString());
 
-      return res.send(pdf.pdfData);
-    } catch (error) {
-      return res.status(500).json({
-        success: false,
-        message: 'Error al generar/descargar PDF',
-        error: (error as any).message,
-      });
-    }
-  }
+  //     return res.send(pdf.pdfData);
+  //   } catch (error) {
+  //     return res.status(500).json({
+  //       success: false,
+  //       message: 'Error al generar/descargar PDF',
+  //       error: (error as any).message,
+  //     });
+  //   }
+  // }
 
   // ========== ENDPOINTS DE ESTADÍSTICAS ==========
 

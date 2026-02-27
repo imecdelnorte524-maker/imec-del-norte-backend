@@ -8,7 +8,7 @@ import {
 import {
   PreoperationalChecklistTemplate,
 } from './preoperational-checklist-template.entity';
-import { PreoperationalParameterCategory } from '../enum/check-value.enum';
+import { PreoperationalParameterCategory } from '../../shared/index';
 
 @Entity('preoperational_checklist_parameters')
 export class PreoperationalChecklistParameter {

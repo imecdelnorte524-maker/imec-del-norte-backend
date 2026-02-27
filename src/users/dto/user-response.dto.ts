@@ -1,7 +1,7 @@
 // src/users/dto/user-response.dto.ts
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { TipoCedula } from '../enums/Type-cedula.enum';
-import { Genero } from '../enums/genero.enum';
+import { TipoCedula } from '../../shared/index';
+import { Genero } from '../../shared/index';
 
 export class UserResponseDto {
   @ApiProperty({ example: 1, description: 'ID del usuario' })

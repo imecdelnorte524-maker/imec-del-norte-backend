@@ -9,7 +9,6 @@ export class CreateEmergencyOrderDto {
   })
   @IsArray()
   @ArrayMinSize(1)
-  @ArrayMaxSize(5)
   @IsNumber({}, { each: true })
   technicianIds: number[];
 

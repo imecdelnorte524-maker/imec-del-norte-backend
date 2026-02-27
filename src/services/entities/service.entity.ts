@@ -1,7 +1,7 @@
 // src/services/entities/service.entity.ts
 import { Entity, PrimaryGeneratedColumn, Column, OneToMany } from 'typeorm';
 import { WorkOrder } from '../../work-orders/entities/work-order.entity';
-import { ServiceCategory } from '../enums/service.enums';
+import { ServiceCategory } from '../../shared/index';
 
 @Entity('servicios')
 export class Service {

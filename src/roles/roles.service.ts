@@ -11,7 +11,7 @@ import { Role } from './entities/role.entity';
 import { Module as ModuleEntity } from '../modules/entities/module.entity';
 import { CreateRoleDto } from './dto/create-role.dto';
 import { UpdateRoleDto } from './dto/update-role.dto';
-import { WebsocketGateway } from '../websockets/websocket.gateway';
+import { NotificationsGateway } from 'src/notifications/notifications.gateway';
 
 @Injectable()
 export class RolesService {
@@ -24,7 +24,7 @@ export class RolesService {
     // Repositorio de módulos para manejar las asociaciones sin necesidad de usar ModulesService
     @InjectRepository(ModuleEntity)
     private modulesRepository: Repository<ModuleEntity>,
-    private readonly websocketGateway: WebsocketGateway,
+    private readonly notificationsGateway: NotificationsGateway,
   ) {
     // Verificar y corregir la secuencia al inicializar el servicio
     this.initializeSequence().catch((error) => {
@@ -128,7 +128,7 @@ export class RolesService {
     try {
       savedRole = await this.rolesRepository.save(role);
       // 🔴 WebSocket
-      this.websocketGateway.emit('roles.created', savedRole);
+      this.notificationsGateway.server.emit('roles.created', savedRole);
 
       return savedRole;
     } catch (error) {
@@ -200,7 +200,7 @@ export class RolesService {
     const updatedRole = await this.findOne(id);
 
     // 🔴 WebSocket
-    this.websocketGateway.emit('roles.updated', updatedRole);
+    this.notificationsGateway.server.emit('roles.updated', updatedRole);
 
     return updatedRole;
   }
@@ -227,7 +227,7 @@ export class RolesService {
 
     await this.rolesRepository.remove(role);
     // 🔴 WebSocket
-    this.websocketGateway.emit('roles.deleted', { id });
+    this.notificationsGateway.server.emit('roles.deleted', { id });
   }
 
   /**
@@ -347,7 +347,7 @@ export class RolesService {
     role.modules = modules;
     const saved = await this.rolesRepository.save(role);
     // 🔴 WebSocket
-    this.websocketGateway.emit('roles.updated', saved);
+    this.notificationsGateway.server.emit('roles.updated', saved);
 
     return saved;
   }
@@ -394,7 +394,7 @@ export class RolesService {
     role.modules = (role.modules || []).filter((m) => m.moduloId !== moduloId);
     const saved = await this.rolesRepository.save(role);
     // 🔴 WebSocket
-    this.websocketGateway.emit('roles.updated', saved);
+    this.notificationsGateway.server.emit('roles.updated', saved);
 
     return saved;
   }

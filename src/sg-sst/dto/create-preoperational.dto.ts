@@ -9,7 +9,7 @@ import {
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
-import { CheckValue } from '../enum/check-value.enum';
+import { CheckValue } from '../../shared/index';
 
 export class PreoperationalCheckDto {
   @ApiProperty({ description: 'Parámetro a verificar', example: 'Estado de bisagras' })

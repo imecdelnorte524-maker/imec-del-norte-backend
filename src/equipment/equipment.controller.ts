@@ -14,6 +14,7 @@ import {
   BadRequestException,
   UploadedFile,
   UseInterceptors,
+  ForbiddenException,
 } from '@nestjs/common';
 import { Request, Response } from 'express';
 import {
@@ -34,6 +35,7 @@ import { Equipment } from './entities/equipment.entity';
 import { EquipmentDocumentsService } from './equipment-documents.service';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
+import { Public } from '../common/decorators/public.decorator';
 
 @ApiTags('equipment')
 @Controller('equipment')
@@ -283,6 +285,72 @@ export class EquipmentController {
     return { message: 'Documento subido', data: saved };
   }
 
+  @Get('export/inventory-equipment')
+  async exportInventory(
+    @Res() res: Response,
+    @Query('clientId') clientId?: number,
+  ) {
+    const buffer = await this.equipmentService.generateEquipmentInventoryExcel(
+      clientId ? Number(clientId) : undefined,
+    );
+
+    res.setHeader(
+      'Content-Type',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    );
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="INVENTARIO-EQUIPOS.xlsx"`,
+    );
+    res.send(buffer);
+  }
+
+  @Get(':id/history-pdf')
+  @Public()
+  @ApiOperation({
+    summary: 'Generar PDF con historial completo del equipo',
+    description:
+      'Genera un PDF con información del equipo, componentes, plan de mantenimiento y todas las órdenes de trabajo asociadas',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'PDF generado exitosamente',
+    content: {
+      'application/pdf': { schema: { type: 'string', format: 'binary' } },
+    },
+  })
+  async generateHistoryPdf(
+    @Param('id', ParseIntPipe) id: number,
+    @Res() res: Response,
+    @Req() req: any,
+  ) {
+    // Verificar permisos (similar a otros endpoints)
+    const roleName = this.getRoleName(req.user);
+
+    if (roleName === 'Cliente') {
+      const empresaIds = await this.equipmentService.getClientEmpresaIdsForUser(
+        req.user.userId,
+      );
+      const equipment = await this.equipmentService.findOne(id);
+
+      if (!empresaIds.includes(equipment.clientId)) {
+        throw new ForbiddenException('No tiene acceso a este equipo');
+      }
+    }
+
+    const pdfBuffer =
+      await this.equipmentService.generateEquipmentHistoryPdf(id);
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="historial-equipo-${id}.pdf"`,
+    );
+    res.setHeader('Content-Length', pdfBuffer.length);
+
+    res.send(pdfBuffer);
+  }
+
   // ===== tu mapToResponseDto igual (no lo toqué) =====
   private mapToResponseDto(equipment: Equipment): EquipmentResponseDto {
     const workOrders =
@@ -339,6 +407,15 @@ export class EquipmentController {
           createdAt: img.created_at.toISOString(),
         })) ?? [],
       evaporators: equipment.evaporators?.map((evap) => ({
+        airConditionerTypeEvapId: evap.airConditionerTypeEvapId,
+        airConditionerTypeEvap: evap.airConditionerTypeEvap
+          ? {
+              id: evap.airConditionerTypeEvap.id,
+              name: evap.airConditionerTypeEvap.name,
+              hasEvaporator: evap.airConditionerTypeEvap.hasEvaporator,
+              hasCondenser: evap.airConditionerTypeEvap.hasCondenser,
+            }
+          : undefined,
         marca: evap.marca,
         modelo: evap.modelo,
         serial: evap.serial,
@@ -348,6 +425,7 @@ export class EquipmentController {
           amperaje: m.amperaje,
           voltaje: m.voltaje,
           numeroFases: m.numeroFases,
+          numeroparte: m.numeroParte,
           diametroEje: m.diametroEje,
           tipoEje: m.tipoEje,
           rpm: m.rpm,
@@ -373,6 +451,7 @@ export class EquipmentController {
           amperaje: m.amperaje,
           voltaje: m.voltaje,
           numeroFases: m.numeroFases,
+          numeroParte: m.numeroParte,
           diametroEje: m.diametroEje,
           tipoEje: m.tipoEje,
           rpm: m.rpm,

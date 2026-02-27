@@ -8,8 +8,8 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { ServiceCategory } from '../../services/enums/service.enums';
-import { EquipmentStatus } from '../enums/equipment-status.enum';
+import { ServiceCategory } from '../../shared/index';
+import { EquipmentStatus } from '../../shared/index';
 import { Type } from 'class-transformer';
 import { CreateEvaporatorDto } from './create-evaporator.dto';
 import { CreateCondenserDto } from './create-condenser.dto';

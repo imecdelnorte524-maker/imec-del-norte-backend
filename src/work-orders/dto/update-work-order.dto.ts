@@ -13,8 +13,9 @@ import {
   IsBoolean,
 } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
-import { WorkOrderStatus } from '../enums/work-order-status.enum';
-import { BillingStatus } from '../enums/billing-status.enum';
+import { WorkOrderStatus } from '../../shared/index';
+import { BillingStatus } from '../../shared/index';
+import { CostStatus } from '../../shared/index';
 
 export class UpdateWorkOrderDto extends PartialType(CreateWorkOrderDto) {
   @ApiProperty({ required: false })
@@ -55,7 +56,17 @@ export class UpdateWorkOrderDto extends PartialType(CreateWorkOrderDto) {
   })
   @IsOptional()
   @IsEnum(BillingStatus)
-  estadoFacturacion?: null | undefined;
+  estadoFacturacion?: BillingStatus | null;
+
+  @ApiProperty({
+    description: 'Estado de Pago facturación (solo Admin/Secretaria)',
+    enum: BillingStatus,
+    required: false,
+    nullable: true,
+  })
+  @IsOptional()
+  @IsEnum(CostStatus)
+  estadoPago?: CostStatus | null;
 
   @ApiProperty({
     example: [1, 2],

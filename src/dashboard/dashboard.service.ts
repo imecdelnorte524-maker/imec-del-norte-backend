@@ -2,8 +2,8 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { WorkOrder } from '../work-orders/entities/work-order.entity';
-import { WorkOrderStatus } from '../work-orders/enums/work-order-status.enum';
-import { BillingStatus } from '../work-orders/enums/billing-status.enum';
+import { WorkOrderStatus } from '../shared/index';
+import { BillingStatus } from '../shared/index';
 import { WorkOrdersService } from '../work-orders/work-orders.service';
 
 interface DashboardFilters {

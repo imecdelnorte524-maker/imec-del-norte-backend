@@ -9,7 +9,7 @@ import { Repository } from 'typeorm';
 import { CloudinaryService } from '../images/cloudinary.service';
 import { Equipment } from './entities/equipment.entity';
 import { EquipmentDocument } from './entities/equipment-document.entity';
-import { WebsocketGateway } from '../websockets/websocket.gateway';
+import { NotificationsGateway } from 'src/notifications/notifications.gateway';
 
 @Injectable()
 export class EquipmentDocumentsService {
@@ -19,7 +19,7 @@ export class EquipmentDocumentsService {
     @InjectRepository(Equipment)
     private readonly equipmentRepo: Repository<Equipment>,
     private readonly cloudinary: CloudinaryService,
-    private readonly websocketGateway: WebsocketGateway,
+    private readonly notificationsGateway: NotificationsGateway,
   ) {}
 
   private ensurePdf(file: Express.Multer.File) {
@@ -97,7 +97,7 @@ export class EquipmentDocumentsService {
 
     // websocket
     const docs = await this.listByEquipment(equipmentId);
-    this.websocketGateway.emit('equipment.documentsUpdated', {
+    this.notificationsGateway.server.emit('equipment.documentsUpdated', {
       equipmentId,
       documents: docs,
     });
@@ -129,7 +129,7 @@ export class EquipmentDocumentsService {
 
     if (equipmentId) {
       const docs = await this.listByEquipment(equipmentId);
-      this.websocketGateway.emit('equipment.documentsUpdated', {
+      this.notificationsGateway.server.emit('equipment.documentsUpdated', {
         equipmentId,
         documents: docs,
       });
@@ -150,7 +150,7 @@ export class EquipmentDocumentsService {
     await Promise.all(docs.map((d) => this.cloudinary.delete(d.public_id, 'raw')));
     await this.docRepo.remove(docs);
 
-    this.websocketGateway.emit('equipment.documentsUpdated', {
+    this.notificationsGateway.server.emit('equipment.documentsUpdated', {
       equipmentId,
       documents: [],
     });

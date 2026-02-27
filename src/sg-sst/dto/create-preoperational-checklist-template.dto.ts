@@ -11,7 +11,7 @@ import {
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
-import { PreoperationalParameterCategory } from '../enum/check-value.enum';
+import { PreoperationalParameterCategory } from '../../shared/index';
 
 export class CreatePreoperationalChecklistParameterDto {
   @ApiProperty({

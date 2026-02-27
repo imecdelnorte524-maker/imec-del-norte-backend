@@ -33,6 +33,9 @@ export class ClientResponseDto {
   @ApiProperty({ example: '900123456-7', description: 'NIT del cliente' })
   nit: string;
 
+  @ApiProperty({ example: 7, description: 'Este es el digito de verificación' })
+  verification_digit?: number;
+
   @ApiProperty({
     example: 'Calle 123 #45-67',
     description: 'Dirección base',

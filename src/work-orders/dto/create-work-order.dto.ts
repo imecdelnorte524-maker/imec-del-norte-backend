@@ -12,9 +12,10 @@ import {
   IsBoolean,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { BillingStatus } from '../enums/billing-status.enum';
-import { WorkOrderStatus } from '../enums/work-order-status.enum';
-import { ServiceRequestType } from '../enums/service-request-type.enum';
+import { BillingStatus } from '../../shared/index';
+import { WorkOrderStatus } from '../../shared/index';
+import { ServiceRequestType } from '../../shared/index';
+import { CostStatus } from '../../shared/index';
 
 export class CreateWorkOrderDto {
   @ApiProperty({ example: 1 })
@@ -113,7 +114,16 @@ export class CreateWorkOrderDto {
     default: null,
   })
   @IsOptional()
-  estadoFacturacion?: null;
+  estadoFacturacion?: BillingStatus | null;
+
+  @ApiPropertyOptional({
+    description: 'Estado de Pago de la Factura - siempre null al crear',
+    enum: CostStatus,
+    nullable: true,
+    default: null,
+  })
+  @IsOptional()
+  estadoPago?: CostStatus | null;
 
   @ApiProperty({
     description: 'Indica si es una orden de emergencia',

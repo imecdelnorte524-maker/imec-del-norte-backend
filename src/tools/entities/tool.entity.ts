@@ -11,8 +11,8 @@ import {
 } from 'typeorm';
 import { Inventory } from '../../inventory/entities/inventory.entity';
 import { ToolDetail } from '../../work-orders/entities/tool-detail.entity';
-import { ToolStatus, ToolType } from '../../shared/enums/inventory.enum';
-import { ToolEliminationReason } from '../../shared/enums/inventory.enum';
+import { ToolStatus, ToolType } from '../../shared/index';
+import { ToolEliminationReason } from '../../shared/index';
 import { Image } from '../../images/entities/image.entity';
 
 @Entity('herramientas')
@@ -32,11 +32,11 @@ export class Tool {
   @Column({ type: 'varchar', length: 100, nullable: true })
   modelo: string | null;
 
-  @Column({ 
-    name: 'caracteristicas_tecnicas', 
-    type: 'varchar', 
-    length: 255, 
-    nullable: true 
+  @Column({
+    name: 'caracteristicas_tecnicas',
+    type: 'varchar',
+    length: 255,
+    nullable: true,
   })
   caracteristicasTecnicas: string | null;
 
@@ -74,19 +74,19 @@ export class Tool {
   })
   motivoEliminacion: ToolEliminationReason | null;
 
-  @Column({ 
-    name: 'observacion_eliminacion', 
-    type: 'varchar', 
-    length: 500, 
-    nullable: true 
+  @Column({
+    name: 'observacion_eliminacion',
+    type: 'varchar',
+    length: 500,
+    nullable: true,
   })
   observacionEliminacion: string | null;
 
-  @Column({ 
-    name: 'valor_unitario', 
-    type: 'decimal', 
-    precision: 10, 
-    scale: 2 
+  @Column({
+    name: 'valor_unitario',
+    type: 'decimal',
+    precision: 10,
+    scale: 2,
   })
   valorUnitario: number;
 
@@ -95,13 +95,9 @@ export class Tool {
 
   @OneToOne(() => Inventory, (inventory) => inventory.tool, {
     cascade: ['insert', 'update'],
-    onDelete: 'CASCADE',
   })
-  @JoinColumn({ name: 'inventario_id' })
   inventory: Inventory | null;
 
-  @OneToOne(() => ToolDetail, (toolDetail) => toolDetail.tool, {
-    nullable: true,
-  })
-  toolDetails: ToolDetail | null;
+  @OneToMany(() => ToolDetail, (toolDetail) => toolDetail.tool)
+  toolDetails: ToolDetail[];
 }

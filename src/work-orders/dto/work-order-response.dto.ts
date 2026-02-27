@@ -1,9 +1,14 @@
 // src/work-orders/dto/work-order-response.dto.ts
 import { ApiProperty } from '@nestjs/swagger';
-import { WorkOrderStatus } from '../enums/work-order-status.enum';
-import { ServiceCategory } from '../../services/enums/service.enums';
-import { BillingStatus } from '../enums/billing-status.enum';
-import { ServiceRequestType } from '../enums/service-request-type.enum';
+import { WorkOrderStatus } from '../../shared/index';
+import { ServiceCategory } from '../../shared/index';
+import { BillingStatus } from '../../shared/index';
+import { ServiceRequestType } from '../../shared/index';
+import {
+  AcInspectionPhase,
+  WorkOrderEvidencePhase,
+} from '../../shared/index';
+import { CostStatus } from '../../shared/index';
 
 export class ServiceInfo {
   @ApiProperty({ example: 1 })
@@ -206,6 +211,90 @@ export class PauseInfo {
   @ApiProperty({ type: UserInfo })
   user: UserInfo;
 }
+export class AcInspectionInfo {
+  @ApiProperty()
+  id: number;
+
+  @ApiProperty()
+  equipmentId: number;
+
+  @ApiProperty({ enum: AcInspectionPhase })
+  phase: AcInspectionPhase;
+
+  // Evaporadora
+  @ApiProperty()
+  evapTempSupply: number;
+
+  @ApiProperty()
+  evapTempReturn: number;
+
+  @ApiProperty()
+  evapTempAmbient: number;
+
+  @ApiProperty()
+  evapTempOutdoor: number;
+
+  @ApiProperty()
+  evapMotorRpm: number;
+
+  @ApiProperty({ required: false, nullable: true })
+  evapMicrofarads?: number | null;
+
+  // Condensadora
+  @ApiProperty()
+  condHighPressure: number;
+
+  @ApiProperty()
+  condLowPressure: number;
+
+  @ApiProperty()
+  condAmperage: number;
+
+  @ApiProperty()
+  condVoltage: number;
+
+  @ApiProperty()
+  condTempIn: number;
+
+  @ApiProperty()
+  condTempDischarge: number;
+
+  @ApiProperty()
+  condMotorRpm: number;
+
+  @ApiProperty({ required: false, nullable: true })
+  condMicrofarads?: number | null;
+
+  @ApiProperty({ required: false, nullable: true })
+  compressorOhmio?: number | null;
+
+  @ApiProperty({ required: false, nullable: true })
+  observation?: string | null;
+
+  @ApiProperty()
+  createdAt: Date;
+}
+
+export class WorkOrderImageInfo {
+  @ApiProperty()
+  id: number;
+
+  @ApiProperty()
+  url: string;
+
+  @ApiProperty({
+    enum: WorkOrderEvidencePhase,
+    required: false,
+    nullable: true,
+  })
+  evidencePhase?: WorkOrderEvidencePhase | null;
+
+  @ApiProperty({ required: false, nullable: true })
+  observation?: string | null;
+
+  @ApiProperty()
+  createdAt: Date;
+}
 
 export class WorkOrderResponseDto {
   @ApiProperty({ example: 1 })
@@ -268,6 +357,9 @@ export class WorkOrderResponseDto {
   @ApiProperty({ enum: BillingStatus, nullable: true })
   estadoFacturacion: BillingStatus | null;
 
+  @ApiProperty({ enum: CostStatus, nullable: true })
+  estadoPago: CostStatus | null;
+
   @ApiProperty({ required: false, nullable: true })
   facturaPdfUrl?: string | null;
 
@@ -300,4 +392,10 @@ export class WorkOrderResponseDto {
     nullable: true,
   })
   receivedAt?: Date | null;
+
+  @ApiProperty({ type: [AcInspectionInfo], required: false })
+  acInspections?: AcInspectionInfo[];
+
+  @ApiProperty({ type: [WorkOrderImageInfo], required: false })
+  images?: WorkOrderImageInfo[];
 }

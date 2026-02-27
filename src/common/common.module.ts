@@ -5,6 +5,6 @@ import { SequenceHelperService } from './services/sequence-helper.service';
 @Global()
 @Module({
   providers: [SequenceHelperService],
-  exports: [SequenceHelperService], // <-- Exportar
+  exports: [SequenceHelperService],
 })
 export class CommonModule {}

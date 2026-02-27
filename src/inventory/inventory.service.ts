@@ -1,4 +1,3 @@
-// src/inventory/inventory.service.ts
 import {
   Injectable,
   NotFoundException,
@@ -14,9 +13,9 @@ import { Supply } from '../supplies/entities/supply.entity';
 import { Warehouse } from '../warehouses/entities/warehouse.entity';
 import { CreateInventoryDto } from './dto/create-inventory.dto';
 import { UpdateInventoryDto } from './dto/update-inventory.dto';
-import { SupplyStatus, ToolStatus } from '../shared/enums';
-import { WebsocketGateway } from '../websockets/websocket.gateway'; // <-- NUEVO
-
+import { SupplyStatus } from '../shared';
+import { NotificationsGateway } from 'src/notifications/notifications.gateway';
+import { buildInventoryExcel } from '../../templates/excel/inventory-inventory.template';
 @Injectable()
 export class InventoryService {
   private readonly logger = new Logger(InventoryService.name);
@@ -31,7 +30,7 @@ export class InventoryService {
     @InjectRepository(Warehouse)
     private warehouseRepository: Repository<Warehouse>,
     private dataSource: DataSource,
-    private readonly websocketGateway: WebsocketGateway,
+    private readonly notificationsGateway: NotificationsGateway,
   ) {}
 
   async create(createInventoryDto: CreateInventoryDto): Promise<Inventory> {
@@ -40,7 +39,6 @@ export class InventoryService {
     await queryRunner.startTransaction();
 
     try {
-      // Validar que solo se proporcione insumoId o herramientaId, no ambos
       if (createInventoryDto.insumoId && createInventoryDto.herramientaId) {
         throw new BadRequestException(
           'Solo se puede proporcionar insumoId o herramientaId, no ambos',
@@ -53,7 +51,6 @@ export class InventoryService {
         );
       }
 
-      // Buscar Bodega si se proporciona bodegaId
       let bodega: Warehouse | null = null;
       if (createInventoryDto.bodegaId) {
         bodega = await queryRunner.manager.findOne(Warehouse, {
@@ -69,8 +66,117 @@ export class InventoryService {
       let supply: Supply | null = null;
       let tool: Tool | null = null;
 
-      // Verificar si el insumo existe
+      let existingInventory: Inventory | null = null;
+
+      if (createInventoryDto.herramientaId) {
+        existingInventory = await queryRunner.manager.findOne(Inventory, {
+          where: { herramientaId: createInventoryDto.herramientaId },
+        });
+
+        if (existingInventory) {
+          this.logger.warn(
+            `⚠️ La herramienta ${createInventoryDto.herramientaId} ya tiene inventario. Actualizando...`,
+          );
+
+          if (bodega) existingInventory.bodega = bodega;
+          if (createInventoryDto.ubicacion !== undefined) {
+            existingInventory.ubicacion = createInventoryDto.ubicacion ?? null;
+          }
+          if (createInventoryDto.cantidadActual !== undefined) {
+            if (createInventoryDto.cantidadActual !== 1) {
+              throw new BadRequestException(
+                'Las herramientas siempre deben tener cantidad 1 en inventario',
+              );
+            }
+            existingInventory.cantidadActual =
+              createInventoryDto.cantidadActual;
+          }
+          existingInventory.fechaUltimaActualizacion = new Date();
+
+          const updatedInventory =
+            await queryRunner.manager.save(existingInventory);
+          await queryRunner.commitTransaction();
+
+          const fullInventory = await this.findOne(
+            updatedInventory.inventarioId,
+          );
+          this.notificationsGateway.server.emit(
+            'inventory.updated',
+            fullInventory,
+          );
+
+          return fullInventory;
+        }
+
+        tool = await queryRunner.manager.findOne(Tool, {
+          where: { herramientaId: createInventoryDto.herramientaId },
+        });
+        if (!tool) {
+          throw new NotFoundException(
+            `Herramienta con ID ${createInventoryDto.herramientaId} no encontrada`,
+          );
+        }
+      }
+
       if (createInventoryDto.insumoId) {
+        const whereCondition: any = {
+          insumoId: createInventoryDto.insumoId,
+        };
+
+        if (bodega) {
+          whereCondition.bodega = { bodegaId: bodega.bodegaId };
+        } else {
+          whereCondition.bodega = IsNull();
+        }
+
+        existingInventory = await queryRunner.manager.findOne(Inventory, {
+          where: whereCondition,
+        });
+
+        if (existingInventory) {
+          this.logger.warn(
+            `⚠️ El insumo ${createInventoryDto.insumoId} ya tiene inventario en esta bodega. Actualizando...`,
+          );
+
+          if (createInventoryDto.ubicacion !== undefined) {
+            existingInventory.ubicacion = createInventoryDto.ubicacion ?? null;
+          }
+          if (createInventoryDto.cantidadActual !== undefined) {
+            existingInventory.cantidadActual =
+              Number(existingInventory.cantidadActual) +
+              Number(createInventoryDto.cantidadActual);
+          }
+          existingInventory.fechaUltimaActualizacion = new Date();
+
+          const updatedInventory =
+            await queryRunner.manager.save(existingInventory);
+
+          const supplyToUpdate = await queryRunner.manager.findOne(Supply, {
+            where: { insumoId: createInventoryDto.insumoId },
+          });
+          if (supplyToUpdate) {
+            const supplyEstado = this.calculateSupplyStatus(
+              Number(updatedInventory.cantidadActual),
+              supplyToUpdate.stockMin,
+            );
+            await queryRunner.manager.update(Supply, supplyToUpdate.insumoId, {
+              estado: supplyEstado as SupplyStatus,
+            });
+          }
+
+          await queryRunner.commitTransaction();
+
+          const fullInventory = await this.findOne(
+            updatedInventory.inventarioId,
+          );
+          this.notificationsGateway.server.emit(
+            'inventory.updated',
+            fullInventory,
+          );
+
+          return fullInventory;
+        }
+
         supply = await queryRunner.manager.findOne(Supply, {
           where: { insumoId: createInventoryDto.insumoId },
           relations: ['unidadMedida'],
@@ -82,73 +188,25 @@ export class InventoryService {
         }
       }
 
-      // Verificar si la herramienta existe
-      if (createInventoryDto.herramientaId) {
-        tool = await queryRunner.manager.findOne(Tool, {
-          where: { herramientaId: createInventoryDto.herramientaId },
-        });
-        if (!tool) {
-          throw new NotFoundException(
-            `Herramienta con ID ${createInventoryDto.herramientaId} no encontrada`,
-          );
-        }
-      }
-
-      // Verificar si ya existe un registro de inventario para este item en la misma bodega
-      if (bodega) {
-        let existingItem: Inventory | null = null;
-
-        if (createInventoryDto.insumoId) {
-          existingItem = await queryRunner.manager.findOne(Inventory, {
-            where: {
-              insumoId: createInventoryDto.insumoId,
-              bodega: { bodegaId: bodega.bodegaId },
-            },
-          });
-        } else if (createInventoryDto.herramientaId) {
-          existingItem = await queryRunner.manager.findOne(Inventory, {
-            where: {
-              herramientaId: createInventoryDto.herramientaId,
-              bodega: { bodegaId: bodega.bodegaId },
-            },
-          });
-        }
-
-        if (existingItem) {
-          throw new ConflictException(
-            `Ya existe un registro de inventario para este ${
-              createInventoryDto.insumoId ? 'insumo' : 'herramienta'
-            } en la bodega "${bodega.nombre}"`,
-          );
-        }
-      }
-
-      // Calcular cantidad inicial
       const cantidadInicial = createInventoryDto.cantidadActual || 0;
 
-      // Para herramientas, la cantidad siempre debe ser 1
       if (tool && cantidadInicial !== 1) {
         throw new BadRequestException(
           'Las herramientas siempre deben tener cantidad 1 en inventario',
         );
       }
 
-      // Calcular estado inicial
-      const estado = this.calcularEstado(cantidadInicial, supply?.stockMin);
-
-      // Crear el registro de inventario
       const inventoryData: Partial<Inventory> = {
-        insumoId: createInventoryDto.insumoId,
-        herramientaId: createInventoryDto.herramientaId,
+        insumoId: createInventoryDto.insumoId ?? null,
+        herramientaId: createInventoryDto.herramientaId ?? null,
         cantidadActual: cantidadInicial,
-        ubicacion: createInventoryDto.ubicacion || '',
-        bodega: bodega || undefined,
+        ubicacion: createInventoryDto.ubicacion ?? null,
+        bodega: bodega || null,
         fechaUltimaActualizacion: new Date(),
       };
 
       const inventory = queryRunner.manager.create(Inventory, inventoryData);
 
-      // Asignar relaciones
       if (supply) {
         inventory.supply = supply;
       }
@@ -159,10 +217,9 @@ export class InventoryService {
 
       const savedInventory = await queryRunner.manager.save(inventory);
 
-      // Si es un insumo, actualizar su estado en la entidad Supply
       if (supply && savedInventory.cantidadActual !== undefined) {
         const supplyEstado = this.calculateSupplyStatus(
-          savedInventory.cantidadActual,
+          Number(savedInventory.cantidadActual),
           supply.stockMin,
         );
         await queryRunner.manager.update(Supply, supply.insumoId, {
@@ -174,8 +231,7 @@ export class InventoryService {
 
       const fullInventory = await this.findOne(savedInventory.inventarioId);
 
-      // 🔴 Evento WebSocket
-      this.websocketGateway.emit('inventory.created', fullInventory);
+      this.notificationsGateway.server.emit('inventory.created', fullInventory);
 
       return fullInventory;
     } catch (error) {
@@ -233,7 +289,6 @@ export class InventoryService {
     try {
       const inventory = await this.findOne(id);
 
-      // Validar que no se envíen campos no permitidos
       const camposNoPermitidos = [
         'nombre',
         'valorUnitario',
@@ -250,10 +305,8 @@ export class InventoryService {
         }
       }
 
-      // Actualizar bodega si se proporciona bodegaId
       if (updateInventoryDto.bodegaId !== undefined) {
         if (updateInventoryDto.bodegaId === null) {
-          // Desasignar bodega
           inventory.bodega = null;
         } else {
           const bodega = await queryRunner.manager.findOne(Warehouse, {
@@ -265,7 +318,6 @@ export class InventoryService {
             );
           }
 
-          // Verificar si ya existe otro item igual en esta bodega
           if (inventory.insumoId) {
             const existing = await queryRunner.manager.findOne(Inventory, {
               where: {
@@ -296,16 +348,13 @@ export class InventoryService {
         }
       }
 
-      // Actualizar otros campos
       const updateData: Partial<Inventory> = {};
 
       if (updateInventoryDto.cantidadActual !== undefined) {
-        // Validar que la cantidad no sea negativa
         if (updateInventoryDto.cantidadActual < 0) {
           throw new BadRequestException('La cantidad no puede ser negativa');
         }
 
-        // Para herramientas, validar que la cantidad sea 1
         if (
           inventory.herramientaId &&
           updateInventoryDto.cantidadActual !== 1
@@ -319,18 +368,15 @@ export class InventoryService {
       }
 
       if (updateInventoryDto.ubicacion !== undefined) {
-        updateData.ubicacion = updateInventoryDto.ubicacion;
+        updateData.ubicacion = updateInventoryDto.ubicacion ?? null;
       }
 
-      // Solo actualizar si hay cambios
       if (Object.keys(updateData).length > 0) {
         updateData.fechaUltimaActualizacion = new Date();
 
-        // Aplicar los cambios
         Object.assign(inventory, updateData);
         await queryRunner.manager.save(inventory);
 
-        // Si se actualizó la cantidad y es un insumo, actualizar su estado en Supply
         if (
           updateInventoryDto.cantidadActual !== undefined &&
           inventory.insumoId
@@ -355,8 +401,7 @@ export class InventoryService {
 
       const fullInventory = await this.findOne(id);
 
-      // 🔴 Evento WebSocket
-      this.websocketGateway.emit('inventory.updated', fullInventory);
+      this.notificationsGateway.server.emit('inventory.updated', fullInventory);
 
       return fullInventory;
     } catch (error) {
@@ -368,11 +413,10 @@ export class InventoryService {
   }
 
   async remove(id: number): Promise<void> {
-    const inventory = await this.findOne(id);
+    await this.findOne(id);
     await this.inventoryRepository.softDelete(id);
 
-    // 🔴 Evento WebSocket
-    this.websocketGateway.emit('inventory.deleted', {
+    this.notificationsGateway.server.emit('inventory.deleted', {
       id,
       soft: true,
     });
@@ -389,14 +433,13 @@ export class InventoryService {
     try {
       const inventory = await this.findOne(id);
 
-      // Guardar información antes de eliminar
       const deletedInfo: {
         inventory: {
           id: number;
           tipo: string;
           nombreItem: string;
           cantidadActual: number;
-          ubicacion: string;
+          ubicacion?: string | null;
         };
         item: {
           tipo: string;
@@ -410,13 +453,12 @@ export class InventoryService {
           id: inventory.inventarioId,
           tipo: inventory.tipo,
           nombreItem: inventory.nombreItem,
-          cantidadActual: inventory.cantidadActual,
-          ubicacion: inventory.ubicacion,
+          cantidadActual: Number(inventory.cantidadActual),
+          ubicacion: inventory.ubicacion || null,
         },
         item: null,
       };
 
-      // Obtener información del item asociado
       if (inventory.insumoId && inventory.supply) {
         deletedInfo.item = {
           tipo: 'insumo',
@@ -424,6 +466,9 @@ export class InventoryService {
           nombre: inventory.supply.nombre,
           categoria: inventory.supply.categoria,
         };
+
+        // Eliminamos primero el insumo; el CASCADE en Inventory se encarga de borrar inventarios
+        await queryRunner.manager.remove(inventory.supply);
       } else if (inventory.herramientaId && inventory.tool) {
         deletedInfo.item = {
           tipo: 'herramienta',
@@ -431,15 +476,19 @@ export class InventoryService {
           nombre: inventory.tool.nombre,
           marca: inventory.tool.marca || undefined,
         };
-      }
 
-      // Eliminar físicamente el inventario (esto activará CASCADE y eliminará el item asociado)
-      await queryRunner.manager.remove(inventory);
+        await queryRunner.manager.remove(inventory.tool);
+      } else {
+        // Si por alguna razón no tiene supply/tool asociado, al menos eliminamos el inventario
+        await queryRunner.manager.remove(inventory);
+      }
 
       await queryRunner.commitTransaction();
 
-      // 🔴 Evento WebSocket
-      this.websocketGateway.emit('inventory.deletedPermanent', deletedInfo);
+      this.notificationsGateway.server.emit(
+        'inventory.deletedPermanent',
+        deletedInfo,
+      );
 
       return {
         deletedInventory: deletedInfo.inventory,
@@ -463,8 +512,6 @@ export class InventoryService {
       .where('supply.nombre ILIKE :keyword', { keyword: `%${keyword}%` })
       .orWhere('tool.nombre ILIKE :keyword', { keyword: `%${keyword}%` })
       .orWhere('bodega.nombre ILIKE :keyword', { keyword: `%${keyword}%` })
-      .orWhere('supply.codigo ILIKE :keyword', { keyword: `%${keyword}%` })
-      .orWhere('tool.codigo ILIKE :keyword', { keyword: `%${keyword}%` })
       .orderBy('inventory.fecha_ultima_actualizacion', 'DESC')
       .getMany();
   }
@@ -484,7 +531,7 @@ export class InventoryService {
       .leftJoinAndSelect('supply.unidadMedida', 'unidadMedida')
       .leftJoinAndSelect('inventory.bodega', 'bodega')
       .where('inventory.cantidad_actual <= :threshold', { threshold })
-      .andWhere('inventory.insumo_id IS NOT NULL') // Solo insumos tienen stock
+      .andWhere('inventory.insumo_id IS NOT NULL')
       .andWhere('supply.stock_min IS NOT NULL')
       .andWhere('inventory.cantidad_actual <= supply.stock_min')
       .orderBy('inventory.cantidad_actual', 'ASC')
@@ -506,19 +553,16 @@ export class InventoryService {
     try {
       const inventory = await this.findOne(inventarioId);
 
-      // Solo se puede actualizar stock de insumos
       if (!inventory.insumoId) {
         throw new BadRequestException(
           'Solo se puede actualizar el stock de insumos',
         );
       }
 
-      // Actualizar inventario
       inventory.cantidadActual = nuevaCantidad;
       inventory.fechaUltimaActualizacion = new Date();
       await queryRunner.manager.save(inventory);
 
-      // Actualizar estado del insumo en Supply
       if (inventory.supply) {
         const estado = this.calculateSupplyStatus(
           nuevaCantidad,
@@ -532,9 +576,11 @@ export class InventoryService {
       await queryRunner.commitTransaction();
       const fullInventory = await this.findOne(inventarioId);
 
-      // 🔴 Eventos WebSocket
-      this.websocketGateway.emit('inventory.stockUpdated', fullInventory);
-      this.websocketGateway.emit('inventory.updated', fullInventory);
+      this.notificationsGateway.server.emit(
+        'inventory.stockUpdated',
+        fullInventory,
+      );
+      this.notificationsGateway.server.emit('inventory.updated', fullInventory);
 
       return fullInventory;
     } catch (error) {
@@ -566,7 +612,6 @@ export class InventoryService {
         (items) => items.length,
       );
 
-      // Calculamos el valor total sumando (stock insumo * precio) + (precio herramienta)
       const totalValue = await queryRunner.manager
         .createQueryBuilder(Inventory, 'inventory')
         .leftJoin('inventory.supply', 'supply')
@@ -585,7 +630,6 @@ export class InventoryService {
         )
         .getRawOne();
 
-      // Estadísticas por bodega
       const statsByBodega = await queryRunner.manager
         .createQueryBuilder(Inventory, 'inventory')
         .leftJoin('inventory.bodega', 'bodega')
@@ -609,14 +653,29 @@ export class InventoryService {
         .orderBy('bodega.nombre', 'ASC')
         .getRawMany();
 
-      // Estadísticas por estado
-      const statsByEstado = await queryRunner.manager
-        .createQueryBuilder(Inventory, 'inventory')
-        .select('inventory.estado', 'estado')
-        .addSelect('COUNT(inventory.inventario_id)', 'cantidad')
-        .groupBy('inventory.estado')
-        .orderBy('cantidad', 'DESC')
-        .getRawMany();
+      // Calculamos los estados en memoria, sin depender de una columna en BD
+      const allInventories = await queryRunner.manager.find(Inventory, {
+        relations: ['supply'],
+      });
+
+      const estadoCounts = new Map<string, number>();
+
+      for (const inv of allInventories) {
+        if (inv.insumoId && inv.supply) {
+          const estado = this.getInventoryStatus(
+            Number(inv.cantidadActual),
+            inv.supply.stockMin,
+          );
+          estadoCounts.set(estado, (estadoCounts.get(estado) || 0) + 1);
+        } else {
+          const estado = 'N/A';
+          estadoCounts.set(estado, (estadoCounts.get(estado) || 0) + 1);
+        }
+      }
+
+      const statsByEstado = Array.from(estadoCounts.entries())
+        .map(([estado, cantidad]) => ({ estado, cantidad }))
+        .sort((a, b) => b.cantidad - a.cantidad);
 
       return {
         totalItems,
@@ -657,14 +716,13 @@ export class InventoryService {
 
     const restored = await this.findOne(id);
 
-    // 🔴 Evento WebSocket
-    this.websocketGateway.emit('inventory.restored', restored);
+    this.notificationsGateway.server.emit('inventory.restored', restored);
 
     return restored;
   }
 
-  // Helper method para calcular estado de inventario
-  private calcularEstado(cantidad: number, stockMin: number = 0): string {
+  // Estado textual del inventario (no se persiste en BD)
+  public getInventoryStatus(cantidad: number, stockMin: number = 0): string {
     if (cantidad <= 0) return 'Sin Stock';
     if (stockMin > 0 && cantidad <= stockMin) return 'Stock Bajo';
     if (cantidad <= 5) return 'Stock Crítico';
@@ -672,7 +730,6 @@ export class InventoryService {
     return 'Stock Óptimo';
   }
 
-  // Helper method para calcular estado de insumo (SupplyStatus)
   private calculateSupplyStatus(
     cantidad: number,
     stockMin: number = 0,
@@ -683,6 +740,48 @@ export class InventoryService {
       return SupplyStatus.STOCK_BAJO;
     } else {
       return SupplyStatus.DISPONIBLE;
+    }
+  }
+
+  async generateInventoryExcel(
+    bodegaId?: number,
+    includeDeleted: boolean = false,
+  ): Promise<Buffer> {
+    try {
+      this.logger.log(
+        `Generando Excel - bodegaId: ${bodegaId}, includeDeleted: ${includeDeleted}`,
+      );
+
+      const query = this.inventoryRepository
+        .createQueryBuilder('inventory')
+        .leftJoinAndSelect('inventory.supply', 'supply')
+        .leftJoinAndSelect('supply.unidadMedida', 'unidadMedida')
+        .leftJoinAndSelect('inventory.tool', 'tool')
+        .leftJoinAndSelect('inventory.bodega', 'bodega')
+        .leftJoinAndSelect('bodega.cliente', 'cliente')
+        .orderBy('inventory.fechaUltimaActualizacion', 'DESC');
+
+      // Aplicar filtro de bodega solo si se proporciona un ID válido
+      if (bodegaId !== undefined && !isNaN(bodegaId)) {
+        query.andWhere('bodega.bodegaId = :bodegaId', { bodegaId });
+        this.logger.log(`Filtrando por bodega ID: ${bodegaId}`);
+      }
+
+      // Manejar registros eliminados
+      if (includeDeleted) {
+        query.withDeleted();
+      }
+
+      const inventories = await query.getMany();
+
+      this.logger.log(
+        `Se encontraron ${inventories.length} registros para exportar`,
+      );
+
+      return buildInventoryExcel({ inventories });
+    } catch (error) {
+      this.logger.error(`Error generando Excel: ${error.message}`, error.stack);
+      throw error;
     }
   }
 }

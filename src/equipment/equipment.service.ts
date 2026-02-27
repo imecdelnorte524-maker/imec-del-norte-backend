@@ -16,20 +16,25 @@ import { Area } from '../area/entities/area.entity';
 import { SubArea } from '../sub-area/entities/sub-area.entity';
 import { ImagesService } from '../images/images.service';
 import { AirConditionerType } from '../air-conditioner-types/entities/air-conditioner-type.entity';
-import { ServiceCategory } from '../services/enums/service.enums';
+import { ServiceCategory } from '../shared/index';
 import { EquipmentMotor } from './entities/motor.entity';
 import { EquipmentEvaporator } from './entities/evaporator.entity';
 import { EquipmentCondenser } from './entities/condenser.entity';
 import { EquipmentCompressor } from './entities/compressor.entity';
 import { PlanMantenimiento } from './entities/plan-mantenimiento.entity';
-import { EquipmentStatus } from './enums/equipment-status.enum';
+import { EquipmentStatus } from '../shared/index';
 import { BaseSequenceService } from '../common/services/base-sequence.service';
 import { SequenceHelperService } from '../common/services/sequence-helper.service';
 import { PlanMantenimientoDto } from './dto/plan-mantenimiento.dto';
-import { UnidadFrecuencia } from './enums/frecuency-unity.enum';
-import * as ExcelJS from 'exceljs';
-import { WebsocketGateway } from '../websockets/websocket.gateway';
+import { UnidadFrecuencia } from '../shared/index';
 import { EquipmentDocumentsService } from './equipment-documents.service';
+import { NotificationsGateway } from 'src/notifications/notifications.gateway';
+import { buildEquipmentInventoryExcel } from '../../templates/excel/equipment-inventory.template';
+import { buildAnnualMaintenancePlanExcel } from '../../templates/excel/equipment-annual-maintenance.template';
+import { buildEquipmentHistoryParams } from '../../templates/report/equipment-history-html.helper';
+import { PdfService } from '../pdf/pdf.service';
+import { ConfigService } from '@nestjs/config';
+import { WorkOrdersService } from '../work-orders/work-orders.service';
 
 interface OrphanedRecordIssue {
   table: string;
@@ -40,7 +45,6 @@ interface OrphanedRecordIssue {
 
 interface SequenceCorrection {
   table: string;
-  sequence: string;
   corrected: boolean;
   message: string;
 }
@@ -89,15 +93,17 @@ export class EquipmentService
     private readonly planMantenimientoRepository: Repository<PlanMantenimiento>,
     private readonly imagesService: ImagesService,
     private readonly dataSource: DataSource,
-    private readonly websocketGateway: WebsocketGateway,
+    private readonly notificationsGateway: NotificationsGateway,
     private readonly equipmentDocumentsServices: EquipmentDocumentsService,
+    private readonly pdfService: PdfService,
+    private readonly configService: ConfigService,
+    private readonly workOrdersService: WorkOrdersService,
   ) {
     super(sequenceHelper);
 
     // Configurar secuencia principal para equipos
     this.tableName = 'equipos';
     this.idColumn = 'equipo_id';
-    this.sequenceName = 'equipos_equipo_id_seq';
   }
 
   async onModuleInit() {
@@ -479,7 +485,10 @@ export class EquipmentService
 
     // Solo estos tipos pueden tener MÁS de una evap/cond
     const isMultiSplitOrVariable =
-      typeName.includes('multi') || typeName.includes('variable');
+      typeName.includes('multi') ||
+      typeName.includes('variable') ||
+      typeName.includes('vrf') ||
+      typeName.includes('vrv');
 
     // 1) Respetar hasEvaporator / hasCondenser
     if (
@@ -627,7 +636,7 @@ export class EquipmentService
       const fullEquipment = await this.findOne(savedEquipment.equipmentId);
 
       // 🔴 Evento WebSocket: equipo creado
-      this.websocketGateway.emit('equipment.created', fullEquipment);
+      this.notificationsGateway.server.emit('equipment.created', fullEquipment);
 
       return fullEquipment;
     } catch (error) {
@@ -749,6 +758,9 @@ export class EquipmentService
 
       const evaporator = this.evaporatorRepository.create({
         ...evapData,
+        airConditionerTypeEvapId:
+          evapData.airConditionerTypeEvapId ||
+          evapData.airConditionerTypeEvapId,
         equipmentId,
       });
 
@@ -1120,30 +1132,32 @@ export class EquipmentService
     await queryRunner.startTransaction();
 
     try {
-      // Obtener equipo existente
+      // Obtener equipo existente (con relaciones necesarias)
       let equipment = await this.findOne(id);
 
-      // Validar y actualizar cliente si es necesario
+      // Validar y actualizar cliente si cambia
       if (dto.clientId !== undefined && dto.clientId !== equipment.clientId) {
         await this.validateAndUpdateClient(equipment, dto.clientId);
       }
 
-      // Validar y actualizar ubicación si es necesario
+      // Manejar cambio de ubicación (área/subárea) y posible recálculo de código
       const locationChanged = await this.handleLocationUpdate(
         equipment,
         dto,
         queryRunner,
       );
 
-      // Validar categoría y tipo de aire
-      await this.validateCategoryAndAirConditionerType(dto, equipment.category);
-      await this.handleCategoryUpdate(equipment, dto);
-
-      // Actualizar campos simples
+      // ────────────────────────────────────────────────
+      // Actualizar campos simples primero (incluye airConditionerTypeId)
+      // ────────────────────────────────────────────────
       const { evaporators, condensers, planMantenimiento, ...rest } = dto;
+
       Object.entries(rest).forEach(([key, value]) => {
         if (value !== undefined) {
-          (equipment as any)[key] = value;
+          // Asignación segura
+          if (key in equipment) {
+            (equipment as any)[key] = value;
+          }
         }
       });
 
@@ -1151,10 +1165,29 @@ export class EquipmentService
         equipment.updatedBy = updatedBy;
       }
 
-      // Guardar cambios del equipo
+      // ────────────────────────────────────────────────
+      // Ahora manejar categoría y tipo de aire (después de los campos básicos)
+      // ────────────────────────────────────────────────
+      await this.validateCategoryAndAirConditionerType(dto, equipment.category);
+      await this.handleCategoryUpdate(equipment, dto);
+
+      // Si se cambió el tipo de aire, cargar la entidad para la respuesta
+      if (
+        dto.airConditionerTypeId !== undefined &&
+        equipment.airConditionerTypeId
+      ) {
+        const acType = await this.acTypeRepository.findOne({
+          where: { id: equipment.airConditionerTypeId },
+        });
+        if (acType) {
+          equipment.airConditionerType = acType;
+        }
+      }
+
+      // Guardar cambios del equipo base
       await queryRunner.manager.save(Equipment, equipment);
 
-      // Actualizar componentes si fueron proporcionados
+      // Actualizar componentes si fueron enviados
       if (
         evaporators !== undefined ||
         condensers !== undefined ||
@@ -1169,10 +1202,11 @@ export class EquipmentService
       }
 
       await queryRunner.commitTransaction();
+
       const fullEquipment = await this.findOne(id);
 
-      // 🔴 Evento WebSocket: equipo actualizado
-      this.websocketGateway.emit('equipment.updated', fullEquipment);
+      // Evento WebSocket
+      this.notificationsGateway.server.emit('equipment.updated', fullEquipment);
 
       return fullEquipment;
     } catch (error) {
@@ -1182,7 +1216,6 @@ export class EquipmentService
         error.stack,
       );
 
-      // Manejar errores de constraint UNIQUE
       const constraintResult =
         await this.sequenceHelper.handleUniqueConstraintError(error);
       if (!constraintResult.handled && constraintResult.suggestion) {
@@ -1317,26 +1350,45 @@ export class EquipmentService
     equipment: Equipment,
     dto: UpdateEquipmentDto,
   ): Promise<void> {
-    if (dto.category !== undefined && dto.category !== equipment.category) {
+    // Actualizar categoría si viene
+    if (dto.category !== undefined) {
       equipment.category = dto.category;
+    }
 
-      if (dto.category === ServiceCategory.AIRES_ACONDICIONADOS) {
-        if (dto.airConditionerTypeId == null) {
-          throw new BadRequestException('Tipo de aire requerido');
-        }
+    const finalCategory = equipment.category; // ya actualizada
 
-        equipment.airConditionerTypeId = dto.airConditionerTypeId;
-      } else {
-        equipment.airConditionerTypeId = undefined;
-      }
-    } else if (dto.airConditionerTypeId !== undefined) {
-      if (equipment.category !== ServiceCategory.AIRES_ACONDICIONADOS) {
+    // Manejo del tipo de aire
+    if (dto.airConditionerTypeId !== undefined) {
+      // Validación de categoría
+      if (finalCategory !== ServiceCategory.AIRES_ACONDICIONADOS) {
         throw new BadRequestException(
-          'Solo aires acondicionados pueden tener tipo de aire',
+          'Solo equipos de aires acondicionados pueden tener tipo de aire',
         );
       }
 
+      // Asignar el nuevo ID
       equipment.airConditionerTypeId = dto.airConditionerTypeId;
+
+      // Opcional: precargar la relación para la respuesta inmediata
+      // (aunque findOne lo hará de nuevo, esto ayuda en consistencia)
+      if (dto.airConditionerTypeId !== null) {
+        const acType = await this.acTypeRepository.findOne({
+          where: { id: dto.airConditionerTypeId },
+        });
+        if (!acType) {
+          throw new BadRequestException(
+            `Tipo de aire ${dto.airConditionerTypeId} no encontrado`,
+          );
+        }
+        equipment.airConditionerType = acType;
+      } else {
+        equipment.airConditionerType = undefined;
+      }
+    }
+    // Si la categoría ya no es de aires y no se envió tipo → limpiar
+    else if (finalCategory !== ServiceCategory.AIRES_ACONDICIONADOS) {
+      equipment.airConditionerTypeId = undefined;
+      equipment.airConditionerType = undefined;
     }
   }
 
@@ -1400,7 +1452,7 @@ export class EquipmentService
       await queryRunner.manager.delete(EquipmentEvaporator, { equipmentId });
       await queryRunner.manager.delete(EquipmentCondenser, { equipmentId });
 
-      // Crear nuevos
+      // Crear nuevos (con el campo airConditionerTypeEvapId incluido)
       if (evaporators?.length) {
         await this.createEvaporators(queryRunner, equipmentId, evaporators);
       }
@@ -1449,7 +1501,7 @@ export class EquipmentService
       await queryRunner.manager.remove(Equipment, eq);
 
       await queryRunner.commitTransaction();
-      this.websocketGateway.emit('equipment.deleted', { id });
+      this.notificationsGateway.server.emit('equipment.deleted', { id });
     } catch (error) {
       await queryRunner.rollbackTransaction();
       this.logger.error(
@@ -1559,9 +1611,9 @@ export class EquipmentService
     const updated = await this.equipmentRepository.save(equipment);
 
     // 🔴 Evento WebSocket: solo cambio de estado
-    this.websocketGateway.emit('equipment.statusUpdated', updated);
+    this.notificationsGateway.server.emit('equipment.statusUpdated', updated);
     // Opcionalmente también:
-    this.websocketGateway.emit('equipment.updated', updated);
+    this.notificationsGateway.server.emit('equipment.updated', updated);
 
     return updated;
   }
@@ -1614,7 +1666,6 @@ export class EquipmentService
       const mainSequence = await this.fixSequenceIfNeeded();
       corrections.push({
         table: this.tableName,
-        sequence: this.sequenceName,
         corrected: mainSequence.corrected,
         message: mainSequence.message,
       });
@@ -1658,7 +1709,6 @@ export class EquipmentService
 
           corrections.push({
             table: seq.table,
-            sequence: seq.sequence,
             corrected: result.corrected,
             message: result.corrected
               ? `Corregida de ${result.lastValue - 1} a ${result.maxId}`
@@ -1667,7 +1717,6 @@ export class EquipmentService
         } catch (error: any) {
           corrections.push({
             table: seq.table,
-            sequence: seq.sequence,
             corrected: false,
             message: `Error: ${error.message}`,
           });
@@ -1706,203 +1755,8 @@ export class EquipmentService
 
     const equipments = await qb.getMany();
 
-    // Función simplificada para obtener solo la ubicación actual (sin recorrer jerarquía)
-    const getCurrentLocation = (equipment: Equipment): string => {
-      if (equipment.subArea) {
-        return equipment.subArea.nombreSubArea;
-      }
-      if (equipment.area) {
-        return equipment.area.nombreArea;
-      }
-      return 'Sin ubicación';
-    };
-
-    const workbook = new ExcelJS.Workbook();
-    const sheet = workbook.addWorksheet(`Plan ${year}`);
-
-    const MONTHS = [
-      'ENERO',
-      'FEBRERO',
-      'MARZO',
-      'ABRIL',
-      'MAYO',
-      'JUNIO',
-      'JULIO',
-      'AGOSTO',
-      'SEPTIEMBRE',
-      'OCTUBRE',
-      'NOVIEMBRE',
-      'DICIEMBRE',
-    ];
-
-    const WEEKS_PER_MONTH = 4; // 4 semanas fijas
-    const DAYS_PER_WEEK = 6; // 6 días (lunes–sábado)
-
-    // Nuevo orden de columnas:
-    const COL_UBICACION = 1; // Nuevo campo: última subárea/área
-    const COL_EQUIPO = 2; // Código del equipo
-    const COL_MOD = 3; // Modelo
-    const COL_SERIAL = 4; // Serial
-    const FIRST_PLAN_COL = 5; // Las columnas del plan empiezan aquí
-
-    // Cabecera básica
-    sheet.mergeCells(1, COL_UBICACION, 3, COL_UBICACION);
-    sheet.getCell(1, COL_UBICACION).value = 'UBICACIÓN';
-    sheet.getColumn(COL_UBICACION).width = 25;
-
-    sheet.mergeCells(1, COL_EQUIPO, 3, COL_EQUIPO);
-    sheet.getCell(1, COL_EQUIPO).value = 'EQUIPO';
-    sheet.getColumn(COL_EQUIPO).width = 15;
-
-    sheet.mergeCells(1, COL_MOD, 3, COL_MOD);
-    sheet.getCell(1, COL_MOD).value = 'MOD';
-    sheet.getColumn(COL_MOD).width = 15;
-
-    sheet.mergeCells(1, COL_SERIAL, 3, COL_SERIAL);
-    sheet.getCell(1, COL_SERIAL).value = 'SERIAL';
-    sheet.getColumn(COL_SERIAL).width = 18;
-
-    // Meses / semanas / días
-    MONTHS.forEach((monthName, monthIndex) => {
-      const monthStartCol =
-        FIRST_PLAN_COL + monthIndex * (WEEKS_PER_MONTH * DAYS_PER_WEEK);
-      const monthEndCol = monthStartCol + WEEKS_PER_MONTH * DAYS_PER_WEEK - 1;
-
-      // Fila 1: mes
-      sheet.mergeCells(1, monthStartCol, 1, monthEndCol);
-      const monthCell = sheet.getCell(1, monthStartCol);
-      monthCell.value = monthName;
-      monthCell.alignment = { horizontal: 'center', vertical: 'middle' };
-      monthCell.font = { bold: true };
-
-      // Fila 2: semanas
-      for (let w = 0; w < WEEKS_PER_MONTH; w++) {
-        const weekStart = monthStartCol + w * DAYS_PER_WEEK;
-        const weekEnd = weekStart + DAYS_PER_WEEK - 1;
-        sheet.mergeCells(2, weekStart, 2, weekEnd);
-        const weekCell = sheet.getCell(2, weekStart);
-        weekCell.value = `SEMANA ${w + 1}`;
-        weekCell.alignment = { horizontal: 'center', vertical: 'middle' };
-        weekCell.font = { bold: true };
-      }
-
-      // Fila 3: columnas de día (1..6 → Lunes..Sábado)
-      for (let w = 0; w < WEEKS_PER_MONTH; w++) {
-        const weekStart = monthStartCol + w * DAYS_PER_WEEK;
-        for (let d = 0; d < DAYS_PER_WEEK; d++) {
-          const col = weekStart + d;
-          const dayCell = sheet.getCell(3, col);
-          dayCell.value = d + 1; // en tu plantilla se ven 1..6
-          dayCell.alignment = { horizontal: 'center', vertical: 'middle' };
-          dayCell.font = { size: 8 };
-        }
-      }
-    });
-
-    // 👉 Ajustar ancho de TODAS las columnas del plan a 3
-    const totalPlanCols = MONTHS.length * WEEKS_PER_MONTH * DAYS_PER_WEEK;
-    for (
-      let col = FIRST_PLAN_COL;
-      col < FIRST_PLAN_COL + totalPlanCols;
-      col++
-    ) {
-      sheet.getColumn(col).width = 3;
-    }
-
-    // Bordes cabecera
-    for (let row = 1; row <= 3; row++) {
-      const r = sheet.getRow(row);
-      r.eachCell((cell) => {
-        cell.border = {
-          top: { style: 'thin' },
-          left: { style: 'thin' },
-          bottom: { style: 'thin' },
-          right: { style: 'thin' },
-        };
-        cell.alignment = {
-          horizontal: 'center',
-          vertical: 'middle',
-          wrapText: true,
-        };
-      });
-    }
-
-    // Vista congelada: primeras 3 filas y 4 columnas (ahora tenemos 4 columnas iniciales)
-    sheet.views = [{ state: 'frozen', xSplit: 4, ySplit: 3 }];
-
-    // Filas de equipos
-    let currentRowIndex = 4;
-
-    for (const eq of equipments) {
-      const row = sheet.getRow(currentRowIndex);
-
-      // Nueva columna: UBICACIÓN (último nivel)
-      const location = getCurrentLocation(eq);
-      row.getCell(COL_UBICACION).value = location;
-
-      // Código interno como "EQUIPO"
-      row.getCell(COL_EQUIPO).value = eq.code ?? eq.equipmentId;
-
-      // MOD / SERIAL SOLO desde la primera evaporadora
-      const firstEvap = eq.evaporators && eq.evaporators[0];
-      row.getCell(COL_MOD).value = firstEvap?.modelo ?? 'N/A';
-      row.getCell(COL_SERIAL).value = firstEvap?.serial ?? 'N/A';
-
-      // Fechas de mantenimiento en ese año
-      const plan = eq.planMantenimiento;
-      const dates = plan
-        ? this.generateMaintenanceDatesForYear(plan, year)
-        : [];
-
-      for (const date of dates) {
-        const monthIndex = date.getMonth(); // 0..11
-        const dayOfMonth = date.getDate(); // 1..31
-
-        // Semana del mes (0..3; 4ª semana agrupa lo que sobre)
-        let weekIndex = Math.floor((dayOfMonth - 1) / 7);
-        if (weekIndex >= WEEKS_PER_MONTH) {
-          weekIndex = WEEKS_PER_MONTH - 1;
-        }
-
-        const jsDay = date.getDay(); // 0 Domingo .. 6 Sábado
-        // Lunes(0)..Domingo(6) => ((0+6)%7 = 6) => Domingo=6, Lunes=0
-        let dayOfWeekIndex = (jsDay + 6) % 7;
-
-        // Saltar domingos (índice 6)
-        if (dayOfWeekIndex >= DAYS_PER_WEEK) {
-          continue;
-        }
-
-        const monthStartCol =
-          FIRST_PLAN_COL + monthIndex * (WEEKS_PER_MONTH * DAYS_PER_WEEK);
-        const weekStartCol = monthStartCol + weekIndex * DAYS_PER_WEEK;
-        const col = weekStartCol + dayOfWeekIndex;
-
-        const cell = row.getCell(col);
-        cell.fill = {
-          type: 'pattern',
-          pattern: 'solid',
-          fgColor: { argb: 'FF00B0F0' }, // azul
-        };
-      }
-
-      // Bordes de la fila
-      row.eachCell((cell) => {
-        cell.border = {
-          top: { style: 'thin' },
-          left: { style: 'thin' },
-          bottom: { style: 'thin' },
-          right: { style: 'thin' },
-        };
-        cell.alignment = { horizontal: 'center', vertical: 'middle' };
-      });
-
-      currentRowIndex++;
-    }
-
-    // Exportar a buffer
-    const buffer = (await workbook.xlsx.writeBuffer()) as unknown as Buffer;
-    return buffer;
+    // 2. Delegar al template
+    return buildAnnualMaintenancePlanExcel({ year, equipments });
   }
 
   async advanceMaintenancePlanFromPlanId(planId: number): Promise<void> {
@@ -1950,7 +1804,7 @@ export class EquipmentService
     const updatedEquipment = await this.findOne(equipmentId);
 
     // 🔴 Evento WebSocket: plan de mantenimiento actualizado
-    this.websocketGateway.emit(
+    this.notificationsGateway.server.emit(
       'equipment.maintenancePlanUpdated',
       updatedEquipment,
     );
@@ -1966,5 +1820,84 @@ export class EquipmentService
       .getMany();
 
     return empresas.map((c) => c.idCliente);
+  }
+
+  async generateEquipmentInventoryExcel(clientId?: number): Promise<Buffer> {
+    // 1. Traer equipos con relaciones necesarias
+    const qb = this.equipmentRepository
+      .createQueryBuilder('e')
+      .leftJoinAndSelect('e.area', 'area')
+      .leftJoinAndSelect('e.subArea', 'subArea')
+      .leftJoinAndSelect('e.airConditionerType', 'acType')
+      .leftJoinAndSelect('e.evaporators', 'evap')
+      .leftJoinAndSelect('evap.airConditionerTypeEvap', 'evapType')
+      .leftJoinAndSelect('e.condensers', 'cond')
+      .where('e.category = :cat', {
+        cat: ServiceCategory.AIRES_ACONDICIONADOS,
+      });
+
+    if (clientId) {
+      qb.andWhere('e.clientId = :clientId', { clientId });
+    }
+
+    const equipments = await qb.getMany();
+
+    // 2. Delegar al template
+    return buildEquipmentInventoryExcel({ equipments });
+  }
+
+  async generateEquipmentHistoryPdf(equipmentId: number): Promise<Buffer> {
+    try {
+      this.logger.log(`Generando PDF de historial para equipo ${equipmentId}`);
+
+      // 1. Obtener el equipo con todas sus relaciones
+      const equipment = await this.equipmentRepository.findOne({
+        where: { equipmentId },
+        relations: [
+          'client',
+          'area',
+          'subArea',
+          'airConditionerType',
+          'evaporators',
+          'evaporators.motors',
+          'evaporators.airConditionerTypeEvap',
+          'condensers',
+          'condensers.motors',
+          'condensers.compressors',
+          'planMantenimiento',
+        ],
+      });
+
+      if (!equipment) {
+        throw new NotFoundException(`Equipo ${equipmentId} no encontrado`);
+      }
+
+      // 2. Obtener el historial de órdenes del equipo
+      const workOrders =
+        await this.workOrdersService.getWorkOrdersByEquipment(equipmentId);
+
+      // 3. Configurar la imagen del header
+      const headerImageUrl = this.configService.get<string>(
+        'PDF_HEADER_IMAGE_URL',
+        'https://res.cloudinary.com/dxne98os1/image/upload/v1771949437/pdf-templates/headers/production/rtrfsak5syqfclqfpq81.png',
+      );
+
+      // 4. Construir los parámetros para el template
+      const params = buildEquipmentHistoryParams(equipment, workOrders, {
+        headerImageUrl,
+      });
+
+      // 5. Generar el PDF
+      return this.pdfService.generatePdf({
+        templateName: 'equipment_history',
+        params,
+      });
+    } catch (error) {
+      this.logger.error(
+        `Error generando PDF de historial: ${error.message}`,
+        error.stack,
+      );
+      throw error;
+    }
   }
 }

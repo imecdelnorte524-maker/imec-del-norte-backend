@@ -11,6 +11,7 @@ import { GeneratedPdf } from './entities/generated-pdf.entity';
 import { WorkOrder } from '../work-orders/entities/work-order.entity';
 import { PreoperationalChecklistTemplate } from './entities/preoperational-checklist-template.entity';
 import { PreoperationalChecklistParameter } from './entities/preoperational-checklist-parameter.entity';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
   imports: [
@@ -25,6 +26,7 @@ import { PreoperationalChecklistParameter } from './entities/preoperational-chec
       PreoperationalChecklistTemplate,
       PreoperationalChecklistParameter
     ]),
+    NotificationsModule
   ],
   controllers: [SgSstController],
   providers: [SgSstService],

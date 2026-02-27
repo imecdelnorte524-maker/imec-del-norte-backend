@@ -3,7 +3,7 @@ import { PartialType } from '@nestjs/swagger';
 import { CreateSupplyDto } from './create-supply.dto';
 import { IsOptional, IsString, IsNumber, Min, IsEnum } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
-import { SupplyCategory, SupplyStatus } from '../../shared/enums/inventory.enum';
+import { SupplyCategory, SupplyStatus } from '../../shared/index';
 
 export class UpdateSupplyDto extends PartialType(CreateSupplyDto) {
   @ApiProperty({

@@ -3,7 +3,7 @@ import { PartialType } from '@nestjs/swagger';
 import { CreateToolDto } from './create-tools.dto';
 import { IsOptional, IsEnum, IsNumber, IsString } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
-import { ToolType, ToolStatus } from '../../shared/enums/inventory.enum';
+import { ToolType, ToolStatus } from '../../shared/index';
 
 export class UpdateToolDto extends PartialType(CreateToolDto) {
   @ApiProperty({

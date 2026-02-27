@@ -1,5 +1,5 @@
 // src/work-orders/work-orders.module.ts
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { WorkOrdersService } from './work-orders.service';
 import { WorkOrdersController } from './work-orders.controller';
@@ -10,6 +10,7 @@ import { EquipmentWorkOrder } from './entities/equipment-work-order.entity';
 import { WorkOrderTechnician } from './entities/work-order-technician.entity';
 import { WorkOrderTimer } from './entities/work-order-timer.entity';
 import { WorkOrderPause } from './entities/work-order-pause.entity';
+import { AcInspection } from './entities/ac-inspection.entity';
 import { Service } from '../services/entities/service.entity';
 import { User } from '../users/entities/user.entity';
 import { Supply } from '../supplies/entities/supply.entity';
@@ -17,9 +18,13 @@ import { Tool } from '../tools/entities/tool.entity';
 import { Inventory } from '../inventory/entities/inventory.entity';
 import { Client } from '../client/entities/client.entity';
 import { Equipment } from '../equipment/entities/equipment.entity';
-import { PlanMantenimiento } from '../equipment/entities/plan-mantenimiento.entity';
-import { MailModule } from '../mail/mail.module';
+import { Image } from '../images/entities/image.entity';
+import { PdfModule } from '../pdf/pdf.module';
+import { ImagesModule } from 'src/images/images.module';
+import { MailModule } from 'src/mail/mail.module';
+import { NotificationsModule } from 'src/notifications/notifications.module';
 import { MaintenanceSchedulerService } from './maintenance-scheduler.service';
+import { PlanMantenimiento } from '../equipment/entities/plan-mantenimiento.entity';
 
 @Module({
   imports: [
@@ -31,6 +36,7 @@ import { MaintenanceSchedulerService } from './maintenance-scheduler.service';
       WorkOrderTechnician,
       WorkOrderTimer,
       WorkOrderPause,
+      AcInspection,
       Service,
       User,
       Supply,
@@ -38,9 +44,13 @@ import { MaintenanceSchedulerService } from './maintenance-scheduler.service';
       Inventory,
       Client,
       Equipment,
+      Image,
       PlanMantenimiento,
     ]),
+    PdfModule,
+    ImagesModule,
     MailModule,
+    NotificationsModule,
   ],
   controllers: [WorkOrdersController],
   providers: [WorkOrdersService, MaintenanceSchedulerService],

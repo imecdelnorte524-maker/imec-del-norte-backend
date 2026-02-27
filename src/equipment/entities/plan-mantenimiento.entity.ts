@@ -6,7 +6,7 @@ import {
   JoinColumn,
 } from 'typeorm';
 import { Equipment } from './equipment.entity';
-import { UnidadFrecuencia } from '../enums/frecuency-unity.enum';
+import { UnidadFrecuencia } from '../../shared/index';
 
 @Entity('plan_mantenimiento')
 export class PlanMantenimiento {

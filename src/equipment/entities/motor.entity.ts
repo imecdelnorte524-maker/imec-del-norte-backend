@@ -53,6 +53,14 @@ export class EquipmentMotor {
   numeroFases?: string;
 
   @Column({
+    name: 'numero_parte',
+    type: 'varchar',
+    length: 50,
+    nullable: true,
+  })
+  numeroParte?: string;
+
+  @Column({
     name: 'diametro_eje',
     type: 'varchar',
     length: 50,

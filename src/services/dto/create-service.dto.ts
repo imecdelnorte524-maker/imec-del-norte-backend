@@ -1,7 +1,7 @@
 // src/services/dto/create-service.dto.ts
 import { IsNotEmpty, IsString, IsOptional, IsEnum } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
-import { ServiceCategory } from '../enums/service.enums';
+import { ServiceCategory } from '../../shared/index';
 
 export class CreateServiceDto {
   @ApiProperty({

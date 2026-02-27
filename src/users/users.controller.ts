@@ -423,6 +423,8 @@ export class UsersController {
         (user as any).contactoEmergenciaTelefono ?? null,
       contactoEmergenciaParentesco:
         (user as any).contactoEmergenciaParentesco ?? null,
+      mustChangePassword: user.mustChangePassword,
+      position: user.position,
     } as UserResponseDto;
   }
 }

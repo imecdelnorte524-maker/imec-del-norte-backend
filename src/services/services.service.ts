@@ -9,15 +9,15 @@ import { Repository } from 'typeorm';
 import { Service } from './entities/service.entity';
 import { CreateServiceDto } from './dto/create-service.dto';
 import { UpdateServiceDto } from './dto/update-service.dto';
-import { ServiceCategory } from './enums/service.enums';
-import { WebsocketGateway } from '../websockets/websocket.gateway';
+import { ServiceCategory } from '../shared/index';
+import { NotificationsGateway } from 'src/notifications/notifications.gateway';
 
 @Injectable()
 export class ServicesService {
   constructor(
     @InjectRepository(Service)
     private servicesRepository: Repository<Service>,
-    private readonly websocketGateway: WebsocketGateway,
+    private readonly notificationsGateway: NotificationsGateway,
   ) {}
 
   async create(createServiceDto: CreateServiceDto): Promise<Service> {
@@ -33,7 +33,7 @@ export class ServicesService {
     const saved = await this.servicesRepository.save(service);
 
     // 🔴 WebSocket
-    this.websocketGateway.emit('services.created', saved);
+    this.notificationsGateway.server.emit('services.created', saved);
 
     return saved;
   }
@@ -85,7 +85,7 @@ export class ServicesService {
     const updated = await this.findOne(id);
 
     // 🔴 WebSocket
-    this.websocketGateway.emit('services.updated', updated);
+    this.notificationsGateway.server.emit('services.updated', updated);
 
     return updated;
   }
@@ -109,7 +109,7 @@ export class ServicesService {
     await this.servicesRepository.remove(service);
 
     // 🔴 WebSocket
-    this.websocketGateway.emit('services.deleted', { id });
+    this.notificationsGateway.server.emit('services.deleted', { id });
   }
 
   async searchServices(keyword: string): Promise<Service[]> {

@@ -18,11 +18,16 @@ export class CreateClientDto {
   @IsString({ message: 'El nombre debe ser una cadena de texto' })
   nombre: string;
 
-  @ApiProperty({ example: '900123456-7', description: 'NIT del cliente' })
+  @ApiProperty({ example: '900123456', description: 'NIT del cliente' })
   @IsNotEmpty({ message: 'El NIT es requerido' })
   @IsString({ message: 'El NIT debe ser una cadena de texto' })
   @Length(5, 20, { message: 'El NIT debe tener entre 5 y 20 caracteres' })
   nit: string;
+
+  @ApiProperty({ example: 7, description: 'Digito de Verificación del NIT' })
+  @IsOptional()
+  @IsNumber()
+  verification_digit?: number;
 
   @ApiProperty({
     example: 'Calle 123 #45-67',
@@ -42,7 +47,10 @@ export class CreateClientDto {
   @IsString({ message: 'La ciudad debe ser una cadena de texto' })
   ciudad: string;
 
-  @ApiProperty({ example: 'Antioquia', description: 'Departamento del cliente' })
+  @ApiProperty({
+    example: 'Antioquia',
+    description: 'Departamento del cliente',
+  })
   @IsNotEmpty({ message: 'El departamento es requerido' })
   @IsString({ message: 'El departamento debe ser una cadena de texto' })
   departamento: string;

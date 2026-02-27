@@ -13,7 +13,10 @@ import {
 } from 'typeorm';
 import { Inventory } from '../../inventory/entities/inventory.entity';
 import { SupplyDetail } from '../../work-orders/entities/supply-detail.entity';
-import { SupplyStatus, SupplyCategory } from '../../shared/enums/inventory.enum';
+import {
+  SupplyStatus,
+  SupplyCategory,
+} from '../../shared/index';
 import { Image } from '../../images/entities/image.entity';
 import { UnitMeasure } from '../../unit-measure/entities/unit-measure.entity';
 
@@ -65,12 +68,8 @@ export class Supply {
   @OneToMany(() => Image, (image) => image.supply)
   images: Image[];
 
-  @OneToOne(() => Inventory, (inventory) => inventory.supply, {
-    cascade: ['insert', 'update'],
-    onDelete: 'CASCADE',
-  })
-  @JoinColumn({ name: 'inventario_id' })
-  inventory: Inventory;
+  @OneToMany(() => Inventory, (inventory) => inventory.supply)
+  inventories: Inventory[];
 
   @OneToOne(() => SupplyDetail, (supplyDetail) => supplyDetail.supply, {
     nullable: true,

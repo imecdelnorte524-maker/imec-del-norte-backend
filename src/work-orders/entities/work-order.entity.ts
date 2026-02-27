@@ -14,15 +14,17 @@ import { SupplyDetail } from './supply-detail.entity';
 import { ToolDetail } from './tool-detail.entity';
 import { Client } from '../../client/entities/client.entity';
 import { MaintenanceType } from '../../maintenance-types/entities/maintenance-type.entity';
-import { WorkOrderStatus } from '../enums/work-order-status.enum';
-import { BillingStatus } from '../enums/billing-status.enum';
-import { ServiceRequestType } from '../enums/service-request-type.enum';
+import { WorkOrderStatus } from '../../shared/index';
+import { BillingStatus } from '../../shared/index';
+import { ServiceRequestType } from '../../shared/index';
 import { EquipmentWorkOrder } from './equipment-work-order.entity';
 import { PlanMantenimiento } from '../../equipment/entities/plan-mantenimiento.entity';
 import { WorkOrderTechnician } from './work-order-technician.entity';
 import { WorkOrderTimer } from './work-order-timer.entity';
 import { WorkOrderPause } from './work-order-pause.entity';
 import { Image } from 'src/images/entities/image.entity';
+import { AcInspection } from './ac-inspection.entity';
+import { CostStatus } from '../../shared/index';
 
 @Entity('ordenes_trabajo')
 export class WorkOrder {
@@ -81,6 +83,14 @@ export class WorkOrder {
   })
   estadoFacturacion!: BillingStatus | null;
 
+  @Column({
+    name: 'estado_pago',
+    type: 'enum',
+    enum: CostStatus,
+    nullable: true,
+  })
+  estadoPago!: CostStatus | null;
+
   @Column({ name: 'factura_pdf_url', length: 500, nullable: true })
   facturaPdfUrl?: string;
 
@@ -136,10 +146,20 @@ export class WorkOrder {
   })
   pauses!: WorkOrderPause[];
 
-  @Column({ name: 'received_by_name', type: 'varchar', length: 255, nullable: true })
+  @Column({
+    name: 'received_by_name',
+    type: 'varchar',
+    length: 255,
+    nullable: true,
+  })
   receivedByName?: string | null;
 
-  @Column({ name: 'received_by_position', type: 'varchar', length: 255, nullable: true })
+  @Column({
+    name: 'received_by_position',
+    type: 'varchar',
+    length: 255,
+    nullable: true,
+  })
   receivedByPosition?: string | null;
 
   @Column({ name: 'received_by_signature_data', type: 'text', nullable: true })
@@ -151,4 +171,7 @@ export class WorkOrder {
   // Evidencias (imágenes)
   @OneToMany(() => Image, (image) => image.workOrder)
   images?: Image[];
+
+  @OneToMany(() => AcInspection, (insp) => insp.workOrder)
+  acInspections: AcInspection[];
 }

@@ -2,6 +2,17 @@
 import { Injectable, Logger } from '@nestjs/common';
 import * as nodemailer from 'nodemailer';
 import { ConfigService } from '@nestjs/config';
+import { buildCredentialsEmailHtml } from './templates/credentials-email.template';
+import {
+  buildMaintenanceReminderEmailHtml,
+  MaintenanceReminderItem,
+} from './templates/maintenance-reminder-email.template';
+import { buildPasswordResetEmailHtml } from './templates/password-reset-email.template';
+import {
+  buildWorkOrderReportsEmailHtml,
+  buildWorkOrderReportsEmailText,
+  WorkOrderReportsEmailTemplateParams,
+} from './templates/work-order-reports-email.template';
 
 @Injectable()
 export class MailService {
@@ -29,95 +40,42 @@ export class MailService {
     });
   }
 
-  // ==========================
-  // TEMPLATE: CREDENCIALES
-  // ==========================
-  private buildCredentialsEmailHtml(params: {
-    username: string;
-    plainPassword: string;
-    loginUrl: string;
-    nameuser?: string;
-  }): string {
-    const { username, plainPassword, loginUrl, nameuser } = params;
-    const currentYear = new Date().getFullYear();
-    const safeName = nameuser || 'usuario';
+  async sendMail(options: {
+    to: string | string[];
+    subject: string;
+    text?: string;
+    html?: string;
+    cc?: string | string[];
+    attachments?: { filename: string; content: Buffer }[];
+  }): Promise<void> {
+    const { to, subject, text, html, cc, attachments } = options;
 
-    return `<!DOCTYPE html>
-<html lang="es">
-  <head>
-    <meta charset="UTF-8" />
-    <title>Tus credenciales de acceso</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  </head>
-  <body style="margin:0; padding:0; background-color:#f4f4f4;">
-    <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f4f4f4; padding:20px 0;">
-      <tr>
-        <td align="center">
-          <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px; background-color:#ffffff; border-radius:8px; overflow:hidden; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; border:1px solid #e0e0e0;">
-            <tr>
-              <td style="background-color:#0067AC; padding:20px 30px; color:#ffffff; font-size:20px; font-weight:bold;">
-                Imec del Norte - Credenciales de acceso
-              </td>
-            </tr>
+    const mailOptions: nodemailer.SendMailOptions = {
+      from:
+        this.configService.get<string>('MAIL_FROM') ||
+        'no-reply@imecdelnorte.com',
+      to,
+      cc,
+      subject,
+      text,
+      html,
+      attachments,
+    };
 
-            <tr>
-              <td style="padding:24px 30px; color:#333333; font-size:14px; line-height:1.5;">
-                <p style="margin:0 0 15px 0;">Hola, ${safeName}</p>
-
-                <p style="margin:0 0 15px 0;">
-                  Se ha creado una cuenta para ti en <strong>Imec del Norte Web</strong>.
-                </p>
-
-                <p style="margin:0 0 15px 0;">
-                  A continuación encontrarás tus credenciales de acceso:
-                </p>
-
-                <div style="margin:15px 0; padding:12px 15px; background-color:#f7f7f7; border-radius:6px; border:1px solid #e0e0e0;">
-                  <p style="margin:0 0 8px 0;">
-                    Usuario: <strong>${username}</strong>
-                  </p>
-                  <p style="margin:0;">
-                    Contraseña temporal: <strong>${plainPassword}</strong>
-                  </p>
-                </div>
-
-                <p style="margin:15px 0;">
-                  Por seguridad, te recomendamos iniciar sesión y cambiar tu contraseña lo antes posible.
-                </p>
-
-                <table cellpadding="0" cellspacing="0" border="0" style="margin:20px 0;">
-                  <tr>
-                    <td align="center" bgcolor="#0067AC" style="border-radius:4px;">
-                      <a href="${loginUrl}"
-                        style="display:inline-block; padding:10px 22px; font-size:14px; color:#ffffff; text-decoration:none; font-weight:600;">
-                        Iniciar sesión
-                      </a>
-                    </td>
-                  </tr>
-                </table>
-
-                <p style="margin:0 0 10px 0; font-size:12px; color:#777777;">
-                  Si no esperabas este correo, puedes ignorarlo. Es posible que alguien haya introducido tu dirección por error.
-                </p>
-
-                <p style="margin:0; font-size:12px; color:#777777;">
-                  Saludos,<br />
-                  El Equipo de Soporte
-                </p>
-              </td>
-            </tr>
-
-            <tr>
-              <td style="padding:15px 30px; background-color:#fafafa; color:#999999; font-size:11px; text-align:center;">
-                © ${currentYear} Imec del Norte. Todos los derechos reservados.
-              </td>
-            </tr>
-          </table>
-        </td>
-      </tr>
-    </table>
-  </body>
-</html>`;
+    try {
+      await this.transporter.sendMail(mailOptions);
+      this.logger.log(
+        `Correo enviado a ${Array.isArray(to) ? to.join(', ') : to}`,
+      );
+    } catch (error) {
+      this.logger.error(
+        `Error enviando correo a ${Array.isArray(to) ? to.join(', ') : to}: ${
+          (error as any).message
+        }`,
+        (error as Error).stack,
+      );
+      throw error;
+    }
   }
 
   async sendCredentialsEmail(params: {
@@ -131,7 +89,7 @@ export class MailService {
     const loginUrl =
       this.configService.get<string>('APP_LOGIN_URL') || 'https://x/';
 
-    const html = this.buildCredentialsEmailHtml({
+    const html = buildCredentialsEmailHtml({
       username,
       plainPassword,
       loginUrl,
@@ -155,116 +113,13 @@ Saludos,
 El equipo de Soporte
     `.trim();
 
-    const mailOptions: nodemailer.SendMailOptions = {
-      from:
-        this.configService.get<string>('MAIL_FROM') ||
-        'no-reply@imecdelnorte.com',
+    await this.sendMail({
       to,
       subject: 'Tus credenciales de acceso',
       text,
       html,
-    };
-
-    try {
-      await this.transporter.sendMail(mailOptions);
-      this.logger.log(`Correo de credenciales enviado a ${to}`);
-    } catch (error) {
-      this.logger.error(
-        `Error enviando correo a ${to}: ${(error as any).message}`,
-        (error as Error).stack,
-      );
-      throw error;
-    }
+    });
   }
-
-  // ==========================
-  // TEMPLATE: RESET PASSWORD
-  // ==========================
-
-  private buildPasswordResetEmailHtml(params: {
-    resetUrl: string;
-    nameuser?: string;
-  }): string {
-    const { resetUrl, nameuser } = params;
-    const currentYear = new Date().getFullYear();
-    const safeName = nameuser || 'usuario';
-
-    return `<!DOCTYPE html>
-<html lang="es">
-  <head>
-    <meta charset="UTF-8" />
-    <title>Recuperación de contraseña</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  </head>
-  <body style="margin:0; padding:0; background-color:#f4f4f4;">
-    <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f4f4f4; padding:20px 0;">
-      <tr>
-        <td align="center">
-          <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px; background-color:#ffffff; border-radius:8px; overflow:hidden; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; border:1px solid #e0e0e0;">
-            <tr>
-              <td style="background-color:#0067AC; padding:20px 30px; color:#ffffff; font-size:20px; font-weight:bold;">
-                Imec del Norte - Recuperación de contraseña
-              </td>
-            </tr>
-
-            <tr>
-              <td style="padding:24px 30px; color:#333333; font-size:14px; line-height:1.5;">
-                <p style="margin:0 0 15px 0;">Hola, ${safeName}</p>
-
-                <p style="margin:0 0 15px 0;">
-                  Hemos recibido una solicitud para restablecer tu contraseña
-                  en <strong>Imec del Norte Web</strong>.
-                </p>
-
-                <p style="margin:0 0 15px 0;">
-                  Si fuiste tú, haz clic en el siguiente botón para crear una nueva contraseña.
-                  Este enlace es válido por <strong>1 hora</strong>.
-                </p>
-
-                <table cellpadding="0" cellspacing="0" border="0" style="margin:20px 0;">
-                  <tr>
-                    <td align="center" bgcolor="#0067AC" style="border-radius:4px;">
-                      <a href="${resetUrl}"
-                        style="display:inline-block; padding:10px 22px; font-size:14px; color:#ffffff; text-decoration:none; font-weight:600;">
-                        Restablecer contraseña
-                      </a>
-                    </td>
-                  </tr>
-                </table>
-
-                <p style="margin:0 0 10px 0; font-size:12px; color:#777777;">
-                  Si el botón no funciona, copia y pega este enlace en tu navegador:
-                </p>
-
-                <p style="margin:0 0 15px 0; font-size:12px; color:#2563eb; word-break:break-all;">
-                  <a href="${resetUrl}" style="color:#2563eb;">${resetUrl}</a>
-                </p>
-
-                <p style="margin:0 0 10px 0; font-size:12px; color:#777777;">
-                  Si no solicitaste este cambio, puedes ignorar este correo.
-                  Tu contraseña actual seguirá siendo válida.
-                </p>
-
-                <p style="margin:0; font-size:12px; color:#777777;">
-                  Saludos,<br />
-                  El equipo de Soporte de Imec del Norte
-                </p>
-              </td>
-            </tr>
-
-            <tr>
-              <td style="padding:15px 30px; background-color:#fafafa; color:#999999; font-size:11px; text-align:center;">
-                © ${currentYear} Imec del Norte. Todos los derechos reservados.
-              </td>
-            </tr>
-          </table>
-        </td>
-      </tr>
-    </table>
-  </body>
-</html>`;
-  }
-
   async sendPasswordResetEmail(params: {
     to: string;
     resetUrl: string;
@@ -272,7 +127,7 @@ El equipo de Soporte
   }): Promise<void> {
     const { to, resetUrl, nameuser } = params;
 
-    const html = this.buildPasswordResetEmailHtml({ resetUrl, nameuser });
+    const html = buildPasswordResetEmailHtml({ resetUrl, nameuser });
 
     const text = `
 Hola${nameuser ? ` ${nameuser}` : ''},
@@ -288,131 +143,17 @@ Saludos,
 El equipo de Soporte de Imec del Norte
     `.trim();
 
-    const mailOptions: nodemailer.SendMailOptions = {
-      from:
-        this.configService.get<string>('MAIL_FROM') ||
-        'no-reply@imecdelnorte.com',
+    await this.sendMail({
       to,
       subject: 'Recuperación de contraseña',
       text,
       html,
-    };
-
-    try {
-      await this.transporter.sendMail(mailOptions);
-      this.logger.log(`Correo de recuperación enviado a ${to}`);
-    } catch (error) {
-      this.logger.error(
-        `Error enviando correo de recuperación a ${to}: ${
-          (error as any).message
-        }`,
-        (error as Error).stack,
-      );
-      throw error;
-    }
-  }
-
-  private buildMaintenanceReminderEmailHtml(params: {
-    items: {
-      equipmentCode: string;
-      clientName: string;
-      fechaProgramada: Date;
-      unidadFrecuencia?: string | null;
-      diaDelMes?: number | null;
-      notas?: string;
-    }[];
-  }): string {
-    const { items } = params;
-    const currentYear = new Date().getFullYear();
-
-    const rows = items
-      .map((item) => {
-        const fecha = item.fechaProgramada.toISOString().slice(0, 10);
-        const frecuenciaDesc = item.unidadFrecuencia
-          ? item.unidadFrecuencia +
-            (item.diaDelMes ? ` (día ${item.diaDelMes})` : '')
-          : 'No especificada';
-
-        return `
-          <tr>
-            <td style="padding:8px;border:1px solid #e5e7eb;">${item.equipmentCode}</td>
-            <td style="padding:8px;border:1px solid #e5e7eb;">${item.clientName}</td>
-            <td style="padding:8px;border:1px solid #e5e7eb;">${fecha}</td>
-            <td style="padding:8px;border:1px solid #e5e7eb;">${frecuenciaDesc}</td>
-            <td style="padding:8px;border:1px solid #e5e7eb;">${item.notas || ''}</td>
-          </tr>
-        `;
-      })
-      .join('');
-
-    return `<!DOCTYPE html>
-<html lang="es">
-  <head>
-    <meta charset="UTF-8" />
-    <title>Mantenimientos programados</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  </head>
-  <body style="margin:0; padding:0; background-color:#f4f4f4;">
-    <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f4f4f4; padding:20px 0;">
-      <tr>
-        <td align="center">
-          <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px; background-color:#ffffff; border-radius:8px; overflow:hidden; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; border:1px solid #e0e0e0;">
-            <tr>
-              <td style="background-color:#0067AC; padding:20px 30px; color:#ffffff; font-size:20px; font-weight:bold;">
-                Imec del Norte - Mantenimientos programados
-              </td>
-            </tr>
-
-            <tr>
-              <td style="padding:24px 30px; color:#333333; font-size:14px; line-height:1.5;">
-                <p style="margin:0 0 15px 0;">
-                  Estos son los mantenimientos programados para los próximos días:
-                </p>
-
-                <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse; font-size:12px;">
-                  <thead>
-                    <tr style="background-color:#f3f4f6;">
-                      <th style="padding:8px;border:1px solid #e5e7eb;text-align:left;">Equipo</th>
-                      <th style="padding:8px;border:1px solid #e5e7eb;text-align:left;">Cliente</th>
-                      <th style="padding:8px;border:1px solid #e5e7eb;text-align:left;">Fecha programada</th>
-                      <th style="padding:8px;border:1px solid #e5e7eb;text-align:left;">Frecuencia</th>
-                      <th style="padding:8px;border:1px solid #e5e7eb;text-align:left;">Notas</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    ${rows}
-                  </tbody>
-                </table>
-
-                <p style="margin:15px 0 0 0; font-size:12px; color:#777777;">
-                  Este es un correo automático de recordatorio.
-                </p>
-              </td>
-            </tr>
-
-            <tr>
-              <td style="padding:15px 30px; background-color:#fafafa; color:#999999; font-size:11px; text-align:center;">
-                © ${currentYear} Imec del Norte. Todos los derechos reservados.
-              </td>
-            </tr>
-          </table>
-        </td>
-      </tr>
-    </table>
-  </body>
-</html>`;
+    });
   }
 
   async sendMaintenanceReminderEmail(params: {
     to: string[];
-    items: {
-      equipmentCode: string;
-      clientName: string;
-      fechaProgramada: Date;
-      unidadFrecuencia?: string | null;
-      diaDelMes?: number | null;
-      notas?: string;
-    }[];
+    items: MaintenanceReminderItem[];
   }): Promise<void> {
     const { to, items } = params;
 
@@ -420,12 +161,14 @@ El equipo de Soporte de Imec del Norte
       return;
     }
 
-    const html = this.buildMaintenanceReminderEmailHtml({ items });
+    const html = buildMaintenanceReminderEmailHtml({ items });
 
     const lines = items.map((item) => {
       const fecha = item.fechaProgramada.toISOString().slice(0, 10);
       const frecuencia = item.unidadFrecuencia
-        ? `${item.unidadFrecuencia}${item.diaDelMes ? ` (día ${item.diaDelMes})` : ''}`
+        ? `${item.unidadFrecuencia}${
+            item.diaDelMes ? ` (día ${item.diaDelMes})` : ''
+          }`
         : 'No especificada';
 
       return `- Equipo ${item.equipmentCode} (${item.clientName}) – Fecha: ${fecha} – Frecuencia: ${frecuencia}`;
@@ -439,27 +182,42 @@ ${lines.join('\n')}
 Este es un correo automático de recordatorio.
     `.trim();
 
-    const mailOptions: nodemailer.SendMailOptions = {
-      from:
-        this.configService.get<string>('MAIL_FROM') ||
-        'no-reply@imecdelnorte.com',
-      to: to.join(','),
+    await this.sendMail({
+      to,
       subject: 'Mantenimientos programados - Recordatorio semanal',
       text,
       html,
-    };
+    });
+  }
 
-    try {
-      await this.transporter.sendMail(mailOptions);
-      this.logger.log(
-        `Correo de mantenimientos programados enviado a ${to.join(', ')}`,
-      );
-    } catch (error) {
-      this.logger.error(
-        `Error enviando correo de mantenimientos: ${(error as any).message}`,
-        (error as Error).stack,
-      );
-      throw error;
-    }
+  async sendWorkOrderReportsEmail(options: {
+    to: string;
+    cc?: string[];
+    templateParams: WorkOrderReportsEmailTemplateParams;
+    attachments: { filename: string; content: Buffer }[];
+  }): Promise<void> {
+    const { to, cc, templateParams, attachments } = options;
+
+    const subject =
+      templateParams.reportType === 'internal'
+        ? 'Informes internos de órdenes de servicio'
+        : 'Informes de órdenes de servicio para cliente';
+
+    const html = buildWorkOrderReportsEmailHtml(templateParams);
+    const text = buildWorkOrderReportsEmailText(templateParams);
+    console.log(
+      `[MailService] Enviando correo de reportes a ${to} con ${attachments.length} adjunto(s): ${attachments
+        .map((a) => a.filename)
+        .join(', ')}`,
+    );
+
+    await this.sendMail({
+      to,
+      cc,
+      subject,
+      text,
+      html,
+      attachments,
+    });
   }
 }

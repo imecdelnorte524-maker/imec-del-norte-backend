@@ -7,42 +7,34 @@ export class BaseSequenceService {
   protected readonly logger = new Logger(this.constructor.name);
   protected tableName: string;
   protected idColumn: string;
-  protected sequenceName: string;
+  protected sequenceName?: string; // 👈 ahora opcional
 
-  constructor(
-    protected readonly sequenceHelper: SequenceHelperService,
-  ) {}
+  constructor(protected readonly sequenceHelper: SequenceHelperService) {}
 
-  /**
-   * Inicializa y corrige la secuencia
-   */
   protected async initializeSequence(): Promise<void> {
     try {
       const sequenceInfo = await this.sequenceHelper.checkAndFixSequence(
         this.tableName,
         this.idColumn,
-        this.sequenceName,
+        this.sequenceName, // puede ser undefined
       );
 
       if (sequenceInfo.corrected) {
         this.logger.log(
-          `✅ Secuencia ${this.sequenceName} corregida: ${sequenceInfo.lastValue - 1} → ${sequenceInfo.maxId}`,
+          `✅ Secuencia ${sequenceInfo.sequenceName} corregida: ${sequenceInfo.lastValue - 1} → ${sequenceInfo.maxId}`,
         );
-      } else if (!sequenceInfo.synchronized) {
+      } else {
         this.logger.log(
-          `✓ Secuencia ${this.sequenceName} OK. Último valor: ${sequenceInfo.lastValue}`,
+          `✓ Secuencia ${sequenceInfo.sequenceName || '(detectada automáticamente)'} OK. Último valor: ${sequenceInfo.lastValue}`,
         );
       }
     } catch (error: any) {
       this.logger.warn(
-        `⚠️ No se pudo inicializar secuencia ${this.sequenceName}: ${error.message}`,
+        `⚠️ No se pudo inicializar secuencia ${this.sequenceName || `${this.tableName}.${this.idColumn}`}: ${error.message}`,
       );
     }
   }
 
-  /**
-   * Corrige la secuencia si está desincronizada
-   */
   async fixSequenceIfNeeded(): Promise<{
     corrected: boolean;
     message: string;
@@ -57,37 +49,34 @@ export class BaseSequenceService {
       if (sequenceInfo.corrected) {
         return {
           corrected: true,
-          message: `✅ Secuencia ${this.sequenceName} corregida: ${sequenceInfo.lastValue - 1} → ${sequenceInfo.maxId}`,
+          message: `✅ Secuencia ${sequenceInfo.sequenceName} corregida: ${sequenceInfo.lastValue - 1} → ${sequenceInfo.maxId}`,
         };
       }
 
       return {
         corrected: false,
-        message: `Secuencia ${this.sequenceName} ya está actualizada`,
+        message: `Secuencia ${sequenceInfo.sequenceName || '(detectada automáticamente)'} ya está actualizada`,
       };
     } catch (error: any) {
-      const errorMessage = `❌ Error corrigiendo secuencia ${this.sequenceName}: ${error.message}`;
+      const errorMessage = `❌ Error corrigiendo secuencia ${this.sequenceName || `${this.tableName}.${this.idColumn}`}: ${error.message}`;
       this.logger.error(errorMessage);
       throw new Error(errorMessage);
     }
   }
 
-  /**
-   * Diagnóstico de la tabla
-   */
   async diagnoseTable(uniqueColumns?: string[]): Promise<any> {
     try {
       const diagnosis = await this.sequenceHelper.diagnoseTable(
         this.tableName,
         this.idColumn,
-        this.sequenceName,
+        this.sequenceName, // opcional
         uniqueColumns,
       );
 
       return {
         tableName: this.tableName,
         idColumn: this.idColumn,
-        sequenceName: this.sequenceName,
+        sequenceName: diagnosis.sequence.sequenceName,
         ...diagnosis,
       };
     } catch (error: any) {
