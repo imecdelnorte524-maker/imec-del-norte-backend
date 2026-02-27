@@ -102,6 +102,17 @@ class MotorResponseDto {
 }
 
 class EvaporatorResponseDto {
+  @ApiPropertyOptional({ example: 1 })
+  airConditionerTypeEvapId?: number;
+
+  @ApiPropertyOptional()
+  airConditionerTypeEvap?: {
+    id: number;
+    name: string;
+    hasEvaporator: boolean;
+    hasCondenser: boolean;
+  };
+
   @ApiPropertyOptional({ example: 'Daikin' })
   marca?: string;
 

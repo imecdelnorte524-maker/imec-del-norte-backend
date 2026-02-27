@@ -89,6 +89,12 @@ class ToolInfo {
     required: false,
   })
   observacion?: string;
+
+  @ApiProperty({
+    example: 'Tipo de para la Herramienta',
+    required: false,
+  })
+  tipo?: string;
 }
 
 class BodegaInfo {

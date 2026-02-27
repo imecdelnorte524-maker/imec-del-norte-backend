@@ -16,10 +16,7 @@ export enum SupplyStatus {
 
 export enum ToolType {
   HERRAMIENTA = 'Herramienta',
-  INSTRUMENTO = 'Instrumento',
-  EQUIPO = 'Equipo',
-  MAQUINARIA = 'Maquinaria',
-  ELECTRONICO = 'Electrónico'
+  EQUIPO = 'Equipo'
 }
 
 export enum SupplyCategory {

@@ -18,6 +18,8 @@ import { WorkOrdersModule } from 'src/work-orders/work-orders.module';
 import { EquipmentDocumentsService } from './equipment-documents.service';
 import { EquipmentDocumentsController } from './equipment-documents.controller';
 import { EquipmentDocument } from './entities/equipment-document.entity';
+import { NotificationsModule } from '../notifications/notifications.module';
+import { PdfModule } from '../pdf/pdf.module';
 
 @Module({
   imports: [
@@ -36,6 +38,8 @@ import { EquipmentDocument } from './entities/equipment-document.entity';
     ]),
     ImagesModule,
     WorkOrdersModule,
+    NotificationsModule,
+    PdfModule,
   ],
   controllers: [EquipmentController, EquipmentDocumentsController],
   providers: [EquipmentService, EquipmentDocumentsService],

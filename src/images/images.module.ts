@@ -9,7 +9,8 @@ import { Supply } from '../supplies/entities/supply.entity';
 import { User } from '../users/entities/user.entity';
 import { Equipment } from '../equipment/entities/equipment.entity';
 import { Client } from '../client/entities/client.entity';
-import { WorkOrder } from 'src/work-orders/entities/work-order.entity';
+import { WorkOrder } from '../work-orders/entities/work-order.entity';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { WorkOrder } from 'src/work-orders/entities/work-order.entity';
       Client,
       WorkOrder,
     ]),
+    NotificationsModule,
   ],
   controllers: [ImagesController],
   providers: [ImagesService, CloudinaryService],

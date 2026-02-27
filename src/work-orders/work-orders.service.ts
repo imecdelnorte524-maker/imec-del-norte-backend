@@ -34,7 +34,6 @@ import { ServiceCategory } from '../shared/index';
 import { PlanMantenimiento } from '../equipment/entities/plan-mantenimiento.entity';
 import { CreateEmergencyOrderDto } from './dto/create-emergency-order.dto';
 import { AssignTechniciansDto } from './dto/assign-technicians.dto';
-import { WebsocketGateway } from '../websockets/websocket.gateway';
 import { RateTechniciansDto } from './dto/rate-technicians.dto';
 import { SignWorkOrderDto } from './dto/sign-work-order.dto';
 import { AcInspection } from './entities/ac-inspection.entity';
@@ -42,6 +41,17 @@ import { AcInspectionPhase, WorkOrderEvidencePhase } from '../shared/index';
 import { CreateAcInspectionDto } from './dto/create-ac-inspection.dto';
 import { Image } from 'src/images/entities/image.entity';
 import { CostStatus } from '../shared/index';
+import { PdfService } from 'src/pdf/pdf.service';
+import { ConfigService } from '@nestjs/config';
+import { buildInformeOrdenParams } from '../../templates/report/informe-orden-html.helper';
+import {
+  SendWorkOrderReportsDto,
+  WorkOrderReportType,
+} from './dto/send-work-order-reports.dto';
+import { MailService } from 'src/mail/mail.service';
+import { SendWorkOrderReportsToClientsDto } from './dto/send-work-order-reports-to-clients.dto';
+import JSZip from 'jszip';
+import { NotificationsGateway } from 'src/notifications/notifications.gateway';
 
 @Injectable()
 export class WorkOrdersService {
@@ -80,9 +90,13 @@ export class WorkOrdersService {
     private imageRepository: Repository<Image>,
     private dataSource: DataSource,
     private eventEmitter: EventEmitter2,
-    private readonly websocketGateway: WebsocketGateway,
+    private readonly notificationsGateway: NotificationsGateway,
+    private readonly pdfService: PdfService,
+    private readonly configService: ConfigService,
+    private readonly mailService: MailService,
   ) {}
 
+  private readonly MAX_EMAIL_ATTACHMENT_BYTES = 30 * 1024 * 1024;
   private getRoleName(currentUser: any): string {
     return currentUser?.role?.nombreRol || currentUser?.role || '';
   }
@@ -281,7 +295,7 @@ export class WorkOrdersService {
     const full = await this.findOne(savedWorkOrder.ordenId);
 
     // 🔴 WebSocket
-    this.websocketGateway.emit('workOrders.created', full);
+    this.notificationsGateway.server.emit('workOrders.created', full);
 
     return full;
   }
@@ -422,7 +436,6 @@ export class WorkOrdersService {
     const isAC = this.isAirConditioningService(workOrder);
     const previousStatus = workOrder.estado;
 
-    // --- 1. VALIDACIONES ESPECÍFICAS AC POR EQUIPO ---
     if (
       isAC &&
       updateWorkOrderDto.estado === WorkOrderStatus.IN_PROGRESS &&
@@ -495,7 +508,6 @@ export class WorkOrdersService {
           'Solo se puede facturar órdenes finalizadas',
         );
       }
-      // Validar que todos los técnicos estén calificados si se va a poner un estado de facturación
       if (
         updateWorkOrderDto.estadoFacturacion !== null &&
         workOrder.technicians?.some((t) => t.rating === null)
@@ -514,7 +526,6 @@ export class WorkOrdersService {
         throw new ForbiddenException('No está asignado a esta orden');
     }
 
-    // --- 2. VALIDAR TRANSICIÓN DE ESTADO ---
     if (updateWorkOrderDto.estado) {
       this.validateEstadoTransition(
         workOrder.estado,
@@ -523,7 +534,6 @@ export class WorkOrdersService {
       );
     }
 
-    // --- 3. VALIDAR FIRMA PARA COMPLETAR ---
     if (
       updateWorkOrderDto.estado === WorkOrderStatus.COMPLETED &&
       (!workOrder.receivedByName || !workOrder.receivedBySignatureData)
@@ -533,7 +543,6 @@ export class WorkOrdersService {
       );
     }
 
-    // --- 4. MANEJO DE CRONÓMETRO Y PAUSAS ---
     if (
       updateWorkOrderDto.estado === WorkOrderStatus.IN_PROGRESS &&
       !workOrder.fechaInicio
@@ -541,7 +550,6 @@ export class WorkOrdersService {
       updateWorkOrderDto.fechaInicio = this.getColombiaTime();
       await this.startTimer(id, currentUser.userId);
 
-      // 🔥 EVENTO: Orden iniciada (EN PROCESO)
       this.eventEmitter.emit('work-order.started', {
         workOrderId: id,
         clienteId: workOrder.clienteId,
@@ -573,7 +581,6 @@ export class WorkOrdersService {
       await this.resumeOrder(id, currentUser.userId);
     }
 
-    // --- 5. ACTUALIZACIÓN DE RELACIONES (EQUIPOS Y TÉCNICOS) ---
     let hasChanges = false;
 
     if (updateWorkOrderDto.equipmentIds !== undefined) {
@@ -599,7 +606,6 @@ export class WorkOrdersService {
       hasChanges = true;
     }
 
-    // Caso legacy: tecnicoId (un solo técnico)
     if (updateWorkOrderDto.tecnicoId !== undefined) {
       await this.updateTechnicianAssociations(
         id,
@@ -609,14 +615,13 @@ export class WorkOrdersService {
       hasChanges = true;
     }
 
-    // --- 6. CAMPOS DIRECTOS (los que van al update principal) ---
     const {
-      pauseObservation, // ya manejado en pauseOrder
+      pauseObservation,
       equipmentIds,
       technicianIds,
       leaderTechnicianId,
       tecnicoId,
-      ...directFields // ← resto de campos (estado, comentarios, fechas, etc.)
+      ...directFields
     } = updateWorkOrderDto;
 
     if (Object.keys(directFields).length > 0) {
@@ -624,14 +629,19 @@ export class WorkOrdersService {
       hasChanges = true;
     }
 
-    // Si NO hubo ningún cambio → lanzamos error controlado
+    if (
+      updateWorkOrderDto.estado === WorkOrderStatus.COMPLETED &&
+      previousStatus !== WorkOrderStatus.COMPLETED
+    ) {
+      await this.releaseToolsForOrder(id);
+    }
+
     if (!hasChanges) {
       throw new BadRequestException(
         'No se proporcionaron campos válidos para actualizar esta orden',
       );
     }
 
-    // Obtener la orden actualizada para los eventos
     const updatedWorkOrder = await this.findOne(id);
 
     // --- 7. EVENTOS DE NOTIFICACIÓN ---
@@ -858,7 +868,7 @@ export class WorkOrdersService {
       });
 
       // 🔴 WebSocket
-      this.websocketGateway.emit('workOrders.deleted', { id });
+      this.notificationsGateway.server.emit('workOrders.deleted', { id });
     } catch (error) {
       await queryRunner.rollbackTransaction();
       throw error;
@@ -1462,7 +1472,7 @@ export class WorkOrdersService {
       emitAssigned: true,
     });
 
-    this.websocketGateway.emit('workOrders.emergencyCreated', {
+    this.notificationsGateway.server.emit('workOrders.emergencyCreated', {
       originalOrderId: ordenId,
       emergencyOrder,
     });
@@ -2121,8 +2131,8 @@ export class WorkOrdersService {
     const updated = await this.findOne(ordenId);
 
     // 🔴 WebSocket
-    this.websocketGateway.emit('workOrders.updated', updated);
-    this.websocketGateway.emit('workOrders.invoiceRemoved', updated);
+    this.notificationsGateway.server.emit('workOrders.updated', updated);
+    this.notificationsGateway.server.emit('workOrders.invoiceRemoved', updated);
 
     return updated;
   }
@@ -2175,8 +2185,8 @@ export class WorkOrdersService {
     });
 
     // 🔴 WebSocket
-    this.websocketGateway.emit('workOrders.updated', updated);
-    this.websocketGateway.emit('workOrders.invoiceUpdated', updated);
+    this.notificationsGateway.server.emit('workOrders.updated', updated);
+    this.notificationsGateway.server.emit('workOrders.invoiceUpdated', updated);
 
     return updated;
   }
@@ -2227,9 +2237,9 @@ export class WorkOrdersService {
       );
     }
 
+    // Obtener el cliente empresa COMPLETO (con el campo contacto)
     const clienteEmpresa = await this.clientsRepository.findOne({
       where: { idCliente: equipment.clientId },
-      relations: ['usuariosContacto'],
     });
 
     if (!clienteEmpresa) {
@@ -2238,12 +2248,50 @@ export class WorkOrdersService {
       );
     }
 
-    const primerContacto = this.getPrimerUsuarioContacto(clienteEmpresa);
-    if (!primerContacto) {
+    // Consultar los contactos REALES desde la tabla intermedia
+    const clientesConContactos = await this.clientsRepository
+      .createQueryBuilder('cliente')
+      .innerJoinAndSelect('cliente.usuariosContacto', 'usuario')
+      .where('cliente.idCliente = :clienteId', {
+        clienteId: equipment.clientId,
+      })
+      .getOne();
+
+    if (
+      !clientesConContactos ||
+      !clientesConContactos.usuariosContacto?.length
+    ) {
       throw new BadRequestException(
-        `El cliente empresa ${clienteEmpresa.nombre} no tiene usuarios contacto asignados`,
+        `El cliente empresa ${clienteEmpresa.nombre} no tiene usuarios contacto asignados en la tabla intermedia`,
       );
     }
+
+
+    // 🔴 BUSCAR POR NOMBRE (campo contacto) - CORREGIDO
+    let usuarioSeleccionado: User | null = null; // 👈 Tipo explícito User | null
+    const nombreContacto = clienteEmpresa.contacto?.toLowerCase().trim() || '';
+
+    if (nombreContacto) {
+      const encontrado = clientesConContactos.usuariosContacto.find(
+        (usuario) => {
+          const nombreCompleto = `${usuario.nombre} ${usuario.apellido}`
+            .toLowerCase()
+            .trim();
+          // Coincidencia exacta o parcial (ignorando títulos)
+          return (
+            nombreCompleto.includes(nombreContacto) ||
+            nombreContacto.includes(nombreCompleto)
+          );
+        },
+      );
+
+      usuarioSeleccionado = encontrado || null; // 👈 Convertir undefined a null
+    }
+
+    // Si no encontramos por nombre, USAR EL PRIMERO
+    if (!usuarioSeleccionado) {
+      usuarioSeleccionado = clientesConContactos.usuariosContacto[0];
+    } 
 
     const servicio = await this.servicesRepository.findOne({
       where: { categoriaServicio: equipment.category as ServiceCategory },
@@ -2263,7 +2311,7 @@ export class WorkOrdersService {
     try {
       const workOrder = this.workOrdersRepository.create({
         servicioId: servicio.servicioId,
-        clienteId: primerContacto.usuarioId,
+        clienteId: usuarioSeleccionado.usuarioId, // ✅ Ya no hay error de tipos
         clienteEmpresaId: clienteEmpresa.idCliente,
         fechaProgramada,
         comentarios:
@@ -2301,8 +2349,7 @@ export class WorkOrdersService {
 
       const full = await this.findOne(savedWorkOrder.ordenId);
 
-      // 🔴 WebSocket
-      this.websocketGateway.emit('workOrders.created', full);
+      this.notificationsGateway.server.emit('workOrders.created', full);
 
       return full;
     } catch (error) {
@@ -2320,39 +2367,23 @@ export class WorkOrdersService {
       emitAssigned?: boolean;
       extraEvent?: string;
       extraPayload?: any;
-      clientId?: string; // 👈 Nuevo parámetro opcional
+      clientId?: string;
     },
   ): Promise<void> {
     const workOrder = await this.findOne(ordenId);
 
-    // Si hay clientId, emitir también a ese cliente específico
-    if (options?.clientId) {
-      // Emitir al cliente que hizo la petición
-      this.websocketGateway.emitToClient(
-        options.clientId,
-        'workOrders.updated',
-        workOrder,
-      );
-    }
+    // Emitir SIEMPRE actualización general
+    this.notificationsGateway.server.emit('workOrders.updated', workOrder);
 
-    // Siempre emitir a todos (para otros clientes)
-    this.websocketGateway.emitToAll('workOrders.updated', workOrder);
-
-    // Cambio de estado - emitir a todos
+    // Cambio de estado
     if (
       options?.previousStatus &&
       options.previousStatus !== workOrder.estado
     ) {
-      this.websocketGateway.emitToAll('workOrders.statusUpdated', workOrder);
-
-      // También al cliente específico si quieres
-      if (options?.clientId) {
-        this.websocketGateway.emitToClient(
-          options.clientId,
-          'workOrders.statusUpdated',
-          workOrder,
-        );
-      }
+      this.notificationsGateway.server.emit(
+        'workOrders.statusUpdated',
+        workOrder,
+      );
     }
 
     // Cambio de técnicos asignados
@@ -2361,34 +2392,18 @@ export class WorkOrdersService {
         workOrder,
         technicianIds: workOrder.technicians?.map((t) => t.tecnicoId) ?? [],
       };
-
-      this.websocketGateway.emitToAll('workOrders.assigned', assignedData);
-
-      if (options?.clientId) {
-        this.websocketGateway.emitToClient(
-          options.clientId,
-          'workOrders.assigned',
-          assignedData,
-        );
-      }
+      this.notificationsGateway.server.emit(
+        'workOrders.assigned',
+        assignedData,
+      );
     }
 
     // Evento extra opcional
     if (options?.extraEvent) {
       const extraData = options.extraPayload ?? workOrder;
-      this.websocketGateway.emitToAll(options.extraEvent, extraData);
-
-      if (options?.clientId) {
-        this.websocketGateway.emitToClient(
-          options.clientId,
-          options.extraEvent,
-          extraData,
-        );
-      }
+      this.notificationsGateway.server.emit(options.extraEvent, extraData);
     }
   }
-
-  // src/work-orders/work-orders.service.ts
 
   async rateTechnicians(
     ordenId: number,
@@ -2699,5 +2714,490 @@ export class WorkOrdersService {
       },
     });
     return count > 0;
+  }
+
+  async generarInformeOrden(ordenId: number): Promise<Buffer> {
+    const orden = await this.findOne(ordenId);
+
+    const headerImageUrl = this.configService.get<string>(
+      'PDF_HEADER_IMAGE_URL',
+      'https://res.cloudinary.com/dxne98os1/image/upload/v1771949437/pdf-templates/headers/production/rtrfsak5syqfclqfpq81.png',
+    );
+
+    const params = buildInformeOrdenParams(orden, {
+      headerImageUrl,
+      forClient: false,
+    });
+
+    return this.pdfService.generatePdf({
+      templateName: 'orden_trabajo_interno',
+      params,
+    });
+  }
+
+  async generarInformeOrdenCliente(ordenId: number): Promise<Buffer> {
+    const orden = await this.findOne(ordenId);
+
+    const headerImageUrl = this.configService.get<string>(
+      'PDF_HEADER_IMAGE_URL_CLIENTE',
+      this.configService.get<string>(
+        'PDF_HEADER_IMAGE_URL',
+        'https://res.cloudinary.com/dxne98os1/image/upload/v1771949437/pdf-templates/headers/production/rtrfsak5syqfclqfpq81.png',
+      ),
+    );
+
+    const params = buildInformeOrdenParams(orden, {
+      headerImageUrl,
+      forClient: true,
+    });
+
+    return this.pdfService.generatePdf({
+      templateName: 'orden_trabajo_cliente',
+      params,
+    });
+  }
+
+  async sendReportsByEmail(
+    dto: SendWorkOrderReportsDto,
+    currentUser: any,
+  ): Promise<{ sentTo: string; attachmentsCount: number }> {
+    const roleName = this.getRoleName(currentUser);
+
+    // 1) Permisos según tipo de informe
+    if (dto.reportType === WorkOrderReportType.INTERNAL) {
+      if (!['Administrador', 'Secretaria', 'Supervisor'].includes(roleName)) {
+        throw new ForbiddenException(
+          'No tiene permisos para enviar informes internos.',
+        );
+      }
+    }
+
+    if (dto.reportType === WorkOrderReportType.CLIENT) {
+      if (
+        !['Administrador', 'Secretaria', 'Supervisor', 'Cliente'].includes(
+          roleName,
+        )
+      ) {
+        throw new ForbiddenException(
+          'No tiene permisos para enviar informes cliente.',
+        );
+      }
+    }
+
+    if (!dto.orderIds || dto.orderIds.length === 0) {
+      throw new BadRequestException('Debe enviar al menos una orden.');
+    }
+
+    const attachments: { filename: string; content: Buffer }[] = [];
+
+    for (const id of dto.orderIds) {
+      const workOrder = await this.findOne(id);
+
+      // Solo órdenes COMPLETADAS
+      if (workOrder.estado !== WorkOrderStatus.COMPLETED) {
+        throw new BadRequestException(
+          `La orden ${id} no está finalizada. Solo se pueden enviar informes de órdenes completadas.`,
+        );
+      }
+
+      // Validaciones de acceso (igual que en los endpoints de informe PDF)
+      if (roleName === 'Técnico') {
+        const isAssigned = workOrder.technicians?.some(
+          (t) => t.tecnicoId === currentUser.userId,
+        );
+        if (!isAssigned) {
+          throw new ForbiddenException(
+            `No tiene acceso a la orden ${id} (no está asignado).`,
+          );
+        }
+      }
+
+      if (roleName === 'Cliente') {
+        const hasAccess = await this.userHasAccessToEmpresa(
+          currentUser.userId,
+          workOrder.clienteEmpresaId,
+        );
+        if (!hasAccess) {
+          throw new ForbiddenException(
+            `No tiene acceso a la orden ${id} (no pertenece a sus empresas).`,
+          );
+        }
+      }
+
+      let buffer: Buffer;
+      let filename: string;
+
+      if (dto.reportType === WorkOrderReportType.INTERNAL) {
+        buffer = await this.generarInformeOrden(id);
+        filename = `OT-${id}-interno.pdf`;
+      } else {
+        buffer = await this.generarInformeOrdenCliente(id);
+        filename = `Informe-Orden-Servicio-${id}-cliente.pdf`;
+      }
+
+      attachments.push({ filename, content: buffer });
+    }
+
+    // LOG: tamaño total antes de compresión
+    const totalBytes = attachments.reduce(
+      (sum, att) => sum + att.content.length,
+      0,
+    );
+    const totalMB = totalBytes / (1024 * 1024);
+
+    // 2) Comprimir condicionalmente si supera 30 MB
+    const zipName =
+      dto.reportType === WorkOrderReportType.INTERNAL
+        ? 'informes-internos-ordenes.zip'
+        : 'informes-cliente-ordenes.zip';
+
+    const finalAttachments = await this.buildAttachmentsWithOptionalZip(
+      attachments,
+      zipName,
+    );
+
+    // LOG: tamaño después de compresión condicional
+    const finalTotalBytes = finalAttachments.reduce(
+      (sum, att) => sum + att.content.length,
+      0,
+    );
+    const finalTotalMB = finalTotalBytes / (1024 * 1024);
+
+    const recipientName = currentUser?.nombre || currentUser?.name || undefined;
+
+    await this.mailService.sendWorkOrderReportsEmail({
+      to: dto.toEmail,
+      cc: dto.ccEmails,
+      templateParams: {
+        orderIds: dto.orderIds,
+        reportType:
+          dto.reportType === WorkOrderReportType.INTERNAL
+            ? 'internal'
+            : 'client',
+        recipientName,
+        customMessage: dto.message,
+      },
+      attachments: finalAttachments,
+    });
+
+    return {
+      sentTo: dto.toEmail,
+      attachmentsCount: finalAttachments.length,
+    };
+  }
+
+  async sendReportsToClientsByEmail(
+    dto: SendWorkOrderReportsToClientsDto,
+    currentUser: any,
+  ): Promise<{
+    totalClientsNotified: number;
+    details: {
+      clienteEmpresaId: number;
+      clientName: string;
+      to: string;
+      cc: string[];
+      orderIds: number[];
+    }[];
+    skipped: {
+      clienteEmpresaId: number | null;
+      clientName: string | null;
+      reason: string;
+      orderIds: number[];
+    }[];
+  }> {
+    const roleName = this.getRoleName(currentUser);
+
+    if (!['Administrador', 'Secretaria', 'Supervisor'].includes(roleName)) {
+      throw new ForbiddenException(
+        'No tiene permisos para enviar informes a clientes.',
+      );
+    }
+
+    // 1. Determinar el conjunto de órdenes base
+    let sourceOrders: WorkOrder[] = [];
+
+    if (dto.orderIds && dto.orderIds.length > 0) {
+      // Modo filtrado por IDs (opcional)
+      for (const id of dto.orderIds) {
+        const wo = await this.findOne(id);
+        sourceOrders.push(wo);
+      }
+    } else {
+      // Modo AUTOMÁTICO: todas las órdenes COMPLETED
+      sourceOrders = await this.workOrdersRepository.find({
+        where: { estado: WorkOrderStatus.COMPLETED },
+        relations: ['clienteEmpresa'],
+      });
+    }
+
+    if (sourceOrders.length === 0) {
+      throw new BadRequestException(
+        'No se encontraron órdenes completadas para enviar.',
+      );
+    }
+
+    // 2. Validar estado COMPLETED y agrupar por clienteEmpresaId
+    const groups = new Map<
+      number | null,
+      { orders: WorkOrder[]; clienteEmpresaId: number | null }
+    >();
+
+    for (const workOrder of sourceOrders) {
+      if (workOrder.estado !== WorkOrderStatus.COMPLETED) {
+        throw new BadRequestException(
+          `La orden ${workOrder.ordenId} no está finalizada. Solo se pueden enviar informes de órdenes completadas.`,
+        );
+      }
+
+      const clienteEmpresaId = workOrder.clienteEmpresaId ?? null;
+
+      if (!groups.has(clienteEmpresaId)) {
+        groups.set(clienteEmpresaId, {
+          orders: [],
+          clienteEmpresaId,
+        });
+      }
+      groups.get(clienteEmpresaId)!.orders.push(workOrder);
+    }
+
+    const details: {
+      clienteEmpresaId: number;
+      clientName: string;
+      to: string;
+      cc: string[];
+      orderIds: number[];
+    }[] = [];
+
+    const skipped: {
+      clienteEmpresaId: number | null;
+      clientName: string | null;
+      reason: string;
+      orderIds: number[];
+    }[] = [];
+
+    // 3. Procesar grupo por grupo
+    for (const [clienteEmpresaId, group] of groups.entries()) {
+      const orderIdsForClient = group.orders.map((o) => o.ordenId);
+
+      if (!clienteEmpresaId) {
+        skipped.push({
+          clienteEmpresaId: null,
+          clientName: null,
+          reason:
+            'Las órdenes no tienen cliente empresa asociada. No se enviaron informes.',
+          orderIds: orderIdsForClient,
+        });
+        continue;
+      }
+
+      const clienteEmpresa = await this.clientsRepository.findOne({
+        where: { idCliente: clienteEmpresaId },
+        relations: ['usuariosContacto'],
+      });
+
+      if (!clienteEmpresa) {
+        skipped.push({
+          clienteEmpresaId,
+          clientName: null,
+          reason: 'Cliente empresa no encontrado.',
+          orderIds: orderIdsForClient,
+        });
+        continue;
+      }
+
+      const contactos = clienteEmpresa.usuariosContacto || [];
+      const emails = contactos
+        .map((u) => u.email)
+        .filter((e): e is string => !!e && e.trim().length > 0);
+
+      if (emails.length === 0) {
+        skipped.push({
+          clienteEmpresaId,
+          clientName: clienteEmpresa.nombre || null,
+          reason:
+            'El cliente no tiene usuarios contacto con correo configurado.',
+          orderIds: orderIdsForClient,
+        });
+        continue;
+      }
+
+      // 4. Generar PDFs cliente para todas las órdenes de este cliente
+      const attachments: { filename: string; content: Buffer }[] = [];
+      for (const order of group.orders) {
+        const buffer = await this.generarInformeOrdenCliente(order.ordenId);
+        const filename = `Informe-Orden-Servicio-${order.ordenId}-cliente.pdf`;
+        attachments.push({ filename, content: buffer });
+      }
+
+      // Compresión condicional si sobrepasa 30 MB
+      const zipName = `informes-ordenes-${clienteEmpresa.nombre}.zip`;
+      const finalAttachments = await this.buildAttachmentsWithOptionalZip(
+        attachments,
+        zipName,
+      );
+
+      const to = emails[0];
+      const cc = emails.slice(1);
+
+      await this.mailService.sendWorkOrderReportsEmail({
+        to,
+        cc,
+        templateParams: {
+          orderIds: orderIdsForClient,
+          reportType: 'client',
+          recipientName: clienteEmpresa.nombre || undefined,
+          customMessage: dto.message,
+        },
+        attachments: finalAttachments,
+      });
+
+      details.push({
+        clienteEmpresaId,
+        clientName: clienteEmpresa.nombre,
+        to,
+        cc,
+        orderIds: orderIdsForClient,
+      });
+    }
+
+    return {
+      totalClientsNotified: details.length,
+      details,
+      skipped,
+    };
+  }
+
+  private async buildAttachmentsWithOptionalZip(
+    attachments: { filename: string; content: Buffer }[],
+    zipName: string,
+  ): Promise<{ filename: string; content: Buffer }[]> {
+    const totalSize = attachments.reduce(
+      (sum, att) => sum + att.content.length,
+      0,
+    );
+
+    if (totalSize <= this.MAX_EMAIL_ATTACHMENT_BYTES) {
+      return attachments;
+    }
+
+    const zip = new JSZip();
+    for (const att of attachments) {
+      zip.file(att.filename, att.content);
+    }
+
+    const zipBuffer = await zip.generateAsync({ type: 'nodebuffer' });
+
+    return [
+      {
+        filename: zipName,
+        content: zipBuffer,
+      },
+    ];
+  }
+
+  async generateBatchReportsFile(
+    orderIds: number[],
+    reportType: WorkOrderReportType,
+    currentUser: any,
+  ): Promise<{ buffer: Buffer; fileName: string; contentType: string }> {
+    if (!orderIds || orderIds.length === 0) {
+      throw new BadRequestException('Debe enviar al menos una orden.');
+    }
+
+    const roleName = this.getRoleName(currentUser);
+    const attachments: { filename: string; content: Buffer }[] = [];
+
+    for (const id of orderIds) {
+      const workOrder = await this.findOne(id);
+
+      if (workOrder.estado !== WorkOrderStatus.COMPLETED) {
+        throw new BadRequestException(
+          `La orden ${id} no está finalizada. Solo se pueden generar informes de órdenes completadas.`,
+        );
+      }
+
+      // Validaciones de acceso (similar a sendReportsByEmail)
+      if (roleName === 'Técnico') {
+        const isAssigned = workOrder.technicians?.some(
+          (t) => t.tecnicoId === currentUser.userId,
+        );
+        if (!isAssigned) {
+          throw new ForbiddenException(
+            `No tiene acceso a la orden ${id} (no está asignado).`,
+          );
+        }
+      }
+
+      if (roleName === 'Cliente') {
+        const hasAccess = await this.userHasAccessToEmpresa(
+          currentUser.userId,
+          workOrder.clienteEmpresaId,
+        );
+        if (!hasAccess) {
+          throw new ForbiddenException(
+            `No tiene acceso a la orden ${id} (no pertenece a sus empresas).`,
+          );
+        }
+      }
+
+      let buffer: Buffer;
+      let filename: string;
+
+      if (reportType === WorkOrderReportType.INTERNAL) {
+        buffer = await this.generarInformeOrden(id);
+        filename = `OT-${id}-interno.pdf`;
+      } else {
+        buffer = await this.generarInformeOrdenCliente(id);
+        filename = `Informe-Orden-Servicio-${id}-cliente.pdf`;
+      }
+
+      attachments.push({ filename, content: buffer });
+    }
+
+    // Si solo hay una orden, devolvemos el PDF directamente
+    if (attachments.length === 1) {
+      const att = attachments[0];
+      return {
+        buffer: att.content,
+        fileName: att.filename,
+        contentType: 'application/pdf',
+      };
+    }
+
+    // Si hay varias órdenes → siempre devolver ZIP en descarga local
+    const zip = new JSZip();
+    for (const att of attachments) {
+      zip.file(att.filename, att.content);
+    }
+
+    const zipBuffer = await zip.generateAsync({ type: 'nodebuffer' });
+
+    const zipName =
+      reportType === WorkOrderReportType.INTERNAL
+        ? 'informes-internos-ordenes.zip'
+        : 'informes-cliente-ordenes.zip';
+
+    return {
+      buffer: zipBuffer,
+      fileName: zipName,
+      contentType: 'application/zip',
+    };
+  }
+
+  private async releaseToolsForOrder(ordenId: number): Promise<void> {
+    // Buscar todos los ToolDetail de esa orden
+    const toolDetails = await this.toolDetailsRepository.find({
+      where: { ordenId },
+    });
+
+    if (!toolDetails.length) return;
+
+    const toolIds = toolDetails.map((d) => d.herramientaId);
+
+    // Poner todas esas herramientas en estado DISPONIBLE
+    await this.toolRepository.update(
+      { herramientaId: In(toolIds) },
+      { estado: ToolStatus.DISPONIBLE },
+    );
   }
 }

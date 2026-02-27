@@ -32,14 +32,14 @@ import { UnitMeasureModule } from './unit-measure/unit-measure.module';
 import { MaintenanceTypesModule } from './maintenance-types/maintenance-types.module';
 import { SequencesModule } from './database/sequences.module';
 import { CommonModule } from './common/common.module';
-import { WebsocketModule } from './websockets/websocket.module';
+import { PdfModule } from './pdf/pdf.module';
 @Module({
   imports: [
     ScheduleModule.forRoot(),
     EventEmitterModule.forRoot(),
     DatabaseModule,
     SequencesModule,
-    
+    PdfModule,
     ConfigModule.forRoot({
       isGlobal: true,
       load: [databaseConfig],
@@ -51,15 +51,15 @@ import { WebsocketModule } from './websockets/websocket.module';
       inject: [ConfigService],
       useFactory: (configService: ConfigService) => {
         const dbConfig = configService.get('database');
-        
+
         return {
           ...dbConfig,
-          migrations: [], 
-          // migrations: ['dist/src/migrations/*js'], 
+          migrations: [],
+          // migrations: ['dist/src/migrations/*js'],
           migrationsRun: false,
           synchronize: true,
           autoLoadEntities: true,
-          logging: ['error', 'warn'], 
+          logging: ['error', 'warn'],
         };
       },
     }),
@@ -89,7 +89,6 @@ import { WebsocketModule } from './websockets/websocket.module';
     UnitMeasureModule,
     MaintenanceTypesModule,
     CommonModule,
-    WebsocketModule,
   ],
 })
 export class AppModule {}

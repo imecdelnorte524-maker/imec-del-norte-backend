@@ -5,9 +5,10 @@ import { SubAreaController } from './sub-area.controller';
 import { SubAreaService } from './sub-area.service';
 import { SubArea } from './entities/sub-area.entity';
 import { Area } from '../area/entities/area.entity';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([SubArea, Area])],
+  imports: [TypeOrmModule.forFeature([SubArea, Area]), NotificationsModule],
   controllers: [SubAreaController],
   providers: [SubAreaService],
   exports: [SubAreaService],

@@ -14,7 +14,7 @@ import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { MailService } from '../mail/mail.service';
 import { Genero } from '../shared/index';
-import { WebsocketGateway } from '../websockets/websocket.gateway';
+import { NotificationsGateway } from 'src/notifications/notifications.gateway';
 
 @Injectable()
 export class UsersService {
@@ -26,7 +26,7 @@ export class UsersService {
     @InjectRepository(Role)
     public rolesRepository: Repository<Role>,
     private readonly mailService: MailService,
-    private readonly websocketGateway: WebsocketGateway,
+    private readonly notificationsGateway: NotificationsGateway,
   ) {
     this.initializeSequence().catch((error) => {
       this.logger.warn(`No se pudo inicializar la secuencia: ${error.message}`);
@@ -231,7 +231,7 @@ export class UsersService {
     }
 
     // 🔴 WebSocket: usuario creado
-    this.websocketGateway.emit('users.created', userWithRole);
+    this.notificationsGateway.server.emit('users.created', userWithRole);
 
     return userWithRole;
   }
@@ -375,7 +375,7 @@ export class UsersService {
     }
 
     // 🔴 WebSocket: usuario actualizado
-    this.websocketGateway.emit('users.updated', updatedUser);
+    this.notificationsGateway.server.emit('users.updated', updatedUser);
 
     return updatedUser;
   }
@@ -384,7 +384,7 @@ export class UsersService {
     const user = await this.findOne(id);
     await this.usersRepository.remove(user);
     // 🔴 WebSocket
-    this.websocketGateway.emit('users.deleted', { id });
+    this.notificationsGateway.server.emit('users.deleted', { id });
   }
 
   async deactivate(id: number): Promise<User> {
@@ -404,7 +404,7 @@ export class UsersService {
     }
 
     // 🔴 WebSocket
-    this.websocketGateway.emit('users.updated', deactivatedUser);
+    this.notificationsGateway.server.emit('users.updated', deactivatedUser);
 
     return deactivatedUser;
   }
@@ -426,7 +426,7 @@ export class UsersService {
     }
 
     // 🔴 WebSocket
-    this.websocketGateway.emit('users.updated', activatedUser);
+    this.notificationsGateway.server.emit('users.updated', activatedUser);
 
     return activatedUser;
   }

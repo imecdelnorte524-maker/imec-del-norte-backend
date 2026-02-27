@@ -98,8 +98,6 @@ export class Tool {
   })
   inventory: Inventory | null;
 
-  @OneToOne(() => ToolDetail, (toolDetail) => toolDetail.tool, {
-    nullable: true,
-  })
-  toolDetails: ToolDetail | null;
+  @OneToMany(() => ToolDetail, (toolDetail) => toolDetail.tool)
+  toolDetails: ToolDetail[];
 }

@@ -4,14 +4,15 @@ import { Repository } from 'typeorm';
 import { AirConditionerType } from './entities/air-conditioner-type.entity';
 import { CreateAirConditionerTypeDto } from './dto/create-air-conditioner-type.dto';
 import { UpdateAirConditionerTypeDto } from './dto/update-air-conditioner-type.dto';
-import { WebsocketGateway } from '../websockets/websocket.gateway'; // <-- NUEVO
+import { NotificationsGateway } from 'src/notifications/notifications.gateway';
+ 
 
 @Injectable()
 export class AirConditionerTypesService {
   constructor(
     @InjectRepository(AirConditionerType)
     private readonly acTypeRepository: Repository<AirConditionerType>,
-    private readonly websocketGateway: WebsocketGateway,              // <-- NUEVO
+    private readonly notificationsGateway: NotificationsGateway,
   ) {}
 
   async create(
@@ -27,7 +28,7 @@ export class AirConditionerTypesService {
     const saved = await this.acTypeRepository.save(acType);
 
     // Emitir evento de creación
-    this.websocketGateway.emit('airConditionerTypes.created', saved);
+    this.notificationsGateway.server.emit('airConditionerTypes.created', saved);
 
     return saved;
   }
@@ -65,7 +66,7 @@ export class AirConditionerTypesService {
     const updated = await this.acTypeRepository.save(acType);
 
     // Emitir evento de actualización
-    this.websocketGateway.emit('airConditionerTypes.updated', updated);
+    this.notificationsGateway.server.emit('airConditionerTypes.updated', updated);
 
     return updated;
   }
@@ -75,6 +76,6 @@ export class AirConditionerTypesService {
     await this.acTypeRepository.remove(acType);
 
     // Emitir evento de eliminación (enviamos solo el id)
-    this.websocketGateway.emit('airConditionerTypes.deleted', { id });
+    this.notificationsGateway.server.emit('airConditionerTypes.deleted', { id });
   }
 }

@@ -1,9 +1,9 @@
 // notifications/notifications.gateway.ts
 import {
-  WebSocketGateway,
   WebSocketServer,
   OnGatewayConnection,
   OnGatewayDisconnect,
+  WebSocketGateway,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
 import { Injectable, Logger } from '@nestjs/common';
@@ -52,10 +52,11 @@ export class NotificationsGateway
         client.handshake.headers.authorization?.replace('Bearer ', '');
 
       if (!token) {
-        this.logger.warn('Cliente sin token, desconectando');
         return client.disconnect();
       }
 
+      const decodedWithoutVerify = this.jwtService.decode(token);
+      // Ahora sí verifica
       const payload = this.jwtService.verify(token);
       const userId: number = payload.sub;
 
@@ -78,7 +79,10 @@ export class NotificationsGateway
         where: { usuarioId: userId, leida: false },
       });
 
-      client.emit('unread-count', unreadCount);
+      client.emit('unread-count', {
+        total: unreadCount,
+        timestamp: new Date().toISOString(),
+      });
       client.emit('connected', { userId, timestamp: new Date() });
 
       this.logger.log(`✅ Usuario ${userId} conectado (socket: ${client.id})`);

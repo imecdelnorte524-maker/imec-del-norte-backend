@@ -12,7 +12,7 @@ import { CreateModuleDto } from './dto/create-module.dto';
 import { UpdateModuleDto } from './dto/update-module.dto';
 import { RolesService } from '../roles/roles.service';
 import { Role } from '../roles/entities/role.entity';
-import { WebsocketGateway } from '../websockets/websocket.gateway'; // <-- NUEVO
+import { NotificationsGateway } from 'src/notifications/notifications.gateway';
 
 @Injectable()
 export class ModulesService {
@@ -22,7 +22,7 @@ export class ModulesService {
     @InjectRepository(Module)
     private modulesRepository: Repository<Module>,
     private readonly rolesService: RolesService,
-    private readonly websocketGateway: WebsocketGateway, // <-- NUEVO
+    private readonly notificationsGateway: NotificationsGateway,
   ) {}
 
   async create(createModuleDto: CreateModuleDto): Promise<Module> {
@@ -62,7 +62,7 @@ export class ModulesService {
       );
 
       // 🔴 Evento WebSocket
-      this.websocketGateway.emit('modules.created', savedModule);
+      this.notificationsGateway.server.emit('modules.created', savedModule);
 
       return savedModule;
     } catch (error) {
@@ -141,7 +141,7 @@ export class ModulesService {
       );
 
       // 🔴 Evento WebSocket
-      this.websocketGateway.emit('modules.updated', updatedModule);
+      this.notificationsGateway.server.emit('modules.updated', updatedModule);
 
       return updatedModule;
     } catch (error) {
@@ -161,7 +161,7 @@ export class ModulesService {
     this.logger.log(`🗑️ Módulo eliminado: ${id}`);
 
     // 🔴 Evento WebSocket
-    this.websocketGateway.emit('modules.deleted', { id });
+    this.notificationsGateway.server.emit('modules.deleted', { id });
   }
 
   private async getRolesByIds(roleIds: number[]): Promise<Role[]> {
@@ -201,7 +201,7 @@ export class ModulesService {
     this.logger.log(`🔗 Roles actualizados para módulo ${id}`);
 
     // 🔴 Evento WebSocket
-    this.websocketGateway.emit('modules.updated', updated);
+    this.notificationsGateway.server.emit('modules.updated', updated);
 
     return updated;
   }
@@ -219,7 +219,7 @@ export class ModulesService {
       this.logger.log(`🔗 Rol ${roleId} asignado al módulo ${moduleId}`);
 
       // 🔴 Evento WebSocket
-      this.websocketGateway.emit('modules.updated', saved);
+      this.notificationsGateway.server.emit('modules.updated', saved);
 
       return saved;
     }
@@ -237,6 +237,6 @@ export class ModulesService {
     this.logger.log(`❌ Rol ${roleId} removido del módulo ${moduleId}`);
 
     // 🔴 Evento WebSocket
-    this.websocketGateway.emit('modules.updated', saved);
+    this.notificationsGateway.server.emit('modules.updated', saved);
   }
 }

@@ -9,14 +9,14 @@ import { Repository } from 'typeorm';
 import { UnitMeasure } from './entities/unit-measure.entity';
 import { CreateUnitMeasureDto } from './dto/create-unit-measure.dto';
 import { UpdateUnitMeasureDto } from './dto/update-unit-measure.dto';
-import { WebsocketGateway } from '../websockets/websocket.gateway';
+import { NotificationsGateway } from 'src/notifications/notifications.gateway';
 
 @Injectable()
 export class UnitMeasureService {
   constructor(
     @InjectRepository(UnitMeasure)
     private unitMeasureRepo: Repository<UnitMeasure>,
-    private readonly websocketGateway: WebsocketGateway,
+    private readonly notificationsGateway: NotificationsGateway,
   ) {}
 
   async createOrFind(
@@ -38,7 +38,7 @@ export class UnitMeasureService {
     const saved = await this.unitMeasureRepo.save(unitMeasure);
 
     // 🔴 WebSocket (solo cuando se crea realmente)
-    this.websocketGateway.emit('unitMeasures.created', saved);
+    this.notificationsGateway.server.emit('unitMeasures.created', saved);
 
     return saved;
   }
@@ -61,7 +61,7 @@ export class UnitMeasureService {
     const saved = await this.unitMeasureRepo.save(unitMeasure);
 
     // 🔴 WebSocket
-    this.websocketGateway.emit('unitMeasures.created', saved);
+    this.notificationsGateway.server.emit('unitMeasures.created', saved);
 
     return saved;
   }
@@ -122,7 +122,7 @@ export class UnitMeasureService {
     const updated = await this.unitMeasureRepo.save(unitMeasure);
 
     // 🔴 WebSocket
-    this.websocketGateway.emit('unitMeasures.updated', updated);
+    this.notificationsGateway.server.emit('unitMeasures.updated', updated);
 
     return updated;
   }
@@ -140,7 +140,7 @@ export class UnitMeasureService {
     await this.unitMeasureRepo.softDelete(id);
 
     // 🔴 WebSocket
-    this.websocketGateway.emit('unitMeasures.deleted', { id });
+    this.notificationsGateway.server.emit('unitMeasures.deleted', { id });
 
     return { message: 'Unidad de medida eliminada exitosamente' };
   }

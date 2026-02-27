@@ -1,8 +1,7 @@
-// src/work-orders/maintenance-scheduler.service.ts
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, LessThan } from 'typeorm';
 import { PlanMantenimiento } from '../equipment/entities/plan-mantenimiento.entity';
 import { WorkOrdersService } from './work-orders.service';
 import { User } from '../users/entities/user.entity';
@@ -32,7 +31,6 @@ function formatDate(fecha: Date): string {
 }
 
 // Helpers para avanzar planes segun frecuencia
-
 function addMonths(date: Date, months: number): Date {
   const d = startOfDay(date);
   const day = d.getDate();
@@ -86,8 +84,9 @@ export class MaintenanceSchedulerService {
 
   /**
    * Crea órdenes automáticas:
-   * - diff === 5 → crea orden 5 días antes de la fecha programada
-   * - diff === 0 → crea orden el mismo día si por alguna razón no se creó antes
+   * - 5 días antes de la fecha programada
+   * - El mismo día si no se creó antes
+   * - Si está atrasado y no tiene orden
    */
   @Cron(CronExpression.EVERY_5_MINUTES)
   async procesarMantenimientosPeriodicos() {
@@ -99,58 +98,60 @@ export class MaintenanceSchedulerService {
     );
 
     try {
+      // Buscar TODOS los planes (sin filtro activo ya que no existe)
       const planes = await this.planRepo.find({
         relations: ['equipment', 'equipment.client'],
       });
 
-      this.logger.log(
-        `⏱ [procesarMantenimientosPeriodicos] Planes encontrados: ${planes.length}`,
-      );
+      let ordenesCreadas = 0;
 
       for (const plan of planes) {
         try {
-          if (!plan.fechaProgramada || !plan.equipmentId) continue;
-
-          const fechaPlan = startOfDay(new Date(plan.fechaProgramada));
-          const diff = diffEnDias(fechaPlan, hoy);
-
-          // Nueva regla: 5 días antes ó el mismo día
-          if (diff !== 5 && diff !== 0) {
+          if (!plan.fechaProgramada || !plan.equipmentId) {
+            this.logger.debug(`Plan ${plan.id} sin fecha o equipo, omitiendo`);
             continue;
           }
 
+          const fechaPlan = startOfDay(new Date(plan.fechaProgramada));
+          const diffDias = diffEnDias(fechaPlan, hoy);
+
+          // Verificar si ya existe orden para este plan en esta fecha
           const yaExiste =
             await this.workOrdersService.existeOrdenParaPlanEnFecha(
               plan.id,
               fechaPlan,
             );
 
-          if (yaExiste) {
-            this.logger.debug(
-              `[procesarMantenimientosPeriodicos] Ya existe orden para plan ${plan.id} en ${formatDate(
-                fechaPlan,
-              )}`,
-            );
+          const debeCrear =
+            (diffDias === 5 && !yaExiste) || // 5 días antes
+            (diffDias === 0 && !yaExiste) || // Hoy mismo
+            (diffDias < 0 && !yaExiste); // Atrasado
+
+          if (!debeCrear) {
             continue;
           }
 
           this.logger.log(
-            `🧾 Creando orden automática para plan ${plan.id}, equipo ${plan.equipmentId}, fecha ${formatDate(
-              fechaPlan,
-            )} (diff=${diff})`,
+            `🎯 Creando orden automática para plan ${plan.id}, fecha ${formatDate(fechaPlan)} (diff=${diffDias})`,
           );
 
           await this.workOrdersService.createFromMaintenancePlan({
             plan,
             fechaProgramada: fechaPlan,
           });
+
+          ordenesCreadas++;
         } catch (error: any) {
           this.logger.error(
-            `[procesarMantenimientosPeriodicos] Error procesando plan ${plan.id}: ${error.message}`,
+            `Error procesando plan ${plan.id}: ${error.message}`,
             error.stack,
           );
         }
       }
+
+      this.logger.log(
+        `✅ Órdenes creadas en esta ejecución: ${ordenesCreadas}`,
+      );
     } catch (error: any) {
       this.logger.error(
         `[procesarMantenimientosPeriodicos] Error general: ${error.message}`,
@@ -161,13 +162,10 @@ export class MaintenanceSchedulerService {
 
   /**
    * Actualiza automáticamente fechaProgramada de todos los planes:
-   * - Mientras fechaProgramada < hoy, la avanza según unidadFrecuencia / diaDelMes
-   * - Si la nueva fecha cae domingo, la pasa al lunes.
-   *
-   * NOTA: ahora está cada 5 minutos para que lo veas fácil en logs.
-   * Cuando lo tengas probado, puedes cambiarlo a EVERY_DAY_AT_1AM.
+   * - Avanza la fecha según unidadFrecuencia si la fecha actual ya pasó
+   * - Ajusta al lunes si cae domingo
    */
-  @Cron(CronExpression.EVERY_5_MINUTES)
+  @Cron(CronExpression.EVERY_DAY_AT_1AM)
   async actualizarFechasPlanes() {
     const hoy = startOfDay(new Date());
     const hoyStr = formatDate(hoy);
@@ -177,60 +175,68 @@ export class MaintenanceSchedulerService {
     );
 
     try {
-      const planes = await this.planRepo.find();
+      // Buscar planes con fecha en el pasado (sin filtro activo)
+      const planes = await this.planRepo.find({
+        where: {
+          fechaProgramada: LessThan(hoy),
+        },
+      });
+
       this.logger.log(
-        `⏱ [actualizarFechasPlanes] Planes encontrados: ${planes.length}`,
+        `📊 Planes con fecha pasada encontrados: ${planes.length}`,
       );
 
       let planesActualizados = 0;
 
       for (const plan of planes) {
         try {
-          if (!plan.fechaProgramada || !plan.unidadFrecuencia) continue;
+          if (!plan.fechaProgramada || !plan.unidadFrecuencia) {
+            this.logger.debug(
+              `Plan ${plan.id} sin unidad de frecuencia, omitiendo`,
+            );
+            continue;
+          }
 
           let fechaPlan = startOfDay(new Date(plan.fechaProgramada));
           const unidad = plan.unidadFrecuencia;
           const step = plan.diaDelMes ?? 1;
+          let fechaOriginal = fechaPlan;
+          let iteraciones = 0;
+          const MAX_ITERACIONES = 12; // Evitar loops infinitos
 
-          let updated = false;
-
-          // Mientras la fecha del plan esté en el pasado, avanzar
-          while (fechaPlan < hoy) {
-            const anterior = fechaPlan;
+          // Avanzar hasta que la fecha sea >= hoy
+          while (fechaPlan < hoy && iteraciones < MAX_ITERACIONES) {
             fechaPlan = adjustToWorkingDay(
               nextPlanDate(fechaPlan, unidad, step),
             );
-            updated = true;
-
-            this.logger.log(
-              `🔁 [actualizarFechasPlanes] Plan ${plan.id}: ${formatDate(
-                anterior,
-              )} -> ${formatDate(fechaPlan)}`,
-            );
+            iteraciones++;
           }
 
-          if (updated) {
+          if (iteraciones >= MAX_ITERACIONES) {
+            this.logger.warn(
+              `Plan ${plan.id}: alcanzó máximo de iteraciones, posible error en configuración`,
+            );
+            continue;
+          }
+
+          if (formatDate(fechaOriginal) !== formatDate(fechaPlan)) {
             plan.fechaProgramada = fechaPlan;
             await this.planRepo.save(plan);
             planesActualizados++;
+
+            this.logger.log(
+              `🔁 Plan ${plan.id}: ${formatDate(fechaOriginal)} -> ${formatDate(fechaPlan)} (${iteraciones} iteraciones)`,
+            );
           }
         } catch (error: any) {
           this.logger.error(
-            `[actualizarFechasPlanes] Error actualizando plan ${plan.id}: ${error.message}`,
+            `Error actualizando plan ${plan.id}: ${error.message}`,
             error.stack,
           );
         }
       }
 
-      if (planesActualizados === 0) {
-        this.logger.log(
-          `[actualizarFechasPlanes] No se actualizó ningún plan en esta ejecución.`,
-        );
-      } else {
-        this.logger.log(
-          `[actualizarFechasPlanes] Planes actualizados en esta ejecución: ${planesActualizados}`,
-        );
-      }
+      this.logger.log(`✅ Planes actualizados: ${planesActualizados}`);
     } catch (error: any) {
       this.logger.error(
         `[actualizarFechasPlanes] Error general: ${error.message}`,
@@ -242,19 +248,18 @@ export class MaintenanceSchedulerService {
   /**
    * JOB DIARIO (06:00):
    * - SOLO LOS VIERNES: envía correo a Administradores/Secretarias con
-   *   los mantenimientos de la semana siguiente (lunes a sábado).
-   *
-   *  Ejemplo:
-   *    Viernes 6 feb -> mantenimientos entre 9 y 14 feb
-   *    Viernes 13 feb -> mantenimientos entre 16 y 21 feb
+   *   los mantenimientos de la semana siguiente (lunes a sábado)
    */
   @Cron(CronExpression.EVERY_DAY_AT_6AM)
   async enviarRecordatorioSemanal() {
     const hoy = startOfDay(new Date());
     const diaSemana = hoy.getDay(); // 0=domingo, 5=viernes
 
-    // Solo correr los VIERNES
+    // Solo ejecutar los VIERNES
     if (diaSemana !== 5) {
+      this.logger.debug(
+        `[enviarRecordatorioSemanal] Hoy no es viernes (${diaSemana}), omitiendo`,
+      );
       return;
     }
 
@@ -263,30 +268,30 @@ export class MaintenanceSchedulerService {
     const fin = sumarDias(hoy, 8); // sábado
 
     this.logger.log(
-      `📧 [enviarRecordatorioSemanal] Generando correo de mantenimientos programados entre ${formatDate(
-        inicio,
-      )} y ${formatDate(fin)}`,
+      `📧 [enviarRecordatorioSemanal] Buscando mantenimientos entre ${formatDate(inicio)} y ${formatDate(fin)}`,
     );
 
     try {
+      // Buscar planes en el rango de fechas
       const planes = await this.planRepo
         .createQueryBuilder('plan')
         .leftJoinAndSelect('plan.equipment', 'equipment')
         .leftJoinAndSelect('equipment.client', 'client')
         .where('plan.fechaProgramada BETWEEN :inicio AND :fin', {
-          inicio,
-          fin,
+          inicio: inicio.toISOString(),
+          fin: fin.toISOString(),
         })
+        .orderBy('plan.fechaProgramada', 'ASC')
         .getMany();
 
       if (!planes.length) {
         this.logger.log(
-          '[enviarRecordatorioSemanal] No hay mantenimientos programados para la semana siguiente',
+          '📭 No hay mantenimientos programados para la semana siguiente',
         );
         return;
       }
 
-      // Buscar administradores/secretarias con email
+      // Buscar administradores y secretarias con email
       const admins = await this.userRepo
         .createQueryBuilder('user')
         .leftJoinAndSelect('user.role', 'role')
@@ -294,20 +299,24 @@ export class MaintenanceSchedulerService {
           roles: ['Administrador', 'Secretaria'],
         })
         .andWhere('user.email IS NOT NULL')
+        .andWhere('user.email != :empty', { empty: '' })
         .getMany();
 
-      const emails = admins.map((u) => u.email).filter(Boolean) as string[];
+      const emails = [
+        ...new Set(admins.map((u) => u.email).filter(Boolean)),
+      ] as string[];
 
       if (!emails.length) {
         this.logger.warn(
-          '[enviarRecordatorioSemanal] No se encontraron administradores con email para enviar recordatorio de mantenimientos',
+          '⚠️ No se encontraron destinatarios con email para el recordatorio',
         );
         return;
       }
 
+      // Preparar items para el email (usando solo campos que existen)
       const items = planes.map((plan) => ({
         equipmentId: plan.equipmentId,
-        equipmentCode: plan.equipment?.code ?? String(plan.equipmentId),
+        equipmentCode: plan.equipment?.code ?? `EQ-${plan.equipmentId}`,
         clientName: plan.equipment?.client?.nombre ?? 'Sin cliente',
         fechaProgramada: startOfDay(new Date(plan.fechaProgramada!)),
         unidadFrecuencia: plan.unidadFrecuencia ?? null,
@@ -315,19 +324,40 @@ export class MaintenanceSchedulerService {
         notas: plan.notas ?? undefined,
       }));
 
+      // Enviar email (sin weekStart/weekEnd si no existen en el DTO)
       await this.mailService.sendMaintenanceReminderEmail({
         to: emails,
         items,
       });
 
       this.logger.log(
-        `📧 [enviarRecordatorioSemanal] Correo enviado a: ${emails.join(', ')}`,
+        `✅ Recordatorio enviado a: ${emails.join(', ')} (${items.length} mantenimientos)`,
       );
     } catch (error: any) {
       this.logger.error(
-        `[enviarRecordatorioSemanal] Error enviando correo de mantenimientos: ${error.message}`,
+        `Error enviando recordatorio: ${error.message}`,
         error.stack,
       );
+    }
+  }
+
+  /**
+   * Método auxiliar para verificar si ya existe una orden
+   */
+  private async existeOrdenParaPlanEnFecha(
+    planId: number,
+    fecha: Date,
+  ): Promise<boolean> {
+    try {
+      return await this.workOrdersService.existeOrdenParaPlanEnFecha(
+        planId,
+        fecha,
+      );
+    } catch (error) {
+      this.logger.error(
+        `Error verificando existencia de orden: ${error.message}`,
+      );
+      return false;
     }
   }
 }

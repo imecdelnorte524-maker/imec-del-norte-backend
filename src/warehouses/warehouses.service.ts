@@ -11,7 +11,7 @@ import { Warehouse } from './entities/warehouse.entity';
 import { CreateWarehouseDto } from './dto/create-warehouse.dto';
 import { UpdateWarehouseDto } from './dto/update-warehouse.dto';
 import { Client } from '../client/entities/client.entity';
-import { WebsocketGateway } from '../websockets/websocket.gateway';
+import { NotificationsGateway } from 'src/notifications/notifications.gateway';
 
 @Injectable()
 export class WarehousesService {
@@ -21,7 +21,7 @@ export class WarehousesService {
     @InjectRepository(Client)
     private clientRepo: Repository<Client>,
     private dataSource: DataSource,
-    private readonly websocketGateway: WebsocketGateway,
+    private readonly notificationsGateway: NotificationsGateway,
   ) {}
 
   async create(createWarehouseDto: CreateWarehouseDto): Promise<Warehouse> {
@@ -70,7 +70,7 @@ export class WarehousesService {
     const full = await this.findOne(saved.bodegaId);
 
     // 🔴 WebSocket
-    this.websocketGateway.emit('warehouses.created', full);
+    this.notificationsGateway.server.emit('warehouses.created', full);
 
     return saved;
   }
@@ -159,7 +159,7 @@ export class WarehousesService {
 
     // 🔴 WebSocket (con relaciones actualizadas)
     const full = await this.findOne(updated.bodegaId);
-    this.websocketGateway.emit('warehouses.updated', full);
+    this.notificationsGateway.server.emit('warehouses.updated', full);
 
     return updated;
   }
@@ -207,7 +207,7 @@ export class WarehousesService {
     await this.warehouseRepo.softDelete(id);
 
     // 🔴 WebSocket
-    this.websocketGateway.emit('warehouses.deleted', { id });
+    this.notificationsGateway.server.emit('warehouses.deleted', { id });
 
     return { message: 'Bodega eliminada exitosamente' };
   }

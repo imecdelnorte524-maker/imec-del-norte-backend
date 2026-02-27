@@ -10,6 +10,7 @@ import {
 } from 'typeorm';
 import { Equipment } from './equipment.entity';
 import { EquipmentMotor } from './motor.entity';
+import { AirConditionerType } from '../../air-conditioner-types/entities/air-conditioner-type.entity';
 
 @Entity('equipment_evaporators')
 export class EquipmentEvaporator {
@@ -24,6 +25,13 @@ export class EquipmentEvaporator {
   })
   @JoinColumn({ name: 'equipment_id' })
   equipment: Equipment;
+
+  @Column({ name: 'air_conditioner_type_id', nullable: true })
+  airConditionerTypeEvapId?: number;
+
+  @ManyToOne(() => AirConditionerType, { nullable: true, eager: true })
+  @JoinColumn({ name: 'air_conditioner_type_id' })
+  airConditionerTypeEvap?: AirConditionerType;
 
   // Campos
   @Column({ name: 'marca', type: 'varchar', length: 150, nullable: true })
@@ -53,7 +61,8 @@ export class EquipmentEvaporator {
   updatedAt: Date;
 
   // ⚠️ CORREGIR ESTA RELACIÓN - estaba mal referenciada
-  @OneToMany(() => EquipmentMotor, (motor) => motor.evaporator, { // ← Cambiar 'condenser' por 'evaporator'
+  @OneToMany(() => EquipmentMotor, (motor) => motor.evaporator, {
+    // ← Cambiar 'condenser' por 'evaporator'
     cascade: true,
     nullable: true,
     eager: true,

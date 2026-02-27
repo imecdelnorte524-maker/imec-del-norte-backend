@@ -14,8 +14,8 @@ import { Warehouse } from '../warehouses/entities/warehouse.entity';
 import { CreateInventoryDto } from './dto/create-inventory.dto';
 import { UpdateInventoryDto } from './dto/update-inventory.dto';
 import { SupplyStatus } from '../shared';
-import { WebsocketGateway } from '../websockets/websocket.gateway';
-
+import { NotificationsGateway } from 'src/notifications/notifications.gateway';
+import { buildInventoryExcel } from '../../templates/excel/inventory-inventory.template';
 @Injectable()
 export class InventoryService {
   private readonly logger = new Logger(InventoryService.name);
@@ -30,7 +30,7 @@ export class InventoryService {
     @InjectRepository(Warehouse)
     private warehouseRepository: Repository<Warehouse>,
     private dataSource: DataSource,
-    private readonly websocketGateway: WebsocketGateway,
+    private readonly notificationsGateway: NotificationsGateway,
   ) {}
 
   async create(createInventoryDto: CreateInventoryDto): Promise<Inventory> {
@@ -100,7 +100,10 @@ export class InventoryService {
           const fullInventory = await this.findOne(
             updatedInventory.inventarioId,
           );
-          this.websocketGateway.emit('inventory.updated', fullInventory);
+          this.notificationsGateway.server.emit(
+            'inventory.updated',
+            fullInventory,
+          );
 
           return fullInventory;
         }
@@ -166,7 +169,10 @@ export class InventoryService {
           const fullInventory = await this.findOne(
             updatedInventory.inventarioId,
           );
-          this.websocketGateway.emit('inventory.updated', fullInventory);
+          this.notificationsGateway.server.emit(
+            'inventory.updated',
+            fullInventory,
+          );
 
           return fullInventory;
         }
@@ -225,7 +231,7 @@ export class InventoryService {
 
       const fullInventory = await this.findOne(savedInventory.inventarioId);
 
-      this.websocketGateway.emit('inventory.created', fullInventory);
+      this.notificationsGateway.server.emit('inventory.created', fullInventory);
 
       return fullInventory;
     } catch (error) {
@@ -395,7 +401,7 @@ export class InventoryService {
 
       const fullInventory = await this.findOne(id);
 
-      this.websocketGateway.emit('inventory.updated', fullInventory);
+      this.notificationsGateway.server.emit('inventory.updated', fullInventory);
 
       return fullInventory;
     } catch (error) {
@@ -410,7 +416,7 @@ export class InventoryService {
     await this.findOne(id);
     await this.inventoryRepository.softDelete(id);
 
-    this.websocketGateway.emit('inventory.deleted', {
+    this.notificationsGateway.server.emit('inventory.deleted', {
       id,
       soft: true,
     });
@@ -479,7 +485,10 @@ export class InventoryService {
 
       await queryRunner.commitTransaction();
 
-      this.websocketGateway.emit('inventory.deletedPermanent', deletedInfo);
+      this.notificationsGateway.server.emit(
+        'inventory.deletedPermanent',
+        deletedInfo,
+      );
 
       return {
         deletedInventory: deletedInfo.inventory,
@@ -567,8 +576,11 @@ export class InventoryService {
       await queryRunner.commitTransaction();
       const fullInventory = await this.findOne(inventarioId);
 
-      this.websocketGateway.emit('inventory.stockUpdated', fullInventory);
-      this.websocketGateway.emit('inventory.updated', fullInventory);
+      this.notificationsGateway.server.emit(
+        'inventory.stockUpdated',
+        fullInventory,
+      );
+      this.notificationsGateway.server.emit('inventory.updated', fullInventory);
 
       return fullInventory;
     } catch (error) {
@@ -704,7 +716,7 @@ export class InventoryService {
 
     const restored = await this.findOne(id);
 
-    this.websocketGateway.emit('inventory.restored', restored);
+    this.notificationsGateway.server.emit('inventory.restored', restored);
 
     return restored;
   }
@@ -728,6 +740,48 @@ export class InventoryService {
       return SupplyStatus.STOCK_BAJO;
     } else {
       return SupplyStatus.DISPONIBLE;
+    }
+  }
+
+  async generateInventoryExcel(
+    bodegaId?: number,
+    includeDeleted: boolean = false,
+  ): Promise<Buffer> {
+    try {
+      this.logger.log(
+        `Generando Excel - bodegaId: ${bodegaId}, includeDeleted: ${includeDeleted}`,
+      );
+
+      const query = this.inventoryRepository
+        .createQueryBuilder('inventory')
+        .leftJoinAndSelect('inventory.supply', 'supply')
+        .leftJoinAndSelect('supply.unidadMedida', 'unidadMedida')
+        .leftJoinAndSelect('inventory.tool', 'tool')
+        .leftJoinAndSelect('inventory.bodega', 'bodega')
+        .leftJoinAndSelect('bodega.cliente', 'cliente')
+        .orderBy('inventory.fechaUltimaActualizacion', 'DESC');
+
+      // Aplicar filtro de bodega solo si se proporciona un ID válido
+      if (bodegaId !== undefined && !isNaN(bodegaId)) {
+        query.andWhere('bodega.bodegaId = :bodegaId', { bodegaId });
+        this.logger.log(`Filtrando por bodega ID: ${bodegaId}`);
+      }
+
+      // Manejar registros eliminados
+      if (includeDeleted) {
+        query.withDeleted();
+      }
+
+      const inventories = await query.getMany();
+
+      this.logger.log(
+        `Se encontraron ${inventories.length} registros para exportar`,
+      );
+
+      return buildInventoryExcel({ inventories });
+    } catch (error) {
+      this.logger.error(`Error generando Excel: ${error.message}`, error.stack);
+      throw error;
     }
   }
 }

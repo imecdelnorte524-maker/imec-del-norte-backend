@@ -16,8 +16,8 @@ import { CreateSupplyDto } from './dto/create-supply.dto';
 import { UpdateSupplyDto } from './dto/update-supply.dto';
 import { SupplyStatus, SupplyCategory } from '../shared/index';
 import { ImagesService } from '../images/images.service';
-import { WebsocketGateway } from '../websockets/websocket.gateway';
 import { SequenceHelperService } from '../common/services/sequence-helper.service';
+import { NotificationsGateway } from 'src/notifications/notifications.gateway';
 
 @Injectable()
 export class SuppliesService {
@@ -36,7 +36,7 @@ export class SuppliesService {
     private warehouseRepository: Repository<Warehouse>,
     private dataSource: DataSource,
     private readonly imagesService: ImagesService,
-    private readonly websocketGateway: WebsocketGateway,
+    private readonly notificationsGateway: NotificationsGateway,
     private readonly sequenceHelper: SequenceHelperService,
   ) {
     this.initializeSequence().catch((error) => {
@@ -157,7 +157,7 @@ export class SuppliesService {
       const full = await this.findOne(savedSupply.insumoId);
 
       // WebSocket
-      this.websocketGateway.emit('supplies.created', full);
+      this.notificationsGateway.server.emit('supplies.created', full);
 
       return full;
     } catch (error: any) {
@@ -321,7 +321,7 @@ export class SuppliesService {
       const updated = await this.findOne(id);
 
       // WebSocket
-      this.websocketGateway.emit('supplies.updated', updated);
+      this.notificationsGateway.server.emit('supplies.updated', updated);
 
       return updated;
     } catch (error: any) {
@@ -347,7 +347,10 @@ export class SuppliesService {
     await this.suppliesRepository.softDelete(id);
 
     // WebSocket
-    this.websocketGateway.emit('supplies.deleted', { id, soft: true });
+    this.notificationsGateway.server.emit('supplies.deleted', {
+      id,
+      soft: true,
+    });
   }
 
   async updateStock(
@@ -387,8 +390,8 @@ export class SuppliesService {
     const full = await this.findOne(id);
 
     // WebSocket
-    this.websocketGateway.emit('supplies.stockUpdated', full);
-    this.websocketGateway.emit('supplies.updated', full);
+    this.notificationsGateway.server.emit('supplies.stockUpdated', full);
+    this.notificationsGateway.server.emit('supplies.updated', full);
 
     return full;
   }
@@ -537,8 +540,8 @@ export class SuppliesService {
     const restored = await this.findOne(id);
 
     // WebSocket
-    this.websocketGateway.emit('supplies.restored', restored);
-    this.websocketGateway.emit('supplies.updated', restored);
+    this.notificationsGateway.server.emit('supplies.restored', restored);
+    this.notificationsGateway.server.emit('supplies.updated', restored);
 
     return restored;
   }
@@ -585,7 +588,10 @@ export class SuppliesService {
       await queryRunner.commitTransaction();
 
       // WebSocket para actualización masiva
-      this.websocketGateway.emit('supplies.bulkStockUpdated', updatedSupplies);
+      this.notificationsGateway.server.emit(
+        'supplies.bulkStockUpdated',
+        updatedSupplies,
+      );
 
       return updatedSupplies;
     } catch (error) {

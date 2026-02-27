@@ -8,9 +8,9 @@ import { Supply } from '../supplies/entities/supply.entity';
 import { User } from '../users/entities/user.entity';
 import { Equipment } from '../equipment/entities/equipment.entity';
 import { Client } from '../client/entities/client.entity';
-import { WebsocketGateway } from '../websockets/websocket.gateway'; // <-- NUEVO
 import { WorkOrder } from 'src/work-orders/entities/work-order.entity';
 import { WorkOrderEvidencePhase } from 'src/shared/index';
+import { NotificationsGateway } from 'src/notifications/notifications.gateway';
 
 @Injectable()
 export class ImagesService {
@@ -36,7 +36,9 @@ export class ImagesService {
     private readonly clientRepo: Repository<Client>,
 
     private readonly cloudinary: CloudinaryService,
-    private readonly websocketGateway: WebsocketGateway,
+
+    private readonly notificationsGateway: NotificationsGateway,
+
     @InjectRepository(WorkOrder)
     private readonly workOrderRepo: Repository<WorkOrder>,
   ) {}
@@ -91,7 +93,7 @@ export class ImagesService {
     const savedImages = await this.imageRepo.save(imageEntities);
 
     // 🔴 Evento WebSocket
-    this.websocketGateway.emit('tools.imagesUpdated', {
+    this.notificationsGateway.server.emit('tools.imagesUpdated', {
       toolId,
       images: savedImages,
     });
@@ -135,7 +137,7 @@ export class ImagesService {
     );
     await this.imageRepo.remove(images);
 
-    this.websocketGateway.emit('tools.imagesUpdated', {
+    this.notificationsGateway.server.emit('tools.imagesUpdated', {
       toolId: tool.herramientaId,
       images: [],
     });
@@ -194,7 +196,7 @@ export class ImagesService {
     // Guardar todas las imágenes en la base de datos
     const savedImages = await this.imageRepo.save(imageEntities);
 
-    this.websocketGateway.emit('supplies.imagesUpdated', {
+    this.notificationsGateway.server.emit('supplies.imagesUpdated', {
       supplyId,
       images: savedImages,
     });
@@ -242,7 +244,7 @@ export class ImagesService {
     await this.imageRepo.remove(images);
 
     // 🔴 Evento WebSocket
-    this.websocketGateway.emit('supplies.imagesUpdated', {
+    this.notificationsGateway.server.emit('supplies.imagesUpdated', {
       supplyId: supply.insumoId,
       images: [],
     });
@@ -284,7 +286,7 @@ export class ImagesService {
     const saved = await this.imageRepo.save(image);
 
     // 🔴 Evento WebSocket
-    this.websocketGateway.emit('users.profilePhotoUpdated', {
+    this.notificationsGateway.server.emit('users.profilePhotoUpdated', {
       userId,
       image: saved,
     });
@@ -320,7 +322,7 @@ export class ImagesService {
     await this.imageRepo.delete(ids);
 
     // 🔴 Evento WebSocket
-    this.websocketGateway.emit('users.profilePhotoUpdated', {
+    this.notificationsGateway.server.emit('users.profilePhotoUpdated', {
       userId,
       image: null,
     });
@@ -374,7 +376,7 @@ export class ImagesService {
     const images = await this.getEquipmentImages(equipmentId);
 
     // 🔴 Evento WebSocket
-    this.websocketGateway.emit('equipment.imagesUpdated', {
+    this.notificationsGateway.server.emit('equipment.imagesUpdated', {
       equipmentId,
       images,
     });
@@ -414,7 +416,7 @@ export class ImagesService {
     await this.imageRepo.remove(images);
 
     // 🔴 Evento WebSocket
-    this.websocketGateway.emit('equipment.imagesUpdated', {
+    this.notificationsGateway.server.emit('equipment.imagesUpdated', {
       equipmentId,
       images: [],
     });
@@ -462,7 +464,7 @@ export class ImagesService {
     const saved = await this.imageRepo.save(image);
 
     // 🔴 Evento WebSocket
-    this.websocketGateway.emit('clients.logoUpdated', {
+    this.notificationsGateway.server.emit('clients.logoUpdated', {
       clientId,
       logo: saved,
     });
@@ -508,7 +510,7 @@ export class ImagesService {
     const savedImages = await this.imageRepo.save(imageEntities);
 
     // 🔴 Evento WebSocket
-    this.websocketGateway.emit('clients.galleryUpdated', {
+    this.notificationsGateway.server.emit('clients.galleryUpdated', {
       clientId,
       images: savedImages,
     });
@@ -573,11 +575,11 @@ export class ImagesService {
     await this.imageRepo.remove(images);
 
     // 🔴 Evento WebSocket (se vacía galería y logos)
-    this.websocketGateway.emit('clients.galleryUpdated', {
+    this.notificationsGateway.server.emit('clients.galleryUpdated', {
       clientId,
       images: [],
     });
-    this.websocketGateway.emit('clients.logoUpdated', {
+    this.notificationsGateway.server.emit('clients.logoUpdated', {
       clientId,
       logo: null,
     });
@@ -597,7 +599,7 @@ export class ImagesService {
     await this.imageRepo.remove(image);
 
     // 🔴 Evento WebSocket genérico
-    this.websocketGateway.emit('images.deleted', imageCopy);
+    this.notificationsGateway.server.emit('images.deleted', imageCopy);
 
     return { message: 'Imagen eliminada correctamente' };
   }
@@ -644,7 +646,7 @@ export class ImagesService {
 
     const savedImages = await this.imageRepo.save(imageEntities);
 
-    this.websocketGateway.emit('workOrders.imagesUpdated', {
+    this.notificationsGateway.server.emit('workOrders.imagesUpdated', {
       ordenId,
       images: await this.getWorkOrderImages(ordenId),
     });
@@ -694,7 +696,7 @@ export class ImagesService {
     );
     await this.imageRepo.remove(images);
 
-    this.websocketGateway.emit('workOrders.imagesUpdated', {
+    this.notificationsGateway.server.emit('workOrders.imagesUpdated', {
       ordenId,
       images: [],
     });

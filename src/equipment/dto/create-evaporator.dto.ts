@@ -1,9 +1,24 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsOptional, IsString, ValidateNested } from 'class-validator';
+import {
+  IsNumber,
+  IsOptional,
+  IsString,
+  ValidateNested,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 import { CreateMotorDto } from './create-motor.dto';
 
 export class CreateEvaporatorDto {
+  @ApiPropertyOptional({
+    example: 1,
+    description:
+      'ID del tipo de aire (solo si category = AIRES_ACONDICIONADOS)',
+  })
+  @IsOptional()
+  @IsNumber()
+  @Type(() => Number)
+  airConditionerTypeEvapId?: number;
+
   @ApiPropertyOptional({ example: 'Daikin' })
   @IsOptional()
   @IsString()

@@ -12,7 +12,7 @@ import { SubArea } from './entities/sub-area.entity';
 import { Area } from '../area/entities/area.entity';
 import { CreateSubAreaDto } from './dto/create-sub-area.dto';
 import { UpdateSubAreaDto } from './dto/update-sub-area.dto';
-import { WebsocketGateway } from '../websockets/websocket.gateway';
+import { NotificationsGateway } from 'src/notifications/notifications.gateway';
 
 @Injectable()
 export class SubAreaService {
@@ -23,7 +23,7 @@ export class SubAreaService {
     private subAreaRepository: Repository<SubArea>,
     @InjectRepository(Area)
     private areaRepository: Repository<Area>,
-    private readonly websocketGateway: WebsocketGateway,
+    private readonly notificationsGateway: NotificationsGateway,
   ) {}
 
   async create(createSubAreaDto: CreateSubAreaDto): Promise<SubArea> {
@@ -89,7 +89,7 @@ export class SubAreaService {
 
     // 🔴 WebSocket
     const full = await this.findOne(savedSubArea.idSubArea);
-    this.websocketGateway.emit('subAreas.created', full);
+    this.notificationsGateway.server.emit('subAreas.created', full);
 
     return full;
   }
@@ -225,7 +225,7 @@ export class SubAreaService {
 
     // 🔴 WebSocket
     const full = await this.findOne(saved.idSubArea);
-    this.websocketGateway.emit('subAreas.updated', full);
+    this.notificationsGateway.server.emit('subAreas.updated', full);
 
     return full;
   }
@@ -234,7 +234,7 @@ export class SubAreaService {
     const subArea = await this.findOne(id);
     await this.subAreaRepository.remove(subArea);
     // 🔴 WebSocket
-    this.websocketGateway.emit('subAreas.deleted', { id });
+    this.notificationsGateway.server.emit('subAreas.deleted', { id });
   }
 
   async getHierarchy(subAreaId: number): Promise<any> {

@@ -28,7 +28,7 @@ import { CreatePreoperationalChecklistTemplateDto } from './dto/create-preoperat
 import { Form } from './entities/form.entity';
 import { FormStatus, FormType } from '../shared/index';
 import { RejectFormDto } from './dto/reject-form.dto';
-import { WebsocketGateway } from '../websockets/websocket.gateway';
+import { NotificationsGateway } from 'src/notifications/notifications.gateway';
 
 @Injectable()
 export class SgSstService {
@@ -51,7 +51,7 @@ export class SgSstService {
     private preopTemplateRepo: Repository<PreoperationalChecklistTemplate>,
     @InjectRepository(PreoperationalChecklistParameter)
     private preopParamRepo: Repository<PreoperationalChecklistParameter>,
-    private readonly websocketGateway: WebsocketGateway,
+    private readonly notificationsGateway: NotificationsGateway,
   ) {}
 
   // ========== ATS METHODS ==========
@@ -151,7 +151,7 @@ export class SgSstService {
       await queryRunner.commitTransaction();
 
       // 🔴 WebSocket
-      this.websocketGateway.emit('forms.created', {
+      this.notificationsGateway.server.emit('forms.created', {
         formType: FormType.ATS,
         form: savedForm,
       });
@@ -222,7 +222,7 @@ export class SgSstService {
     const savedHeightWork = await this.heightWorkRepository.save(heightWork);
 
     // 🔴 WebSocket
-    this.websocketGateway.emit('forms.created', {
+    this.notificationsGateway.server.emit('forms.created', {
       formType: FormType.HEIGHT_WORK,
       form: savedForm,
     });
@@ -278,7 +278,7 @@ export class SgSstService {
     const savedChecks = await this.preoperationalCheckRepository.save(checks);
 
     // 🔴 WebSocket
-    this.websocketGateway.emit('forms.created', {
+    this.notificationsGateway.server.emit('forms.created', {
       formType: FormType.PREOPERATIONAL,
       form: savedForm,
     });
@@ -332,7 +332,7 @@ export class SgSstService {
     await this.formRepository.save(form);
 
     // 🔴 WebSocket
-    this.websocketGateway.emit('forms.updated', form);
+    this.notificationsGateway.server.emit('forms.updated', form);
 
     return { message: 'Firma registrada exitosamente', form };
   }
@@ -415,7 +415,7 @@ export class SgSstService {
       await queryRunner.commitTransaction();
 
       // 🔴 WebSocket
-      this.websocketGateway.emit('forms.updated', form);
+      this.notificationsGateway.server.emit('forms.updated', form);
 
       return {
         form,
@@ -599,7 +599,7 @@ export class SgSstService {
 
       await queryRunner.commitTransaction();
 
-      this.websocketGateway.emit('forms.created', {
+      this.notificationsGateway.server.emit('forms.created', {
         formType: FormType.ATS,
         form: savedForm,
       });
@@ -706,7 +706,7 @@ export class SgSstService {
 
       await queryRunner.commitTransaction();
 
-      this.websocketGateway.emit('forms.created', {
+      this.notificationsGateway.server.emit('forms.created', {
         formType: FormType.HEIGHT_WORK, // o HEIGHT_WORK / PREOPERATIONAL
         form: savedForm,
       });
@@ -810,7 +810,7 @@ export class SgSstService {
       await queryRunner.manager.save(Form, savedForm);
 
       await queryRunner.commitTransaction();
-      this.websocketGateway.emit('forms.created', {
+      this.notificationsGateway.server.emit('forms.created', {
         formType: FormType.PREOPERATIONAL,
         form: savedForm,
       });
@@ -878,7 +878,7 @@ export class SgSstService {
       } as any,
     });
     // 🔴 WebSocket
-    this.websocketGateway.emit('preopTemplates.updated', withParams);
+    this.notificationsGateway.server.emit('preopTemplates.updated', withParams);
 
     return withParams;
   }
@@ -944,7 +944,7 @@ export class SgSstService {
     await this.formRepository.save(form);
 
     // 🔴 WebSocket
-    this.websocketGateway.emit('forms.updated', form);
+    this.notificationsGateway.server.emit('forms.updated', form);
 
     return {
       message: 'Formulario rechazado exitosamente',

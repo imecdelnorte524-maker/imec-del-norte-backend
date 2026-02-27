@@ -9,6 +9,7 @@ import {
   UseInterceptors,
   ParseIntPipe,
   Body,
+  BadRequestException,
 } from '@nestjs/common';
 import { FilesInterceptor, FileInterceptor } from '@nestjs/platform-express';
 import {
@@ -22,11 +23,18 @@ import { ImagesService } from './images.service';
 import { UploadImageSwaggerDto } from './dto/upload-image.dto';
 import { Roles } from 'src/common/decorators/roles.decorator';
 import { WorkOrderEvidencePhase } from 'src/shared/index';
+import { CloudinaryService } from './cloudinary.service';
+import { UploadHeaderResponseDto } from './dto/upload-header-response.dto';
+import { ConfigService } from '@nestjs/config';
 
 @ApiTags('Images')
 @Controller('images')
 export class ImagesController {
-  constructor(private readonly imagesService: ImagesService) {}
+  constructor(
+    private readonly imagesService: ImagesService,
+    private readonly cloudinaryService: CloudinaryService,
+    private readonly configService: ConfigService,
+  ) {}
 
   // ---------- HERRAMIENTAS ----------
   @Post('tool/:id')
@@ -315,6 +323,111 @@ export class ImagesController {
     await this.imagesService.deleteByWorkOrder(id);
     return {
       message: 'Imágenes de la orden eliminadas correctamente',
+    };
+  }
+
+  @Post('upload-header')
+  @ApiOperation({
+    summary: 'Subir imagen de cabecera para PDFs',
+    description:
+      'Retorna la URL exacta donde se guardó la imagen en Cloudinary según el ambiente',
+  })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        file: {
+          type: 'string',
+          format: 'binary',
+          description: 'Imagen (PNG, JPG, etc.)',
+        },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 201,
+    description: 'Imagen subida exitosamente',
+    type: UploadHeaderResponseDto,
+  })
+  @UseInterceptors(FileInterceptor('file'))
+  async uploadHeader(
+    @UploadedFile() file: Express.Multer.File,
+  ): Promise<UploadHeaderResponseDto> {
+    if (!file) {
+      throw new BadRequestException('No se ha subido ningún archivo');
+    }
+
+    // Validar que sea una imagen
+    if (!file.mimetype.startsWith('image/')) {
+      throw new BadRequestException('El archivo debe ser una imagen');
+    }
+
+    // Validar tamaño máximo (2MB)
+    const maxSize = 2 * 1024 * 1024;
+    if (file.size > maxSize) {
+      throw new BadRequestException('La imagen no puede ser mayor a 2MB');
+    }
+
+    // Determinar ambiente
+    const environment = this.configService.get<string>(
+      'NODE_ENV',
+      'development',
+    );
+
+    // Subir a Cloudinary en carpeta específica por ambiente
+    const folder =
+      environment === 'production'
+        ? 'pdf-templates/headers/production'
+        : 'pdf-templates/headers/development';
+
+    try {
+      const uploadResult = await this.cloudinaryService.upload(
+        file,
+        folder,
+        'image',
+      );
+
+      return {
+        url: uploadResult.secure_url,
+        publicId: uploadResult.public_id,
+        environment,
+        originalName: file.originalname,
+      };
+    } catch (error) {
+      throw new BadRequestException(
+        `Error al subir la imagen: ${error.message}`,
+      );
+    }
+  }
+
+  @Get('header-url')
+  @ApiOperation({
+    summary: 'Obtener la URL de la imagen de cabecera según el ambiente',
+  })
+  @ApiResponse({
+    status: 200,
+    schema: {
+      properties: {
+        url: { type: 'string' },
+        environment: { type: 'string' },
+      },
+    },
+  })
+  async getHeaderUrl() {
+    const environment = this.configService.get<string>(
+      'NODE_ENV',
+      'development',
+    );
+
+    const url = this.configService.get<string>(
+      'PDF_HEADER_IMAGE_URL',
+      `https://res.cloudinary.com/${this.configService.get('CLOUDINARY_CLOUD_NAME')}/image/upload/v1/pdf-templates/headers/${environment}/header_imec.png`,
+    );
+
+    return {
+      url,
+      environment,
     };
   }
 }

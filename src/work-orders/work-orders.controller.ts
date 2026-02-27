@@ -14,6 +14,8 @@ import {
   BadRequestException,
   UploadedFile,
   UseInterceptors,
+  Res,
+  HttpStatus,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -50,6 +52,11 @@ import { SignWorkOrderDto } from './dto/sign-work-order.dto';
 import { AcInspectionPhase } from '../shared/index';
 import { CreateAcInspectionDto } from './dto/create-ac-inspection.dto';
 import { CloudinaryService } from 'src/images/cloudinary.service';
+import { Response } from 'express';
+import { Public } from 'src/common/decorators/public.decorator';
+import { SendWorkOrderReportsDto } from './dto/send-work-order-reports.dto';
+import { SendWorkOrderReportsToClientsDto } from './dto/send-work-order-reports-to-clients.dto';
+import { DownloadWorkOrderReportsDto } from './dto/download-work-order-reports.dto';
 
 @ApiTags('work-orders')
 @Controller('work-orders')
@@ -700,6 +707,178 @@ export class WorkOrdersController {
       message: 'Inspección final registrada correctamente',
       data: inspection,
     };
+  }
+
+  @Get(':id/informe')
+  @Roles('Administrador', 'Supervisor', 'Secretaria', 'Técnico')
+  @ApiOperation({
+    summary: 'Generar informe PDF interno de la orden de trabajo',
+  })
+  async generarInforme(
+    @Param('id', ParseIntPipe) id: number,
+    @Res() res: Response,
+    @Req() req: any,
+  ) {
+    try {
+      const workOrder = await this.workOrdersService.findOne(id);
+      const roleName = this.getRoleName(req.user);
+
+      // Mismas validaciones que en GET /:id
+
+      // Si es Técnico: solo si está asignado
+      if (roleName === 'Técnico') {
+        const isAssigned = workOrder.technicians?.some(
+          (t) => t.tecnicoId === req.user.userId,
+        );
+        if (!isAssigned) {
+          throw new ForbiddenException();
+        }
+      }
+
+      // Por seguridad extra (aunque aquí no incluimos rol Cliente en @Roles)
+      if (roleName === 'Cliente') {
+        const hasAccess = await this.workOrdersService.userHasAccessToEmpresa(
+          req.user.userId,
+          workOrder.clienteEmpresaId,
+        );
+        if (!hasAccess) {
+          throw new ForbiddenException();
+        }
+      }
+
+      const pdfBuffer = await this.workOrdersService.generarInformeOrden(id);
+
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader(
+        'Content-Disposition',
+        `inline; filename="OT-${id}-interno.pdf"`,
+      );
+      res.setHeader('Content-Length', pdfBuffer.length);
+
+      return res.status(HttpStatus.OK).send(pdfBuffer);
+    } catch (error) {
+      return res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
+        error: error.message,
+      });
+    }
+  }
+
+  @Get(':id/informe-client')
+  @Roles('Administrador', 'Supervisor', 'Cliente', 'Secretaria', 'Técnico')
+  @ApiOperation({
+    summary: 'Generar informe PDF versión cliente de la orden de trabajo',
+  })
+  async generarInformeClient(
+    @Param('id', ParseIntPipe) id: number,
+    @Res() res: Response,
+    @Req() req: any,
+  ) {
+    try {
+      const workOrder = await this.workOrdersService.findOne(id);
+      const roleName = this.getRoleName(req.user);
+
+      // Mismas validaciones de acceso que en GET /:id
+      if (roleName === 'Técnico') {
+        const isAssigned = workOrder.technicians?.some(
+          (t) => t.tecnicoId === req.user.userId,
+        );
+        if (!isAssigned) {
+          throw new ForbiddenException();
+        }
+      }
+
+      if (roleName === 'Cliente') {
+        const hasAccess = await this.workOrdersService.userHasAccessToEmpresa(
+          req.user.userId,
+          workOrder.clienteEmpresaId,
+        );
+        if (!hasAccess) {
+          throw new ForbiddenException();
+        }
+      }
+
+      const pdfBuffer =
+        await this.workOrdersService.generarInformeOrdenCliente(id);
+
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader(
+        'Content-Disposition',
+        `inline; filename="Informe-Orden-Servicio-${id}-${workOrder.clienteEmpresa?.nombre}.pdf"`,
+      );
+      res.setHeader('Content-Length', pdfBuffer.length);
+
+      return res.status(HttpStatus.OK).send(pdfBuffer);
+    } catch (error) {
+      return res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
+        error: error.message,
+      });
+    }
+  }
+
+  @Post('send-reports')
+  @Roles('Administrador', 'Supervisor', 'Secretaria', 'Cliente', 'Técnico')
+  @ApiOperation({
+    summary:
+      'Enviar por correo electrónico los informes PDF de varias órdenes de trabajo',
+  })
+  async sendReportsByEmail(
+    @Body() dto: SendWorkOrderReportsDto,
+    @Req() req: any,
+  ) {
+    const result = await this.workOrdersService.sendReportsByEmail(
+      dto,
+      req.user,
+    );
+
+    return {
+      message: 'Informes enviados correctamente',
+      data: result,
+    };
+  }
+
+  @Post('send-reports-to-clients')
+  @Roles('Administrador', 'Supervisor', 'Secretaria')
+  @ApiOperation({
+    summary:
+      'Enviar por correo electrónico informes PDF de órdenes completadas a los clientes (usuarios contacto de cada empresa)',
+  })
+  async sendReportsToClients(
+    @Body() dto: SendWorkOrderReportsToClientsDto,
+    @Req() req: any,
+  ) {
+    const result = await this.workOrdersService.sendReportsToClientsByEmail(
+      dto,
+      req.user,
+    );
+
+    return {
+      message: 'Informes enviados a clientes correctamente',
+      data: result,
+    };
+  }
+
+  @Post('download-reports')
+  @Roles('Administrador', 'Supervisor', 'Secretaria', 'Cliente', 'Técnico')
+  @ApiOperation({
+    summary: 'Descargar informes PDF (o ZIP) de varias órdenes de trabajo',
+  })
+  async downloadReports(
+    @Body() dto: DownloadWorkOrderReportsDto,
+    @Req() req: any,
+    @Res() res: Response,
+  ) {
+    const { buffer, fileName, contentType } =
+      await this.workOrdersService.generateBatchReportsFile(
+        dto.orderIds,
+        dto.reportType,
+        req.user,
+      );
+
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    res.setHeader('Content-Length', buffer.length);
+
+    return res.status(HttpStatus.OK).send(buffer);
   }
 
   private mapToResponseDto(workOrder: WorkOrder): WorkOrderResponseDto {

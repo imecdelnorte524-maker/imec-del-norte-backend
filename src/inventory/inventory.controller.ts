@@ -10,6 +10,7 @@ import {
   Query,
   ParseIntPipe,
   ParseBoolPipe,
+  Res,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -26,6 +27,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { Inventory } from './entities/inventory.entity';
+import { Response } from 'express';
 
 @ApiTags('inventory')
 @Controller('inventory')
@@ -33,6 +35,62 @@ import { Inventory } from './entities/inventory.entity';
 @ApiBearerAuth()
 export class InventoryController {
   constructor(private readonly inventoryService: InventoryService) {}
+
+  @Get('export')
+  @ApiOperation({
+    summary: 'Exportar inventario a Excel',
+    description:
+      'Exporta la lista de inventario a un archivo Excel con filtros opcionales',
+  })
+  @ApiQuery({
+    name: 'bodegaId',
+    required: false,
+    description:
+      'ID de la bodega para filtrar (opcional - si no se envía, exporta todo)',
+    type: Number,
+  })
+  @ApiQuery({
+    name: 'includeDeleted',
+    required: false,
+    description: 'Incluir registros eliminados (opcional - por defecto false)',
+    type: Boolean,
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Archivo Excel generado exitosamente',
+    content: {
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': {
+        schema: {
+          type: 'string',
+          format: 'binary',
+        },
+      },
+    },
+  })
+  async exportInventory(
+    @Res() res: Response,
+    @Query('bodegaId') bodegaId?: string,
+    @Query('includeDeleted') includeDeleted?: string,
+  ) {
+    const parsedBodegaId =
+      bodegaId && bodegaId !== '' ? Number(bodegaId) : undefined;
+    const parsedIncludeDeleted = includeDeleted === 'true';
+
+    const buffer = await this.inventoryService.generateInventoryExcel(
+      parsedBodegaId,
+      parsedIncludeDeleted,
+    );
+
+    res.setHeader(
+      'Content-Type',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    );
+    res.setHeader(
+      'Content-Disposition',
+      'attachment; filename="inventario.xlsx"',
+    );
+    res.send(buffer);
+  }
 
   @Post()
   @Roles('Administrador', 'Técnico', 'Secretaria')
@@ -347,6 +405,9 @@ export class InventoryController {
     }
 
     if (inventory.tool) {
+      // 👇 Aquí usamos el tipo para saber si es herramienta o equipo
+      const tipoItem = inventory.tool.tipo || 'Herramienta';
+
       response.tool = {
         herramientaId: inventory.tool.herramientaId,
         nombre: inventory.tool.nombre,
@@ -357,6 +418,7 @@ export class InventoryController {
         valorUnitario: inventory.tool.valorUnitario,
         caracteristicasTecnicas: inventory.tool.caracteristicasTecnicas || '',
         observacion: inventory.tool.observacion || '',
+        tipo: tipoItem, // 👈 Agregar el tipo al response
       };
     }
 

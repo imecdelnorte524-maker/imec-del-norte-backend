@@ -17,7 +17,7 @@ import { DeleteToolDto } from './dto/delete-tool.dto';
 import { ToolStatus, ToolType } from '../shared/index';
 import { ImagesService } from '../images/images.service';
 import { SequenceHelperService } from '../common/services/sequence-helper.service';
-import { WebsocketGateway } from '../websockets/websocket.gateway';
+import { NotificationsGateway } from 'src/notifications/notifications.gateway';
 
 @Injectable()
 export class ToolService {
@@ -35,7 +35,7 @@ export class ToolService {
     private dataSource: DataSource,
     private readonly imagesService: ImagesService,
     private readonly sequenceHelper: SequenceHelperService,
-    private readonly websocketGateway: WebsocketGateway,
+    private readonly notificationsGateway: NotificationsGateway,
   ) {
     // Verificar secuencia al inicializar
     this.initializeSequence().catch((error) => {
@@ -257,7 +257,7 @@ export class ToolService {
       const full = await this.findOne(savedTool.herramientaId);
 
       // ===== 6. EMITIR EVENTO WEBSOCKET =====
-      this.websocketGateway.emit('tools.created', full);
+      this.notificationsGateway.server.emit('tools.created', full);
 
       return full;
     } catch (error: any) {
@@ -398,7 +398,7 @@ export class ToolService {
       const updated = await this.findOne(id);
 
       // WebSocket
-      this.websocketGateway.emit('tools.updated', updated);
+      this.notificationsGateway.server.emit('tools.updated', updated);
 
       return updated;
     } catch (error: any) {
@@ -431,7 +431,7 @@ export class ToolService {
     await this.toolRepository.delete(id);
 
     // WebSocket
-    this.websocketGateway.emit('tools.deleted', { id, soft: false });
+    this.notificationsGateway.server.emit('tools.deleted', { id, soft: false });
   }
 
   async softDeleteWithReason(id: number, dto: DeleteToolDto): Promise<void> {
@@ -479,7 +479,7 @@ export class ToolService {
       await queryRunner.commitTransaction();
 
       // WebSocket
-      this.websocketGateway.emit('tools.softDeleted', {
+      this.notificationsGateway.server.emit('tools.softDeleted', {
         id,
         motivo: dto.motivo,
       });
@@ -526,8 +526,8 @@ export class ToolService {
     const restored = await this.findOne(id);
 
     // WebSocket
-    this.websocketGateway.emit('tools.restored', restored);
-    this.websocketGateway.emit('tools.updated', restored);
+    this.notificationsGateway.server.emit('tools.restored', restored);
+    this.notificationsGateway.server.emit('tools.updated', restored);
 
     return restored;
   }
@@ -550,8 +550,8 @@ export class ToolService {
     const updated = await this.findOne(id);
 
     // WebSocket
-    this.websocketGateway.emit('tools.statusUpdated', updated);
-    this.websocketGateway.emit('tools.updated', updated);
+    this.notificationsGateway.server.emit('tools.statusUpdated', updated);
+    this.notificationsGateway.server.emit('tools.updated', updated);
 
     return updated;
   }

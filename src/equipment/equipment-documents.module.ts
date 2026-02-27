@@ -5,12 +5,13 @@ import { EquipmentDocumentsService } from './equipment-documents.service';
 import { EquipmentDocument } from './entities/equipment-document.entity';
 import { Equipment } from './entities/equipment.entity';
 import { CloudinaryService } from '../images/cloudinary.service';
-import { WebsocketGateway } from '../websockets/websocket.gateway';
+import { NotificationsGateway } from 'src/notifications/notifications.gateway';
+
 
 @Module({
   imports: [TypeOrmModule.forFeature([EquipmentDocument, Equipment])],
   controllers: [EquipmentDocumentsController],
-  providers: [EquipmentDocumentsService, CloudinaryService, WebsocketGateway],
+  providers: [EquipmentDocumentsService, CloudinaryService, NotificationsGateway],
   exports: [EquipmentDocumentsService],
 })
 export class EquipmentDocumentsModule {}
