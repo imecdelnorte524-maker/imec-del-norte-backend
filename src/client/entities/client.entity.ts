@@ -30,7 +30,7 @@ export class Client {
 
   @Column({ name: 'digito_verificacion', nullable: true })
   @IsOptional()
-  verification_digit: number;
+  verification_digit?: string;
 
   @Column({ name: 'direccion_base', length: 255 })
   @IsNotEmpty({ message: 'La dirección base es requerida' })
