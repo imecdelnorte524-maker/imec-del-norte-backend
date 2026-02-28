@@ -24,10 +24,9 @@ export class CreateClientDto {
   @Length(5, 20, { message: 'El NIT debe tener entre 5 y 20 caracteres' })
   nit: string;
 
-  @ApiProperty({ example: 7, description: 'Digito de Verificación del NIT' })
+  @ApiProperty({ example: "7", description: 'Digito de Verificación del NIT' })
   @IsOptional()
-  @IsNumber()
-  verification_digit?: number;
+  verification_digit?: string;
 
   @ApiProperty({
     example: 'Calle 123 #45-67',
