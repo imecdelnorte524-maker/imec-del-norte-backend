@@ -51,6 +51,26 @@ export class EquipmentController {
     return user?.role?.nombreRol || user?.role || '';
   }
 
+  @Get('client')
+  @UseGuards(JwtAuthGuard)
+  async getClientEquipment(@Req() req: any) {
+    const userId = req.user.userId;
+    console.log('🔍 Usuario ID:', userId);
+
+    if (!userId) {
+      return {
+        message: 'Usuario no autenticado',
+        data: [],
+      };
+    }
+
+    const equipment = await this.equipmentService.findByClientUser(userId);
+    return {
+      message: 'Equipos del cliente obtenidos exitosamente',
+      data: equipment,
+    };
+  }
+
   @Post()
   @ApiOperation({ summary: 'Crear equipo (hoja de vida)' })
   @ApiResponse({

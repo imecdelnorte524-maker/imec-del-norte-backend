@@ -1,12 +1,5 @@
 // src/dashboard/dashboard.controller.ts
-import {
-  Controller,
-  Get,
-  Query,
-  UseGuards,
-  Req,
-  ParseIntPipe,
-} from '@nestjs/common';
+import { Controller, Get, Query, UseGuards, Req } from '@nestjs/common';
 import {
   ApiTags,
   ApiOperation,
@@ -16,7 +9,6 @@ import {
 import { DashboardService } from './dashboard.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
-import { Roles } from '../common/decorators/roles.decorator';
 
 @ApiTags('dashboard')
 @Controller('dashboard')
@@ -33,7 +25,6 @@ export class DashboardController {
   @ApiOperation({ summary: 'Obtener métricas generales del dashboard' })
   async getMetrics(@Req() req: any) {
     const metrics = await this.dashboardService.getMetrics(req.user);
-
     return {
       message: 'Métricas obtenidas exitosamente',
       data: metrics,
@@ -41,40 +32,13 @@ export class DashboardController {
   }
 
   @Get('ordenes-servicio')
-  @ApiOperation({
-    summary:
-      'Obtener órdenes de servicio para el dashboard (vista administrador)',
-  })
-  @ApiQuery({
-    name: 'estado',
-    required: false,
-    description: 'Estado filtrado (Pendiente, En Proceso, Completado, etc.)',
-  })
-  @ApiQuery({
-    name: 'search',
-    required: false,
-    description: 'Texto de búsqueda (cliente, servicio, técnico, ID orden)',
-  })
-  @ApiQuery({
-    name: 'fecha_inicio',
-    required: false,
-    description: 'Fecha inicio (YYYY-MM-DD)',
-  })
-  @ApiQuery({
-    name: 'fecha_fin',
-    required: false,
-    description: 'Fecha fin (YYYY-MM-DD)',
-  })
-  @ApiQuery({
-    name: 'page',
-    required: false,
-    description: 'Página (paginación)',
-  })
-  @ApiQuery({
-    name: 'limit',
-    required: false,
-    description: 'Límite por página (paginación)',
-  })
+  @ApiOperation({ summary: 'Obtener órdenes de servicio para el dashboard' })
+  @ApiQuery({ name: 'estado', required: false })
+  @ApiQuery({ name: 'search', required: false })
+  @ApiQuery({ name: 'fecha_inicio', required: false })
+  @ApiQuery({ name: 'fecha_fin', required: false })
+  @ApiQuery({ name: 'page', required: false })
+  @ApiQuery({ name: 'limit', required: false })
   async getAllOrders(
     @Query('estado') estado?: string,
     @Query('search') search?: string,
@@ -102,40 +66,13 @@ export class DashboardController {
   }
 
   @Get('mis-servicios')
-  @ApiOperation({
-    summary:
-      'Obtener órdenes de servicio del usuario actual (técnico o cliente)',
-  })
-  @ApiQuery({
-    name: 'estado',
-    required: false,
-    description: 'Estado filtrado (Pendiente, En Proceso, Completado, etc.)',
-  })
-  @ApiQuery({
-    name: 'search',
-    required: false,
-    description: 'Texto de búsqueda (cliente, servicio, técnico, ID orden)',
-  })
-  @ApiQuery({
-    name: 'fecha_inicio',
-    required: false,
-    description: 'Fecha inicio (YYYY-MM-DD)',
-  })
-  @ApiQuery({
-    name: 'fecha_fin',
-    required: false,
-    description: 'Fecha fin (YYYY-MM-DD)',
-  })
-  @ApiQuery({
-    name: 'page',
-    required: false,
-    description: 'Página (paginación)',
-  })
-  @ApiQuery({
-    name: 'limit',
-    required: false,
-    description: 'Límite por página (paginación)',
-  })
+  @ApiOperation({ summary: 'Obtener órdenes de servicio del usuario actual' })
+  @ApiQuery({ name: 'estado', required: false })
+  @ApiQuery({ name: 'search', required: false })
+  @ApiQuery({ name: 'fecha_inicio', required: false })
+  @ApiQuery({ name: 'fecha_fin', required: false })
+  @ApiQuery({ name: 'page', required: false })
+  @ApiQuery({ name: 'limit', required: false })
   async getMyServices(
     @Req() req: any,
     @Query('estado') estado?: string,
@@ -169,49 +106,15 @@ export class DashboardController {
   }
 
   @Get('orders')
-  @ApiOperation({
-    summary: 'Obtener órdenes de servicio para el dashboard (alias en inglés)',
-  })
-  @ApiQuery({
-    name: 'estado',
-    required: false,
-    description: 'Estado filtrado (Pendiente, En Proceso, Completado, etc.)',
-  })
-  @ApiQuery({
-    name: 'search',
-    required: false,
-    description: 'Texto de búsqueda (cliente, servicio, técnico, ID orden)',
-  })
-  @ApiQuery({
-    name: 'fecha_inicio',
-    required: false,
-    description: 'Fecha inicio (YYYY-MM-DD)',
-  })
-  @ApiQuery({
-    name: 'fecha_fin',
-    required: false,
-    description: 'Fecha fin (YYYY-MM-DD)',
-  })
-  @ApiQuery({
-    name: 'page',
-    required: false,
-    description: 'Página (paginación)',
-  })
-  @ApiQuery({
-    name: 'limit',
-    required: false,
-    description: 'Límite por página (paginación)',
-  })
-  @ApiQuery({
-    name: 'tecnicoId',
-    required: false,
-    description: 'ID del técnico',
-  })
-  @ApiQuery({
-    name: 'clienteId',
-    required: false,
-    description: 'ID del cliente',
-  })
+  @ApiOperation({ summary: 'Obtener órdenes de servicio (alias en inglés)' })
+  @ApiQuery({ name: 'estado', required: false })
+  @ApiQuery({ name: 'search', required: false })
+  @ApiQuery({ name: 'fecha_inicio', required: false })
+  @ApiQuery({ name: 'fecha_fin', required: false })
+  @ApiQuery({ name: 'page', required: false })
+  @ApiQuery({ name: 'limit', required: false })
+  @ApiQuery({ name: 'tecnicoId', required: false })
+  @ApiQuery({ name: 'clienteId', required: false })
   async getOrders(
     @Query('estado') estado?: string,
     @Query('search') search?: string,
