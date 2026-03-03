@@ -33,6 +33,7 @@ import { MaintenanceTypesModule } from './maintenance-types/maintenance-types.mo
 import { SequencesModule } from './database/sequences.module';
 import { CommonModule } from './common/common.module';
 import { PdfModule } from './pdf/pdf.module';
+import { TechniciansModule } from './technicians/technicians.module';
 @Module({
   imports: [
     ScheduleModule.forRoot(),
@@ -89,6 +90,7 @@ import { PdfModule } from './pdf/pdf.module';
     UnitMeasureModule,
     MaintenanceTypesModule,
     CommonModule,
+    TechniciansModule,
   ],
 })
 export class AppModule {}

@@ -20,6 +20,7 @@ import { EquipmentDocumentsController } from './equipment-documents.controller';
 import { EquipmentDocument } from './entities/equipment-document.entity';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { PdfModule } from '../pdf/pdf.module';
+import { User } from '../users/entities/user.entity';
 
 @Module({
   imports: [
@@ -35,6 +36,7 @@ import { PdfModule } from '../pdf/pdf.module';
       EquipmentCompressor,
       PlanMantenimiento,
       EquipmentDocument,
+      User,
     ]),
     ImagesModule,
     WorkOrdersModule,

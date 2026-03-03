@@ -35,6 +35,7 @@ import { buildEquipmentHistoryParams } from '../../templates/report/equipment-hi
 import { PdfService } from '../pdf/pdf.service';
 import { ConfigService } from '@nestjs/config';
 import { WorkOrdersService } from '../work-orders/work-orders.service';
+import { User } from '../users/entities/user.entity';
 
 interface OrphanedRecordIssue {
   table: string;
@@ -91,6 +92,8 @@ export class EquipmentService
     private readonly compressorRepository: Repository<EquipmentCompressor>,
     @InjectRepository(PlanMantenimiento)
     private readonly planMantenimientoRepository: Repository<PlanMantenimiento>,
+    @InjectRepository(User)
+    private readonly userRepository: Repository<User>,
     private readonly imagesService: ImagesService,
     private readonly dataSource: DataSource,
     private readonly notificationsGateway: NotificationsGateway,
@@ -116,8 +119,6 @@ export class EquipmentService
    */
   private async initializeAllSequences(): Promise<void> {
     try {
-      this.logger.log('🔧 Inicializando secuencias de equipos...');
-
       // Inicializar secuencia principal de equipos
       await this.initializeSequence();
 
@@ -179,8 +180,6 @@ export class EquipmentService
    */
   async getFullDiagnosis(): Promise<FullDiagnosis> {
     try {
-      this.logger.log('🔍 Ejecutando diagnóstico completo de equipos...');
-
       // Diagnóstico de tablas principales
       const equipmentDiagnosis = await this.diagnoseTable(['code']);
       const evaporatorsDiagnosis = await this.sequenceHelper.diagnoseTable(
@@ -1848,8 +1847,6 @@ export class EquipmentService
 
   async generateEquipmentHistoryPdf(equipmentId: number): Promise<Buffer> {
     try {
-      this.logger.log(`Generando PDF de historial para equipo ${equipmentId}`);
-
       // 1. Obtener el equipo con todas sus relaciones
       const equipment = await this.equipmentRepository.findOne({
         where: { equipmentId },
@@ -1898,6 +1895,66 @@ export class EquipmentService
         error.stack,
       );
       throw error;
+    }
+  }
+
+  async findByClientUser(userId: number): Promise<Equipment[]> {
+    try {
+      const empresaIds = await this.clientRepository
+        .createQueryBuilder('cliente')
+        .innerJoin(
+          'clientes_usuarios_contacto',
+          'cuc',
+          'cuc.id_cliente = cliente.idCliente',
+        )
+        .where('cuc.id_usuario = :userId', { userId })
+        .select('cliente.idCliente', 'id')
+        .getRawMany();
+
+      if (!empresaIds || empresaIds.length === 0) {
+        return [];
+      }
+
+      const ids = empresaIds.map((r) => r.id);
+
+      // Verificar que hay equipos para esas empresas
+      const equiposCount = await this.equipmentRepository
+        .createQueryBuilder('eq')
+        .where('eq.clientId IN (:...ids)', { ids })
+        .getCount();
+
+      if (equiposCount === 0) {
+        return [];
+      }
+
+      // Traer los equipos con todas las relaciones
+      const equipment = await this.equipmentRepository
+        .createQueryBuilder('eq')
+        .leftJoinAndSelect('eq.client', 'client')
+        .leftJoinAndSelect('eq.area', 'area')
+        .leftJoinAndSelect('eq.subArea', 'subArea')
+        .leftJoinAndSelect('eq.airConditionerType', 'airConditionerType')
+        .leftJoinAndSelect('eq.evaporators', 'evaporators')
+        .leftJoinAndSelect(
+          'evaporators.airConditionerTypeEvap',
+          'evaporatorType',
+        )
+        .leftJoinAndSelect('evaporators.motors', 'evaporatorMotors')
+        .leftJoinAndSelect('eq.condensers', 'condensers')
+        .leftJoinAndSelect('condensers.motors', 'condenserMotors')
+        .leftJoinAndSelect('condensers.compressors', 'compressors')
+        .leftJoinAndSelect('eq.planMantenimiento', 'planMantenimiento')
+        .leftJoinAndSelect('eq.images', 'images')
+        .leftJoinAndSelect('eq.equipmentWorkOrders', 'equipmentWorkOrders')
+        .leftJoinAndSelect('equipmentWorkOrders.workOrder', 'workOrder')
+        .where('eq.clientId IN (:...ids)', { ids })
+        .orderBy('eq.updatedAt', 'DESC')
+        .getMany();
+      return equipment;
+    } catch (error) {
+      console.error('❌ Error en findByClientUser:', error);
+      console.error('❌ Stack:', error.stack);
+      return [];
     }
   }
 }

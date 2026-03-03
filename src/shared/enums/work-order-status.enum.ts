@@ -1,4 +1,4 @@
-// src/work-orders/enums/work-order-status.enum.ts
+// src/shared/enums/work-order-status.enum.ts
 export enum WorkOrderStatus {
   REQUESTED_UNASSIGNED = 'Solicitada sin asignar',
   REQUESTED_ASSIGNED = 'Solicitada asignada',

@@ -11,3 +11,4 @@ export * from './enums/notification-types.enum';
 export * from './enums/service-request-type.enum';
 export * from './enums/service.enums';
 export * from './enums/work-order-status.enum';
+export * from './enums/ranking-metrics';
