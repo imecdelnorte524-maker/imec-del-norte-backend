@@ -32,7 +32,6 @@ export class SubAreaController {
   constructor(private readonly subAreaService: SubAreaService) {}
 
   @Post()
-  @Roles('Administrador', 'Secretaria')
   @ApiOperation({
     summary: 'Crear subárea',
     description: 'Crea una nueva subárea',
@@ -121,7 +120,6 @@ export class SubAreaController {
   }
 
   @Patch(':id')
-  @Roles('Administrador', 'Secretaria')
   @ApiOperation({
     summary: 'Actualizar subárea',
     description: 'Actualiza una subárea existente',

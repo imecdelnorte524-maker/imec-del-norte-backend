@@ -27,7 +27,6 @@ export class AreaController {
   constructor(private readonly areaService: AreaService) {}
 
   @Post()
-  @Roles('Administrador', 'Secretaria')
   @ApiOperation({ summary: 'Crear área', description: 'Crea una nueva área' })
   @ApiResponse({ status: 201, description: 'Área creada exitosamente' })
   @ApiResponse({ status: 404, description: 'Cliente no encontrado' })
@@ -96,7 +95,6 @@ export class AreaController {
   }
 
   @Patch(':id')
-  @Roles('Administrador', 'Secretaria')
   @ApiOperation({ summary: 'Actualizar área', description: 'Actualiza un área existente' })
   @ApiResponse({ status: 200, description: 'Área actualizada exitosamente' })
   @ApiResponse({ status: 404, description: 'Área no encontrada' })
