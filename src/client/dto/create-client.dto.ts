@@ -9,6 +9,7 @@ import {
   IsDateString,
   IsArray,
   ArrayMinSize,
+  IsBoolean,
 } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
@@ -24,7 +25,7 @@ export class CreateClientDto {
   @Length(5, 20, { message: 'El NIT debe tener entre 5 y 20 caracteres' })
   nit: string;
 
-  @ApiProperty({ example: "7", description: 'Digito de Verificación del NIT' })
+  @ApiProperty({ example: '7', description: 'Digito de Verificación del NIT' })
   @IsOptional()
   verification_digit?: string;
 
@@ -113,6 +114,14 @@ export class CreateClientDto {
     },
   )
   fechaCreacionEmpresa: string;
+
+  @ApiProperty({
+    example: false,
+    description: 'Plan de mantenimiento automático',
+  })
+  @IsOptional()
+  @IsBoolean()
+  planMantenimientoAutomatico?: boolean;
 
   @ApiProperty({
     example: [1, 2, 3],

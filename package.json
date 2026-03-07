@@ -41,9 +41,9 @@
     "db:list": "ls -1 src/migrations/*.ts | xargs -I {} basename {} | sort -n"
   },
   "dependencies": {
-    "@nestjs/common": "^11.0.1",
+    "@nestjs/common": "^11.1.15",
     "@nestjs/config": "^4.0.2",
-    "@nestjs/core": "^11.0.1",
+    "@nestjs/core": "^11.1.15",
     "@nestjs/event-emitter": "^3.0.1",
     "@nestjs/jwt": "^11.0.1",
     "@nestjs/passport": "^11.0.5",
@@ -78,13 +78,14 @@
     "rxjs": "^7.8.1",
     "sharp": "^0.34.5",
     "socket.io": "^4.8.3",
+    "twilio": "^5.12.2",
     "typeorm": "^0.3.27"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.2.0",
     "@eslint/js": "^9.18.0",
-    "@nestjs/cli": "^11.0.0",
-    "@nestjs/schematics": "^11.0.0",
+    "@nestjs/cli": "^11.0.16",
+    "@nestjs/schematics": "^11.0.9",
     "@nestjs/testing": "^11.0.1",
     "@types/exceljs": "^0.5.3",
     "@types/express": "^5.0.6",
@@ -96,6 +97,7 @@
     "@types/node": "^22.19.2",
     "@types/puppeteer": "^5.4.7",
     "@types/supertest": "^6.0.2",
+    "@types/twilio": "^3.19.2",
     "cross-env": "^10.1.0",
     "eslint": "^9.18.0",
     "eslint-config-prettier": "^10.0.1",

@@ -1,7 +1,7 @@
 // notifications/notifications.service.ts
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, LessThan, MoreThan, Brackets } from 'typeorm';
+import { Repository, LessThan } from 'typeorm';
 import { Notification } from './entities/notification.entity';
 import { 
   NotificationType, 
@@ -23,8 +23,7 @@ export class NotificationsService {
     private readonly gateway: NotificationsGateway,
   ) {}
 
-  async createAndSend(dto: CreateNotificationDto): Promise<Notification> {
-    // Asignar módulo y prioridad si no vienen definidos
+  async createAndSend(dto: CreateNotificationDto, excludeSocketId?: string): Promise<Notification> {
     const modulo = dto.modulo || NotificationTypeToModule[dto.tipo];
     const prioridad = dto.prioridad || NotificationPriorityByType[dto.tipo];
 
@@ -43,15 +42,37 @@ export class NotificationsService {
 
     const saved = await this.notificationsRepo.save(notification);
 
-    // Enviar por WebSocket
-    this.gateway.sendToUser(dto.usuarioId, saved);
+    // Enviar por WebSocket (excluyendo el socket especificado)
+    this.gateway.sendToUser(dto.usuarioId, saved, excludeSocketId);
 
-    this.logger.debug(`📨 Notificación enviada: ${saved.notificacionId} - ${saved.tipo}`);
+    this.logger.debug(`📨 Notificación #${saved.notificacionId} enviada: ${saved.tipo} a usuario ${dto.usuarioId}`);
 
     return saved;
   }
 
-  // Buscar con filtros avanzados
+  async create(dto: CreateNotificationDto): Promise<Notification> {
+    const modulo = dto.modulo || NotificationTypeToModule[dto.tipo];
+    const prioridad = dto.prioridad || NotificationPriorityByType[dto.tipo];
+
+    const notification = this.notificationsRepo.create({
+      usuarioId: dto.usuarioId,
+      tipo: dto.tipo,
+      modulo,
+      prioridad,
+      titulo: dto.titulo,
+      mensaje: dto.mensaje,
+      mensajeCorto: dto.mensajeCorto || this.generateShortMessage(dto),
+      data: dto.data ?? null,
+      accion: dto.accion ?? this.generateDefaultAction(dto),
+      visibleHasta: dto.visibleHasta ?? this.calculateExpirationDate(dto.tipo),
+    });
+
+    const saved = await this.notificationsRepo.save(notification);
+    this.logger.debug(`📝 Notificación #${saved.notificacionId} guardada en BD`);
+
+    return saved;
+  }
+
   async findForUser(
     usuarioId: number,
     filters: {
@@ -105,7 +126,6 @@ export class NotificationsService {
       .getMany();
   }
 
-  // Obtener conteo de no leídas por módulo
   async getUnreadCountByModule(usuarioId: number): Promise<Record<NotificationModule, number>> {
     const result = await this.notificationsRepo
       .createQueryBuilder('n')
@@ -119,12 +139,10 @@ export class NotificationsService {
 
     const counts = {} as Record<NotificationModule, number>;
     
-    // Inicializar todos los módulos en 0
     Object.values(NotificationModule).forEach(module => {
       counts[module] = 0;
     });
 
-    // Actualizar con los conteos reales
     result.forEach(row => {
       counts[row.modulo] = parseInt(row.count, 10);
     });
@@ -132,7 +150,6 @@ export class NotificationsService {
     return counts;
   }
 
-  // Marcar como leída con fecha
   async markAsRead(usuarioId: number, notificacionId: number): Promise<void> {
     await this.notificationsRepo.update(
       { notificacionId, usuarioId },
@@ -143,7 +160,6 @@ export class NotificationsService {
     );
   }
 
-  // Marcar todas como leídas por módulo
   async markAllAsRead(usuarioId: number, modulo?: NotificationModule): Promise<void> {
     const where: any = { usuarioId, leida: false };
     
@@ -160,7 +176,6 @@ export class NotificationsService {
     );
   }
 
-  // Eliminar notificaciones viejas automáticamente
   async cleanOldNotifications(daysToKeep: number = 30): Promise<number> {
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - daysToKeep);
@@ -175,17 +190,12 @@ export class NotificationsService {
     return result.affected || 0;
   }
 
-  // Métodos privados de ayuda
   private generateShortMessage(dto: CreateNotificationDto): string {
-    // Generar versión corta basada en el tipo
     if (dto.mensajeCorto) return dto.mensajeCorto;
-    
-    // Por defecto, tomar primeros 100 caracteres
     return dto.mensaje.substring(0, 97) + '...';
   }
 
   private generateDefaultAction(dto: CreateNotificationDto) {
-    // Generar acción por defecto según el tipo
     switch (dto.tipo) {
       case NotificationType.WORK_ORDER_CREATED:
       case NotificationType.WORK_ORDER_ASSIGNED:
@@ -210,22 +220,18 @@ export class NotificationsService {
     
     switch (tipo) {
       case NotificationType.SYSTEM_MAINTENANCE:
-        // Expira después del mantenimiento
         now.setDate(now.getDate() + 7);
         return now;
       
       case NotificationType.STOCK_EXPIRING:
-        // Mantener hasta que se resuelva
         now.setDate(now.getDate() + 15);
         return now;
       
       case NotificationType.WORK_ORDER_ASSIGNED:
-        // 30 días después de asignada
         now.setDate(now.getDate() + 30);
         return now;
       
       default:
-        // Por defecto, 90 días
         now.setDate(now.getDate() + 90);
         return now;
     }

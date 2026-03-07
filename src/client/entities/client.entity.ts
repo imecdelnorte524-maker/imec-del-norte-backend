@@ -10,7 +10,7 @@ import {
 } from 'typeorm';
 import { Area } from '../../area/entities/area.entity';
 import { User } from '../../users/entities/user.entity';
-import { IsEmail, IsNotEmpty, IsOptional } from 'class-validator';
+import { IsBoolean, IsEmail, IsNotEmpty, IsOptional } from 'class-validator';
 import { AtsReport } from '../../sg-sst/entities/ats-report.entity';
 import { Image } from '../../images/entities/image.entity';
 import { Warehouse } from '../../warehouses/entities/warehouse.entity';
@@ -79,6 +79,15 @@ export class Client {
   })
   @IsNotEmpty()
   fechaCreacionEmpresa: Date;
+
+  @Column({
+    name: 'plan_mantenimiento_automatico',
+    type: 'boolean',
+    default: false,
+  })
+  @IsOptional()
+  @IsBoolean()
+  planMantenimientoAutomatico: boolean;
 
   // RELACIÓN CON MÚLTIPLES USUARIOS CONTACTO
   @ManyToMany(() => User, { eager: true })

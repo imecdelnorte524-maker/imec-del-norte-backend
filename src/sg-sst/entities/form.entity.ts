@@ -14,10 +14,10 @@ import { AtsReport } from './ats-report.entity';
 import { HeightWork } from './height-work.entity';
 import { PreoperationalCheck } from './preoperational-check.entity';
 import { Signature } from './signature.entity';
-import { GeneratedPdf } from './generated-pdf.entity';
 import { User } from '../../users/entities/user.entity';
 import { WorkOrder } from '../../work-orders/entities/work-order.entity';
 import { FormStatus, FormType } from '../../shared/index';
+import { SignOtp } from './sign-otp.entity';
 
 @Entity('forms')
 export class Form {
@@ -98,6 +98,22 @@ export class Form {
   @OneToMany(() => Signature, (signature) => signature.form)
   signatures: Signature[];
 
-  @OneToMany(() => GeneratedPdf, (pdf) => pdf.form)
-  generatedPdfs: GeneratedPdf[];
+  @OneToMany(() => SignOtp, (otp) => otp.form)
+  signOtps: SignOtp[];
+  
+  // ===== Metadatos del PDF generado =====
+  @Column({ nullable: true })
+  pdfFilePath?: string;
+
+  @Column({ nullable: true })
+  pdfFileName?: string;
+
+  @Column({ type: 'int', nullable: true })
+  pdfFileSize?: number;
+
+  @Column({ nullable: true })
+  pdfHash?: string;
+
+  @Column({ type: 'timestamp', nullable: true })
+  pdfGeneratedAt?: Date;
 }

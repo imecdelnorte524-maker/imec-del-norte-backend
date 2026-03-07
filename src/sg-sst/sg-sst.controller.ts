@@ -1,3 +1,4 @@
+// src/sg-sst/sg-sst.controller.ts
 import {
   Controller,
   Get,
@@ -12,29 +13,29 @@ import {
   Res,
   BadRequestException,
   Put,
+  Req,
+  UseGuards,
 } from '@nestjs/common';
-import { Response } from 'express';
+import { Response, Request } from 'express';
 import { SgSstService } from './sg-sst.service';
 import { CreateAtsDto } from './dto/create-ats.dto';
 import { CreateHeightWorkDto } from './dto/create-height-work.dto';
 import { CreatePreoperationalDto } from './dto/create-preoperational.dto';
 import { SignFormDto, SignerType } from './dto/sign-form.dto';
 import { ApiOperation, ApiResponse } from '@nestjs/swagger';
-import { CreateAtsWithSignatureDto } from './dto/create-ats-with-signature.dto';
-import { CreatePreoperationalWithSignatureDto } from './dto/create-preoperational-with-signature.dto';
-import { CreateHeightWorkWithSignatureDto } from './dto/create-height-work-with-signature.dto';
 import { AuthorizeHeightWorkDto } from './dto/authorize-height-work.dto';
 import { CreatePreoperationalChecklistTemplateDto } from './dto/create-preoperational-checklist-template.dto';
 import { FormStatus, FormType } from '../shared/index';
 import { RejectFormDto } from './dto/reject-form.dto';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
 @Controller('sg-sst')
 @UsePipes(new ValidationPipe({ transform: true }))
+@UseGuards(JwtAuthGuard)
 export class SgSstController {
   constructor(private readonly sgSstService: SgSstService) {}
 
   // ========== ENDPOINTS PARA CREAR FORMULARIOS ==========
-
   @Post('ats')
   async createAts(@Body() createAtsDto: CreateAtsDto) {
     try {
@@ -94,15 +95,62 @@ export class SgSstController {
     }
   }
 
-  // ========== ENDPOINTS PARA FIRMAR ==========
+  // ========== OTP PARA FIRMA ==========
+  @Post('forms/:id/request-sign-otp')
+  @ApiOperation({
+    summary: 'Solicitar código OTP por correo para firmar un formulario',
+  })
+  async requestSignOtp(
+    @Param('id', ParseIntPipe) formId: number,
+    @Body() body: { signerType: SignerType },
+    @Req() req: Request,
+  ) {
+    try {
+      const currentUser = req.user as any;
+      await this.sgSstService.requestSignOtp(
+        formId,
+        body.signerType,
+        currentUser.userId,
+      );
 
+      return {
+        success: true,
+        message:
+          'Si el correo está registrado, se ha enviado un código de verificación',
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: 'Error al solicitar código OTP',
+        error: (error as any).message,
+      };
+    }
+  }
+
+  // ========== ENDPOINTS PARA FIRMAR ==========
   @Post('forms/:id/sign')
   async signForm(
     @Param('id', ParseIntPipe) formId: number,
     @Body() signFormDto: SignFormDto,
+    @Req() req: Request,
   ) {
     try {
-      const result = await this.sgSstService.signForm(formId, signFormDto);
+      const currentUser = req.user as any;
+
+      const ip =
+        (req.headers['x-forwarded-for'] as string) ||
+        req.ip ||
+        (req.socket && (req.socket as any).remoteAddress) ||
+        '';
+      const userAgent = (req.headers['user-agent'] as string) || '';
+
+      const result = await this.sgSstService.signForm(
+        formId,
+        currentUser.userId,
+        ip,
+        userAgent,
+        signFormDto,
+      );
 
       let message = 'Firma registrada exitosamente';
       if (signFormDto.signerType === SignerType.TECHNICIAN) {
@@ -154,8 +202,39 @@ export class SgSstController {
     }
   }
 
-  // ========== ENDPOINTS PARA CONSULTAS ==========
+  @Get('forms/:id/download-pdf')
+  async downloadPdf(
+    @Param('id', ParseIntPipe) formId: number,
+    @Res() res: Response,
+  ) {
+    try {
+      const { buffer, fileName, fileSize } =
+        await this.sgSstService.getFormPdf(formId);
 
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader(
+        'Content-Disposition',
+        `attachment; filename="${fileName}"`,
+      );
+      res.setHeader('Content-Length', fileSize.toString());
+
+      return res.end(buffer);
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        return res.status(404).json({
+          success: false,
+          message: error.message,
+        });
+      }
+      return res.status(500).json({
+        success: false,
+        message: 'Error al descargar PDF',
+        error: (error as any).message,
+      });
+    }
+  }
+
+  // ========== ENDPOINTS PARA CONSULTAS ==========
   @Get('forms')
   async findAllForms(@Query('userId') userId?: number) {
     try {
@@ -237,7 +316,6 @@ export class SgSstController {
   }
 
   // ========== ENDPOINTS DE UTILIDAD ==========
-
   @Get('forms/:id/can-edit')
   async canEditForm(
     @Param('id', ParseIntPipe) formId: number,
@@ -261,57 +339,104 @@ export class SgSstController {
     }
   }
 
-  // @Post('forms/:id/generate-pdf')
-  // async generatePdf(@Param('id', ParseIntPipe) formId: number) {
-  //   try {
-  //     const pdf = await this.sgSstService.generatePdf(formId);
-  //     return {
-  //       success: true,
-  //       message: 'PDF generado exitosamente',
-  //       data: {
-  //         fileName: pdf.fileName,
-  //         filePath: pdf.filePath,
-  //         fileSize: pdf.fileSize,
-  //         generatedAt: pdf.generatedAt,
-  //       },
-  //     };
-  //   } catch (error) {
-  //     return {
-  //       success: false,
-  //       message: 'Error al generar PDF',
-  //       error: (error as any).message,
-  //     };
-  //   }
-  // }
+  // ========== PREOPERATIONAL TEMPLATES ==========
+  @Post('preoperational-templates')
+  @ApiOperation({
+    summary:
+      'Crear plantilla de checklist preoperacional para un tipo de herramienta',
+  })
+  async createPreoperationalTemplate(
+    @Body()
+    dto: CreatePreoperationalChecklistTemplateDto,
+  ) {
+    try {
+      const template =
+        await this.sgSstService.createPreoperationalChecklistTemplate(dto);
 
-  // // DESCARGA DIRECTA DEL PDF
-  // @Get('forms/:id/download-pdf')
-  // async downloadPdf(
-  //   @Param('id', ParseIntPipe) formId: number,
-  //   @Res() res: Response,
-  // ) {
-  //   try {
-  //     const pdf = await this.sgSstService.generatePdf(formId);
+      return {
+        success: true,
+        message: 'Plantilla preoperacional creada exitosamente',
+        data: template,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: 'Error al crear plantilla preoperacional',
+        error: (error as any).message,
+      };
+    }
+  }
 
-  //     res.setHeader('Content-Type', 'application/pdf');
-  //     res.setHeader(
-  //       'Content-Disposition',
-  //       `attachment; filename="${pdf.fileName || 'reporte_sgsst.pdf'}"`,
-  //     );
-  //     res.setHeader('Content-Length', pdf.fileSize.toString());
+  @Put('preoperational-templates/:id')
+  @ApiOperation({
+    summary: 'Actualizar plantilla de checklist preoperacional',
+  })
+  async updatePreoperationalTemplate(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: CreatePreoperationalChecklistTemplateDto,
+  ) {
+    try {
+      const template =
+        await this.sgSstService.updatePreoperationalChecklistTemplate(id, dto);
 
-  //     return res.send(pdf.pdfData);
-  //   } catch (error) {
-  //     return res.status(500).json({
-  //       success: false,
-  //       message: 'Error al generar/descargar PDF',
-  //       error: (error as any).message,
-  //     });
-  //   }
-  // }
+      return {
+        success: true,
+        message: 'Plantilla preoperacional actualizada exitosamente',
+        data: template,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: 'Error al actualizar plantilla preoperacional',
+        error: (error as any).message,
+      };
+    }
+  }
 
-  // ========== ENDPOINTS DE ESTADÍSTICAS ==========
+  @Get('preoperational-templates/by-tool-type')
+  async getPreoperationalTemplateByToolType(
+    @Query('toolType') toolType: string,
+  ) {
+    if (!toolType) {
+      throw new BadRequestException('El parámetro toolType es requerido');
+    }
 
+    const template =
+      await this.sgSstService.getPreoperationalChecklistByToolType(toolType);
+
+    return {
+      success: true,
+      data: template,
+    };
+  }
+
+  // ========== RECHAZAR FORMULARIO ==========
+  @Post('forms/:id/reject')
+  @ApiOperation({
+    summary: 'Rechazar un formulario SG-SST como SST',
+  })
+  async rejectForm(
+    @Param('id', ParseIntPipe) formId: number,
+    @Body() rejectFormDto: RejectFormDto,
+  ) {
+    try {
+      const result = await this.sgSstService.rejectForm(formId, rejectFormDto);
+
+      return {
+        success: true,
+        message: 'Formulario rechazado exitosamente',
+        data: result,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: 'Error al rechazar formulario',
+        error: (error as any).message,
+      };
+    }
+  }
+
+  // ========== DASHBOARD ==========
   @Get('dashboard/stats')
   async getDashboardStats(@Query('userId') userId?: number) {
     try {
@@ -343,225 +468,6 @@ export class SgSstController {
       return {
         success: false,
         message: 'Error al obtener estadísticas',
-        error: (error as any).message,
-      };
-    }
-  }
-
-  // ========== ENDPOINTS CON FIRMA INCLUIDA ==========
-
-  @Post('ats-with-signature')
-  @ApiOperation({
-    summary: 'Crear un ATS completo incluyendo la firma del trabajador',
-  })
-  @ApiResponse({
-    status: 201,
-    description: 'ATS creado y firmado exitosamente',
-  })
-  @ApiResponse({
-    status: 400,
-    description: 'Error en los datos de entrada',
-  })
-  async createAtsWithSignature(
-    @Body() createAtsWithSignatureDto: CreateAtsWithSignatureDto,
-  ) {
-    try {
-      const result = await this.sgSstService.createAtsWithSignature(
-        createAtsWithSignatureDto,
-      );
-
-      let message = 'ATS creado exitosamente';
-      if (createAtsWithSignatureDto.signerType === SignerType.TECHNICIAN) {
-        message = 'ATS creado y firmado por el técnico. Pendiente firma SST';
-      } else if (createAtsWithSignatureDto.signerType === SignerType.SST) {
-        message = 'ATS creado y firmado por SST. Formulario completado';
-      }
-
-      return {
-        success: true,
-        message,
-        data: result,
-      };
-    } catch (error) {
-      return {
-        success: false,
-        message: 'Error al crear ATS con firma',
-        error: (error as any).message,
-      };
-    }
-  }
-
-  @Post('height-work-with-signature')
-  @ApiOperation({
-    summary: 'Crear un Trabajo en Alturas completo incluyendo firma',
-  })
-  async createHeightWorkWithSignature(
-    @Body()
-    createHeightWorkWithSignatureDto: CreateHeightWorkWithSignatureDto,
-  ) {
-    try {
-      const result = await this.sgSstService.createHeightWorkWithSignature(
-        createHeightWorkWithSignatureDto,
-      );
-
-      let message = 'Trabajo en alturas creado exitosamente';
-      if (
-        createHeightWorkWithSignatureDto.signerType === SignerType.TECHNICIAN
-      ) {
-        message =
-          'Trabajo en alturas creado y firmado por el técnico. Pendiente firma SST';
-      } else if (
-        createHeightWorkWithSignatureDto.signerType === SignerType.SST
-      ) {
-        message =
-          'Trabajo en alturas creado y firmado por SST. Formulario completado';
-      }
-
-      return {
-        success: true,
-        message,
-        data: result,
-      };
-    } catch (error) {
-      return {
-        success: false,
-        message: 'Error al crear trabajo en alturas con firma',
-        error: (error as any).message,
-      };
-    }
-  }
-
-  @Post('preoperational-with-signature')
-  @ApiOperation({
-    summary: 'Crear un Checklist Preoperacional completo incluyendo firma',
-  })
-  async createPreoperationalWithSignature(
-    @Body()
-    createPreoperationalWithSignatureDto: CreatePreoperationalWithSignatureDto,
-  ) {
-    try {
-      const result = await this.sgSstService.createPreoperationalWithSignature(
-        createPreoperationalWithSignatureDto,
-      );
-
-      let message = 'Checklist preoperacional creado exitosamente';
-      if (
-        createPreoperationalWithSignatureDto.signerType ===
-        SignerType.TECHNICIAN
-      ) {
-        message =
-          'Checklist preoperacional creado y firmado por el técnico. Pendiente firma SST';
-      } else if (
-        createPreoperationalWithSignatureDto.signerType === SignerType.SST
-      ) {
-        message =
-          'Checklist preoperacional creado y firmado por SST. Formulario completado';
-      }
-
-      return {
-        success: true,
-        message,
-        data: result,
-      };
-    } catch (error) {
-      return {
-        success: false,
-        message: 'Error al crear checklist preoperacional con firma',
-        error: (error as any).message,
-      };
-    }
-  }
-
-  @Post('preoperational-templates')
-  @ApiOperation({
-    summary:
-      'Crear plantilla de checklist preoperacional para un tipo de herramienta',
-  })
-  async createPreoperationalTemplate(
-    @Body()
-    dto: CreatePreoperationalChecklistTemplateDto,
-  ) {
-    try {
-      const template =
-        await this.sgSstService.createPreoperationalChecklistTemplate(dto);
-
-      return {
-        success: true,
-        message: 'Plantilla preoperacional creada exitosamente',
-        data: template,
-      };
-    } catch (error) {
-      return {
-        success: false,
-        message: 'Error al crear plantilla preoperacional',
-        error: (error as any).message,
-      };
-    }
-  }
-
-  @Get('preoperational-templates/by-tool-type')
-  async getPreoperationalTemplateByToolType(
-    @Query('toolType') toolType: string,
-  ) {
-    if (!toolType) {
-      throw new BadRequestException('El parámetro toolType es requerido');
-    }
-
-    const template =
-      await this.sgSstService.getPreoperationalChecklistByToolType(toolType);
-
-    return {
-      success: true,
-      data: template,
-    };
-  }
-
-  @Post('forms/:id/reject')
-  @ApiOperation({
-    summary: 'Rechazar un formulario SG-SST como SST',
-  })
-  async rejectForm(
-    @Param('id', ParseIntPipe) formId: number,
-    @Body() rejectFormDto: RejectFormDto,
-  ) {
-    try {
-      const result = await this.sgSstService.rejectForm(formId, rejectFormDto);
-
-      return {
-        success: true,
-        message: 'Formulario rechazado exitosamente',
-        data: result,
-      };
-    } catch (error) {
-      return {
-        success: false,
-        message: 'Error al rechazar formulario',
-        error: (error as any).message,
-      };
-    }
-  }
-
-  @Put('preoperational-templates/:id')
-  @ApiOperation({
-    summary: 'Actualizar plantilla de checklist preoperacional',
-  })
-  async updatePreoperationalTemplate(
-    @Param('id', ParseIntPipe) id: number,
-    @Body() dto: CreatePreoperationalChecklistTemplateDto,
-  ) {
-    try {
-      const template =
-        await this.sgSstService.updatePreoperationalChecklistTemplate(id, dto);
-
-      return {
-        success: true,
-        message: 'Plantilla preoperacional actualizada exitosamente',
-        data: template,
-      };
-    } catch (error) {
-      return {
-        success: false,
-        message: 'Error al actualizar plantilla preoperacional',
         error: (error as any).message,
       };
     }

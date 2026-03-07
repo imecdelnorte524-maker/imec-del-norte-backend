@@ -29,10 +29,7 @@ export class NotificationsGateway
 
   private readonly logger = new Logger(NotificationsGateway.name);
   private userSockets = new Map<number, Set<string>>();
-
-  // Mapa para almacenar el userId asociado a cada socketId
   private socketToUser = new Map<string, number>();
-
   private jwtService: JwtService;
 
   constructor(
@@ -52,11 +49,10 @@ export class NotificationsGateway
         client.handshake.headers.authorization?.replace('Bearer ', '');
 
       if (!token) {
+        this.logger.warn('⚠️ Conexión rechazada: Token no proporcionado');
         return client.disconnect();
       }
 
-      const decodedWithoutVerify = this.jwtService.decode(token);
-      // Ahora sí verifica
       const payload = this.jwtService.verify(token);
       const userId: number = payload.sub;
 
@@ -67,11 +63,7 @@ export class NotificationsGateway
         this.userSockets.set(userId, sockets);
       }
       sockets.add(client.id);
-
-      // Registrar relación socket -> usuario
       this.socketToUser.set(client.id, userId);
-
-      // Unir al room del usuario
       client.join(`user:${userId}`);
 
       // Enviar conteo inicial de no leídas
@@ -83,24 +75,27 @@ export class NotificationsGateway
         total: unreadCount,
         timestamp: new Date().toISOString(),
       });
-      client.emit('connected', { userId, timestamp: new Date() });
+
+      client.emit('connected', {
+        userId,
+        socketId: client.id,
+        timestamp: new Date(),
+      });
 
       this.logger.log(`✅ Usuario ${userId} conectado (socket: ${client.id})`);
+      this.logger.debug(`📊 Usuarios conectados: ${this.userSockets.size}`);
     } catch (error) {
-      this.logger.error('Error en conexión WebSocket:', error.message);
+      this.logger.error('❌ Error en conexión WebSocket:', error.message);
       client.emit('error', { message: 'Authentication failed' });
       client.disconnect();
     }
   }
 
-  // CORREGIDO: Ahora solo recibe el client como parámetro
   async handleDisconnect(client: Socket) {
     try {
-      // Obtener userId del mapa
       const userId = this.socketToUser.get(client.id);
 
       if (userId) {
-        // Eliminar del mapa de sockets por usuario
         const sockets = this.userSockets.get(userId);
         if (sockets) {
           sockets.delete(client.id);
@@ -111,10 +106,7 @@ export class NotificationsGateway
             );
           }
         }
-
-        // Eliminar del mapa de socket->usuario
         this.socketToUser.delete(client.id);
-
         this.logger.log(
           `❌ Usuario ${userId} desconectado (socket: ${client.id})`,
         );
@@ -122,78 +114,174 @@ export class NotificationsGateway
         this.logger.log(`❓ Socket desconocido desconectado: ${client.id}`);
       }
 
-      // Salir del room
       client.leave(`user:${userId}`);
     } catch (error) {
       this.logger.error('Error en handleDisconnect:', error.message);
     }
   }
 
-  sendToUser(usuarioId: number, notification: Notification) {
+  /**
+   * Envía una notificación a un usuario específico
+   * @param usuarioId ID del usuario destino
+   * @param notification Notificación a enviar
+   * @param excludeSocketId Socket ID a excluir (opcional, para no duplicar)
+   */
+  sendToUser(
+    usuarioId: number,
+    notification: Notification,
+    excludeSocketId?: string,
+  ) {
     const sockets = this.userSockets.get(usuarioId);
+
     if (!sockets || sockets.size === 0) {
-      this.logger.debug(`📭 Usuario ${usuarioId} no está conectado`);
+      this.logger.debug(
+        `📭 Usuario ${usuarioId} no está conectado. Notificación #${notification.notificacionId} guardada para entrega posterior.`,
+      );
       return;
     }
 
-    this.logger.debug(
-      `📤 Enviando notificación a usuario ${usuarioId} (${sockets.size} sockets)`,
+    this.logger.log(
+      `📤 Enviando notificación #${notification.notificacionId} a usuario ${usuarioId} (${sockets.size} sockets activos)`,
     );
 
-    // Enviar la notificación
-    this.server.to(`user:${usuarioId}`).emit('notification', {
-      ...notification,
-      _timestamp: new Date().toISOString(),
-    });
-
-    // Enviar nuevo conteo
-    this.notificationsRepo
-      .count({
-        where: { usuarioId: usuarioId, leida: false },
-      })
-      .then((count) => {
-        this.server.to(`user:${usuarioId}`).emit('unread-count', {
-          total: count,
-          timestamp: new Date().toISOString(),
-        });
-      })
-      .catch((error) => {
-        this.logger.error('Error al obtener conteo de no leídas:', error);
+    // Enviar al room, excluyendo el socket especificado si se proporciona
+    if (excludeSocketId) {
+      // Enviar a todos menos al excluido
+      sockets.forEach((socketId) => {
+        if (socketId !== excludeSocketId) {
+          this.server.to(socketId).emit('notification', {
+            ...notification,
+            _timestamp: new Date().toISOString(),
+            _deliveredTo: socketId,
+          });
+        }
       });
+    } else {
+      // Enviar a todos en el room
+      this.server.to(`user:${usuarioId}`).emit('notification', {
+        ...notification,
+        _timestamp: new Date().toISOString(),
+      });
+    }
+
+    // Actualizar conteo de no leídas
+    this.updateUnreadCount(usuarioId, excludeSocketId);
   }
 
-  sendToMultipleUsers(usuariosIds: number[], notification: Notification) {
+  /**
+   * Envía una notificación asegurando que el socket actual la recibe
+   * @param usuarioId ID del usuario
+   * @param notification Notificación a enviar
+   * @param currentSocketId Socket ID actual (opcional)
+   */
+  sendToUserIncludingCurrent(
+    usuarioId: number,
+    notification: Notification,
+    currentSocketId?: string,
+  ) {
+    const sockets = this.userSockets.get(usuarioId);
+
+    if (!sockets || sockets.size === 0) {
+      this.logger.debug(`📭 Usuario ${usuarioId} no está conectado.`);
+
+      // Si hay socket actual pero no está en el mapa, intentar enviar directamente
+      if (currentSocketId) {
+        const currentSocket = this.server.sockets.sockets.get(currentSocketId);
+        if (currentSocket) {
+          this.logger.log(
+            `📤 Enviando notificación #${notification.notificacionId} directamente al socket ${currentSocketId}`,
+          );
+          currentSocket.emit('notification', {
+            ...notification,
+            _timestamp: new Date().toISOString(),
+            _deliveredDirectly: true,
+          });
+
+          // Actualizar conteo para este socket
+          this.notificationsRepo
+            .count({ where: { usuarioId, leida: false } })
+            .then((count) => {
+              currentSocket.emit('unread-count', {
+                total: count,
+                timestamp: new Date().toISOString(),
+              });
+            });
+        }
+      }
+      return;
+    }
+
+    this.logger.log(
+      `📤 Enviando notificación #${notification.notificacionId} a usuario ${usuarioId} (incluyendo socket actual)`,
+    );
+
+    // Enviar a todos los sockets del usuario
+    sockets.forEach((socketId) => {
+      this.server.to(socketId).emit('notification', {
+        ...notification,
+        _timestamp: new Date().toISOString(),
+      });
+    });
+
+    // Actualizar conteo para todos los sockets
+    this.updateUnreadCount(usuarioId);
+  }
+
+  /**
+   * Actualiza el conteo de notificaciones no leídas para un usuario
+   */
+  private async updateUnreadCount(usuarioId: number, excludeSocketId?: string) {
+    try {
+      const count = await this.notificationsRepo.count({
+        where: { usuarioId: usuarioId, leida: false },
+      });
+
+      const sockets = this.userSockets.get(usuarioId);
+      if (sockets) {
+        sockets.forEach((socketId) => {
+          if (!excludeSocketId || socketId !== excludeSocketId) {
+            this.server.to(socketId).emit('unread-count', {
+              total: count,
+              timestamp: new Date().toISOString(),
+            });
+          }
+        });
+      }
+    } catch (error) {
+      this.logger.error('Error al actualizar conteo de no leídas:', error);
+    }
+  }
+
+  sendToMultipleUsers(
+    usuariosIds: number[],
+    notification: Notification,
+    excludeUserId?: number,
+  ) {
     this.logger.debug(
       `📤 Enviando notificación a ${usuariosIds.length} usuarios`,
     );
-    usuariosIds.forEach((id) => this.sendToUser(id, notification));
+    usuariosIds.forEach((id) => {
+      if (id !== excludeUserId) {
+        this.sendToUser(id, notification);
+      }
+    });
   }
 
-  // Método para broadcast por rol (requiere implementación adicional)
   async broadcastToRole(role: string, notification: Notification) {
-    // Esta implementación requeriría consultar usuarios por rol
-    // y luego enviar a cada uno
     this.logger.warn(
       `⚠️ broadcastToRole no implementado completamente: ${role}`,
     );
-
-    // Ejemplo de implementación:
-    // const users = await this.userRepo.find({ where: { role: { nombre: role } } });
-    // this.sendToMultipleUsers(users.map(u => u.usuarioId), notification);
   }
 
-  // Método útil para verificar conexiones activas
   getConnectedUsers(): number[] {
     return Array.from(this.userSockets.keys());
   }
 
-  // Método para verificar si un usuario está conectado
   isUserConnected(usuarioId: number): boolean {
     const sockets = this.userSockets.get(usuarioId);
     return sockets ? sockets.size > 0 : false;
   }
 
-  // Método para obtener estadísticas de conexión
   getConnectionStats() {
     return {
       totalUsers: this.userSockets.size,
@@ -206,5 +294,17 @@ export class NotificationsGateway
         }),
       ),
     };
+  }
+
+  /**
+   * Obtiene el ID del socket actual si está conectado
+   */
+  getSocketIdForUser(usuarioId: number): string | null {
+    const sockets = this.userSockets.get(usuarioId);
+    if (sockets && sockets.size > 0) {
+      // Devuelve el primer socket (generalmente el más reciente)
+      return Array.from(sockets)[0];
+    }
+    return null;
   }
 }

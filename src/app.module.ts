@@ -56,8 +56,13 @@ import { TechniciansModule } from './technicians/technicians.module';
         return {
           ...dbConfig,
           migrations: [],
-          // migrations: ['dist/src/migrations/*js'],
           migrationsRun: false,
+          extra: {
+            max: 10,
+            idleTimeoutMillis: 30000,
+            connectionTimeoutMillis: 5000,
+            maxUses: 7500,
+          },
           synchronize: true,
           autoLoadEntities: true,
           logging: ['error', 'warn'],
