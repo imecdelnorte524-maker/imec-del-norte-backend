@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, LessThan } from 'typeorm';
+import { Repository } from 'typeorm';
 import { PlanMantenimiento } from '../equipment/entities/plan-mantenimiento.entity';
 import { WorkOrdersService } from './work-orders.service';
 import { User } from '../users/entities/user.entity';
@@ -88,162 +88,162 @@ export class MaintenanceSchedulerService {
    * - El mismo día si no se creó antes
    * - Si está atrasado y no tiene orden
    */
-  @Cron(CronExpression.EVERY_5_MINUTES)
-  async procesarMantenimientosPeriodicos() {
-    const hoy = startOfDay(new Date());
-    const hoyStr = formatDate(hoy);
+  // @Cron(CronExpression.EVERY_5_MINUTES)
+  // async procesarMantenimientosPeriodicos() {
+  //   const hoy = startOfDay(new Date());
+  //   const hoyStr = formatDate(hoy);
 
-    this.logger.log(
-      `⏱ [procesarMantenimientosPeriodicos] Ejecutando CRON (${hoyStr})`,
-    );
+  //   this.logger.log(
+  //     `⏱ [procesarMantenimientosPeriodicos] Ejecutando CRON (${hoyStr})`,
+  //   );
 
-    try {
-      // Buscar TODOS los planes (sin filtro activo ya que no existe)
-      const planes = await this.planRepo.find({
-        relations: ['equipment', 'equipment.client'],
-      });
+  //   try {
+  //     // Buscar TODOS los planes (sin filtro activo ya que no existe)
+  //     const planes = await this.planRepo.find({
+  //       relations: ['equipment', 'equipment.client'],
+  //     });
 
-      let ordenesCreadas = 0;
+  //     let ordenesCreadas = 0;
 
-      for (const plan of planes) {
-        try {
-          if (!plan.fechaProgramada || !plan.equipmentId) {
-            this.logger.debug(`Plan ${plan.id} sin fecha o equipo, omitiendo`);
-            continue;
-          }
+  //     for (const plan of planes) {
+  //       try {
+  //         if (!plan.fechaProgramada || !plan.equipmentId) {
+  //           this.logger.debug(`Plan ${plan.id} sin fecha o equipo, omitiendo`);
+  //           continue;
+  //         }
 
-          const fechaPlan = startOfDay(new Date(plan.fechaProgramada));
-          const diffDias = diffEnDias(fechaPlan, hoy);
+  //         const fechaPlan = startOfDay(new Date(plan.fechaProgramada));
+  //         const diffDias = diffEnDias(fechaPlan, hoy);
 
-          // Verificar si ya existe orden para este plan en esta fecha
-          const yaExiste =
-            await this.workOrdersService.existeOrdenParaPlanEnFecha(
-              plan.id,
-              fechaPlan,
-            );
+  //         // Verificar si ya existe orden para este plan en esta fecha
+  //         const yaExiste =
+  //           await this.workOrdersService.existeOrdenParaPlanEnFecha(
+  //             plan.id,
+  //             fechaPlan,
+  //           );
 
-          const debeCrear =
-            (diffDias === 5 && !yaExiste) || // 5 días antes
-            (diffDias === 0 && !yaExiste) || // Hoy mismo
-            (diffDias < 0 && !yaExiste); // Atrasado
+  //         const debeCrear =
+  //           (diffDias === 5 && !yaExiste) || // 5 días antes
+  //           (diffDias === 0 && !yaExiste) || // Hoy mismo
+  //           (diffDias < 0 && !yaExiste); // Atrasado
 
-          if (!debeCrear) {
-            continue;
-          }
+  //         if (!debeCrear) {
+  //           continue;
+  //         }
 
-          this.logger.log(
-            `🎯 Creando orden automática para plan ${plan.id}, fecha ${formatDate(fechaPlan)} (diff=${diffDias})`,
-          );
+  //         this.logger.log(
+  //           `🎯 Creando orden automática para plan ${plan.id}, fecha ${formatDate(fechaPlan)} (diff=${diffDias})`,
+  //         );
 
-          await this.workOrdersService.createFromMaintenancePlan({
-            plan,
-            fechaProgramada: fechaPlan,
-          });
+  //         await this.workOrdersService.createFromMaintenancePlan({
+  //           plan,
+  //           fechaProgramada: fechaPlan,
+  //         });
 
-          ordenesCreadas++;
-        } catch (error: any) {
-          this.logger.error(
-            `Error procesando plan ${plan.id}: ${error.message}`,
-            error.stack,
-          );
-        }
-      }
+  //         ordenesCreadas++;
+  //       } catch (error: any) {
+  //         this.logger.error(
+  //           `Error procesando plan ${plan.id}: ${error.message}`,
+  //           error.stack,
+  //         );
+  //       }
+  //     }
 
-      this.logger.log(
-        `✅ Órdenes creadas en esta ejecución: ${ordenesCreadas}`,
-      );
-    } catch (error: any) {
-      this.logger.error(
-        `[procesarMantenimientosPeriodicos] Error general: ${error.message}`,
-        error.stack,
-      );
-    }
-  }
+  //     this.logger.log(
+  //       `✅ Órdenes creadas en esta ejecución: ${ordenesCreadas}`,
+  //     );
+  //   } catch (error: any) {
+  //     this.logger.error(
+  //       `[procesarMantenimientosPeriodicos] Error general: ${error.message}`,
+  //       error.stack,
+  //     );
+  //   }
+  // }
 
-  /**
-   * Actualiza automáticamente fechaProgramada de todos los planes:
-   * - Avanza la fecha según unidadFrecuencia si la fecha actual ya pasó
-   * - Ajusta al lunes si cae domingo
-   */
-  @Cron(CronExpression.EVERY_DAY_AT_1AM)
-  async actualizarFechasPlanes() {
-    const hoy = startOfDay(new Date());
-    const hoyStr = formatDate(hoy);
+  // /**
+  //  * Actualiza automáticamente fechaProgramada de todos los planes:
+  //  * - Avanza la fecha según unidadFrecuencia si la fecha actual ya pasó
+  //  * - Ajusta al lunes si cae domingo
+  //  */
+  // @Cron(CronExpression.EVERY_DAY_AT_1AM)
+  // async actualizarFechasPlanes() {
+  //   const hoy = startOfDay(new Date());
+  //   const hoyStr = formatDate(hoy);
 
-    this.logger.log(
-      `⏱ [actualizarFechasPlanes] Ejecutando CRON (hoy = ${hoyStr})`,
-    );
+  //   this.logger.log(
+  //     `⏱ [actualizarFechasPlanes] Ejecutando CRON (hoy = ${hoyStr})`,
+  //   );
 
-    try {
-      // Buscar planes con fecha en el pasado (sin filtro activo)
-      const planes = await this.planRepo.find({
-        where: {
-          fechaProgramada: LessThan(hoy),
-        },
-      });
+  //   try {
+  //     // Buscar planes con fecha en el pasado (sin filtro activo)
+  //     const planes = await this.planRepo.find({
+  //       where: {
+  //         fechaProgramada: LessThan(hoy),
+  //       },
+  //     });
 
-      this.logger.log(
-        `📊 Planes con fecha pasada encontrados: ${planes.length}`,
-      );
+  //     this.logger.log(
+  //       `📊 Planes con fecha pasada encontrados: ${planes.length}`,
+  //     );
 
-      let planesActualizados = 0;
+  //     let planesActualizados = 0;
 
-      for (const plan of planes) {
-        try {
-          if (!plan.fechaProgramada || !plan.unidadFrecuencia) {
-            this.logger.debug(
-              `Plan ${plan.id} sin unidad de frecuencia, omitiendo`,
-            );
-            continue;
-          }
+  //     for (const plan of planes) {
+  //       try {
+  //         if (!plan.fechaProgramada || !plan.unidadFrecuencia) {
+  //           this.logger.debug(
+  //             `Plan ${plan.id} sin unidad de frecuencia, omitiendo`,
+  //           );
+  //           continue;
+  //         }
 
-          let fechaPlan = startOfDay(new Date(plan.fechaProgramada));
-          const unidad = plan.unidadFrecuencia;
-          const step = plan.diaDelMes ?? 1;
-          let fechaOriginal = fechaPlan;
-          let iteraciones = 0;
-          const MAX_ITERACIONES = 12; // Evitar loops infinitos
+  //         let fechaPlan = startOfDay(new Date(plan.fechaProgramada));
+  //         const unidad = plan.unidadFrecuencia;
+  //         const step = plan.diaDelMes ?? 1;
+  //         let fechaOriginal = fechaPlan;
+  //         let iteraciones = 0;
+  //         const MAX_ITERACIONES = 12; // Evitar loops infinitos
 
-          // Avanzar hasta que la fecha sea >= hoy
-          while (fechaPlan < hoy && iteraciones < MAX_ITERACIONES) {
-            fechaPlan = adjustToWorkingDay(
-              nextPlanDate(fechaPlan, unidad, step),
-            );
-            iteraciones++;
-          }
+  //         // Avanzar hasta que la fecha sea >= hoy
+  //         while (fechaPlan < hoy && iteraciones < MAX_ITERACIONES) {
+  //           fechaPlan = adjustToWorkingDay(
+  //             nextPlanDate(fechaPlan, unidad, step),
+  //           );
+  //           iteraciones++;
+  //         }
 
-          if (iteraciones >= MAX_ITERACIONES) {
-            this.logger.warn(
-              `Plan ${plan.id}: alcanzó máximo de iteraciones, posible error en configuración`,
-            );
-            continue;
-          }
+  //         if (iteraciones >= MAX_ITERACIONES) {
+  //           this.logger.warn(
+  //             `Plan ${plan.id}: alcanzó máximo de iteraciones, posible error en configuración`,
+  //           );
+  //           continue;
+  //         }
 
-          if (formatDate(fechaOriginal) !== formatDate(fechaPlan)) {
-            plan.fechaProgramada = fechaPlan;
-            await this.planRepo.save(plan);
-            planesActualizados++;
+  //         if (formatDate(fechaOriginal) !== formatDate(fechaPlan)) {
+  //           plan.fechaProgramada = fechaPlan;
+  //           await this.planRepo.save(plan);
+  //           planesActualizados++;
 
-            this.logger.log(
-              `🔁 Plan ${plan.id}: ${formatDate(fechaOriginal)} -> ${formatDate(fechaPlan)} (${iteraciones} iteraciones)`,
-            );
-          }
-        } catch (error: any) {
-          this.logger.error(
-            `Error actualizando plan ${plan.id}: ${error.message}`,
-            error.stack,
-          );
-        }
-      }
+  //           this.logger.log(
+  //             `🔁 Plan ${plan.id}: ${formatDate(fechaOriginal)} -> ${formatDate(fechaPlan)} (${iteraciones} iteraciones)`,
+  //           );
+  //         }
+  //       } catch (error: any) {
+  //         this.logger.error(
+  //           `Error actualizando plan ${plan.id}: ${error.message}`,
+  //           error.stack,
+  //         );
+  //       }
+  //     }
 
-      this.logger.log(`✅ Planes actualizados: ${planesActualizados}`);
-    } catch (error: any) {
-      this.logger.error(
-        `[actualizarFechasPlanes] Error general: ${error.message}`,
-        error.stack,
-      );
-    }
-  }
+  //     this.logger.log(`✅ Planes actualizados: ${planesActualizados}`);
+  //   } catch (error: any) {
+  //     this.logger.error(
+  //       `[actualizarFechasPlanes] Error general: ${error.message}`,
+  //       error.stack,
+  //     );
+  //   }
+  // }
 
   /**
    * JOB DIARIO (06:00):
@@ -341,23 +341,15 @@ export class MaintenanceSchedulerService {
     }
   }
 
-  /**
-   * Método auxiliar para verificar si ya existe una orden
-   */
-  private async existeOrdenParaPlanEnFecha(
-    planId: number,
-    fecha: Date,
-  ): Promise<boolean> {
-    try {
-      return await this.workOrdersService.existeOrdenParaPlanEnFecha(
-        planId,
-        fecha,
-      );
-    } catch (error) {
-      this.logger.error(
-        `Error verificando existencia de orden: ${error.message}`,
-      );
-      return false;
-    }
+  @Cron('0 55 5 * * 5', { timeZone: 'America/Bogota' })
+  async crearOrdenesAutomaticasSemanales() {
+    this.logger.log(
+      '🗓️ Ejecutando creación de OTs automáticas semanales (viernes)',
+    );
+    const result =
+      await this.workOrdersService.crearOrdenesAutomaticasSemanalesViernes();
+    this.logger.log(
+      `✅ Resultado OTs semanales: created=${result.created}, skipped=${result.skipped}`,
+    );
   }
 }

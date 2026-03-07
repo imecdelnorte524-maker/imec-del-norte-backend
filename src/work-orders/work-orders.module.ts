@@ -25,6 +25,7 @@ import { MailModule } from 'src/mail/mail.module';
 import { NotificationsModule } from 'src/notifications/notifications.module';
 import { MaintenanceSchedulerService } from './maintenance-scheduler.service';
 import { PlanMantenimiento } from '../equipment/entities/plan-mantenimiento.entity';
+import { WorkOrderMaintenancePlan } from './entities/work-order-maintenance-plan.entity';
 
 @Module({
   imports: [
@@ -46,6 +47,7 @@ import { PlanMantenimiento } from '../equipment/entities/plan-mantenimiento.enti
       Equipment,
       Image,
       PlanMantenimiento,
+      WorkOrderMaintenancePlan,
     ]),
     PdfModule,
     ImagesModule,

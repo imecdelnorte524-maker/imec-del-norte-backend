@@ -1,18 +1,35 @@
 // src/sg-sst/dto/create-height-work.dto.ts
-import { IsString, IsOptional, IsBoolean, IsNumber, IsObject } from 'class-validator';
+import {
+  IsString,
+  IsOptional,
+  IsBoolean,
+  IsNumber,
+  IsObject,
+} from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class CreateHeightWorkDto {
-  @ApiProperty({ description: 'Nombre completo del trabajador', example: 'Carlos Rodríguez' })
+  @ApiProperty({
+    description: 'Nombre completo del trabajador',
+    example: 'Carlos Rodríguez',
+  })
   @IsString()
   workerName: string;
 
-  @ApiProperty({ description: 'Número de identificación', required: false, example: '123456789' })
+  @ApiProperty({
+    description: 'Número de identificación',
+    required: false,
+    example: '123456789',
+  })
   @IsString()
   @IsOptional()
   identification?: string;
 
-  @ApiProperty({ description: 'Cargo del trabajador', required: false, example: 'Técnico en Alturas' })
+  @ApiProperty({
+    description: 'Cargo del trabajador',
+    required: false,
+    example: 'Técnico en Alturas',
+  })
   @IsString()
   @IsOptional()
   position?: string;
@@ -53,17 +70,29 @@ export class CreateHeightWorkDto {
   @IsOptional()
   protectionElements?: any;
 
-  @ApiProperty({ description: 'Condiciones físicas aptas', required: false, example: true })
+  @ApiProperty({
+    description: 'Condiciones físicas aptas',
+    required: false,
+    example: true,
+  })
   @IsBoolean()
   @IsOptional()
   physicalCondition?: boolean;
 
-  @ApiProperty({ description: 'Instrucciones recibidas', required: false, example: true })
+  @ApiProperty({
+    description: 'Instrucciones recibidas',
+    required: false,
+    example: true,
+  })
   @IsBoolean()
   @IsOptional()
   instructionsReceived?: boolean;
 
-  @ApiProperty({ description: 'Apto para trabajo en alturas', required: false, example: true })
+  @ApiProperty({
+    description: 'Apto para trabajo en alturas',
+    required: false,
+    example: true,
+  })
   @IsBoolean()
   @IsOptional()
   fitForHeightWork?: boolean;
@@ -93,15 +122,6 @@ export class CreateHeightWorkDto {
   @ApiProperty({ description: 'ID del usuario creador', example: 1 })
   @IsNumber()
   createdBy: number;
-
-  @ApiProperty({
-    description: 'Firma del trabajador en formato base64',
-    required: false,
-    example: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA...',
-  })
-  @IsString()
-  @IsOptional()
-  signatureData?: string;
 
   @ApiProperty({
     description: 'ID de la orden de trabajo asociada',

@@ -1,17 +1,21 @@
+// src/sg-sst/sg-sst.module.ts
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { SgSstController } from './sg-sst.controller';
 import { SgSstService } from './sg-sst.service';
+import { SgSstController } from './sg-sst.controller';
 import { Form } from './entities/form.entity';
 import { AtsReport } from './entities/ats-report.entity';
 import { HeightWork } from './entities/height-work.entity';
 import { PreoperationalCheck } from './entities/preoperational-check.entity';
 import { Signature } from './entities/signature.entity';
-import { GeneratedPdf } from './entities/generated-pdf.entity';
+import { SignOtp } from './entities/sign-otp.entity';
 import { WorkOrder } from '../work-orders/entities/work-order.entity';
 import { PreoperationalChecklistTemplate } from './entities/preoperational-checklist-template.entity';
 import { PreoperationalChecklistParameter } from './entities/preoperational-checklist-parameter.entity';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { PdfModule } from '../pdf/pdf.module';
+import { User } from '../users/entities/user.entity';
+import { MailModule } from '../mail/mail.module';
 
 @Module({
   imports: [
@@ -21,15 +25,17 @@ import { NotificationsModule } from '../notifications/notifications.module';
       HeightWork,
       PreoperationalCheck,
       Signature,
-      GeneratedPdf,
+      SignOtp,
       WorkOrder,
       PreoperationalChecklistTemplate,
-      PreoperationalChecklistParameter
+      PreoperationalChecklistParameter,
+      User,
     ]),
-    NotificationsModule
+    NotificationsModule,
+    PdfModule,
+    MailModule,
   ],
   controllers: [SgSstController],
   providers: [SgSstService],
-  exports: [SgSstService],
 })
 export class SgSstModule {}

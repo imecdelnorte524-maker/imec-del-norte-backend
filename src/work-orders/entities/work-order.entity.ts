@@ -7,6 +7,7 @@ import {
   JoinColumn,
   CreateDateColumn,
   OneToMany,
+  Index,
 } from 'typeorm';
 import { Service } from '../../services/entities/service.entity';
 import { User } from '../../users/entities/user.entity';
@@ -25,6 +26,7 @@ import { WorkOrderPause } from './work-order-pause.entity';
 import { Image } from 'src/images/entities/image.entity';
 import { AcInspection } from './ac-inspection.entity';
 import { CostStatus } from '../../shared/index';
+import { WorkOrderMaintenancePlan } from './work-order-maintenance-plan.entity';
 
 @Entity('ordenes_trabajo')
 export class WorkOrder {
@@ -113,7 +115,7 @@ export class WorkOrder {
   maintenanceType?: MaintenanceType;
 
   @Column({ name: 'plan_mantenimiento_id', nullable: true })
-  planMantenimientoId?: number;
+  planMantenimientoId?: number | null;
 
   @ManyToOne(() => PlanMantenimiento, { nullable: true })
   @JoinColumn({ name: 'plan_mantenimiento_id' })
@@ -174,4 +176,25 @@ export class WorkOrder {
 
   @OneToMany(() => AcInspection, (insp) => insp.workOrder)
   acInspections: AcInspection[];
+
+  @Column({ name: 'is_automatic_weekly', type: 'boolean', default: false })
+  isAutomaticWeekly!: boolean;
+
+  @Index('uq_ordenes_trabajo_auto_batch_key', { unique: true })
+  @Column({
+    name: 'auto_batch_key',
+    type: 'varchar',
+    length: 120,
+    nullable: true,
+  })
+  autoBatchKey?: string;
+
+  @Column({ name: 'auto_week_start', type: 'date', nullable: true })
+  autoWeekStart?: Date;
+
+  @Column({ name: 'auto_week_end', type: 'date', nullable: true })
+  autoWeekEnd?: Date;
+
+  @OneToMany(() => WorkOrderMaintenancePlan, (x) => x.workOrder)
+  workOrderPlans!: WorkOrderMaintenancePlan[];
 }

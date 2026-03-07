@@ -8,13 +8,15 @@ import { Client } from '../../client/entities/client.entity';
 import { NotificationsService } from '../notifications.service';
 import { NotificationType } from '../../shared/index';
 
-// Interfaces basadas en los eventos que emites
+// Interfaces con campos mejorados
 interface WorkOrderCreatedEvent {
   workOrderId: number;
   clienteId: number;
   servicioId: number;
   equipmentIds: number[];
   isEmergency: boolean;
+  createdBy?: number; // 👈 NUEVO: Usuario que creó la orden
+  userClientId?: number; // 👈 NUEVO: ID del cliente en tabla users
 }
 
 interface WorkOrderAssignedEvent {
@@ -23,6 +25,7 @@ interface WorkOrderAssignedEvent {
   leaderTechnicianId?: number;
   clienteId: number;
   servicioId: number;
+  assignedBy?: number; // 👈 NUEVO: Quién asignó
 }
 
 interface WorkOrderStartedEvent {
@@ -36,7 +39,7 @@ interface WorkOrderCompletedEvent {
   workOrderId: number;
   fechaFinalizacion: Date;
   completedBy?: number;
-  clienteId: number; // 👈 Agregado
+  clienteId: number;
   clienteEmpresaId?: number;
 }
 
@@ -45,6 +48,7 @@ interface WorkOrderInvoicedEvent {
   facturaPdfUrl: string;
   estadoPago: string;
   fechaFacturacion: Date;
+  invoicedBy?: number; // 👈 NUEVO: Quién facturó
 }
 
 interface WorkOrderCancelledEvent {
@@ -62,6 +66,7 @@ interface WorkOrderEmergencyCreatedEvent {
   originalOrderId: number;
   emergencyOrderId: number;
   userId: number;
+  createdBy?: number; // 👈 NUEVO
 }
 
 @Injectable()
@@ -77,37 +82,60 @@ export class WorkOrdersNotificationsListener {
   ) {}
 
   /**
-   * 1. ORDEN CREADA → Administradores y Secretarias
+   * 1. ORDEN CREADA → Administradores y Secretarias (EXCLUYENDO al creador)
    */
   @OnEvent('work-order.created')
   async handleWorkOrderCreated(payload: WorkOrderCreatedEvent) {
+    this.logger.log('='.repeat(60));
     this.logger.log(`📢 work-order.created: orden ${payload.workOrderId}`);
+    this.logger.log(
+      `👤 Creado por usuario: ${payload.createdBy || 'desconocido'}`,
+    );
 
     try {
       // Buscar Administradores y Secretarias activos
-      const adminsAndSecretaries = await this.usersRepo
+      const queryBuilder = this.usersRepo
         .createQueryBuilder('user')
         .innerJoin('user.role', 'role')
         .where('role.nombreRol IN (:...roles)', {
           roles: ['Administrador', 'Secretaria'],
         })
-        .andWhere('user.activo = true')
-        .getMany();
+        .andWhere('user.activo = true');
+
+      // EXCLUIR al creador si se proporcionó
+      if (payload.createdBy) {
+        queryBuilder.andWhere('user.usuarioId != :createdBy', {
+          createdBy: payload.createdBy,
+        });
+        this.logger.log(
+          `🚫 Excluyendo al creador ${payload.createdBy} de la notificación WebSocket`,
+        );
+      }
+
+      const adminsAndSecretaries = await queryBuilder.getMany();
 
       if (adminsAndSecretaries.length === 0) {
-        this.logger.warn('⚠️ No hay Administradores o Secretarias activos');
+        this.logger.warn(
+          '⚠️ No hay Administradores o Secretarias activos (excluyendo creador)',
+        );
         return;
       }
 
       // Opcional: Obtener nombre del cliente para personalizar mensaje
       let clienteNombre = '';
-      const cliente = await this.usersRepo.findOne({
-        where: { usuarioId: payload.clienteId },
-      });
-      if (cliente) {
-        clienteNombre =
-          `${cliente.nombre || ''} ${cliente.apellido || ''}`.trim();
+      if (payload.userClientId) {
+        const cliente = await this.usersRepo.findOne({
+          where: { usuarioId: payload.userClientId },
+        });
+        if (cliente) {
+          clienteNombre =
+            `${cliente.nombre || ''} ${cliente.apellido || ''}`.trim();
+        }
       }
+
+      this.logger.log(
+        `👥 Enviando notificaciones a ${adminsAndSecretaries.length} usuarios (excluyendo creador)`,
+      );
 
       const notificaciones = adminsAndSecretaries.map((user) =>
         this.notificationsService.createAndSend({
@@ -126,6 +154,7 @@ export class WorkOrdersNotificationsListener {
             servicioId: payload.servicioId,
             equipmentIds: payload.equipmentIds,
             isEmergency: payload.isEmergency,
+            createdBy: payload.createdBy,
           },
           accion: {
             label: 'Ver orden',
@@ -141,30 +170,52 @@ export class WorkOrdersNotificationsListener {
     } catch (error) {
       this.logger.error(`❌ Error en work-order.created: ${error.message}`);
     }
+    this.logger.log('='.repeat(60));
   }
 
   /**
-   * 2. ORDEN ASIGNADA → Solo al técnico asignado
+   * 2. ORDEN ASIGNADA → Solo al técnico asignado (EXCLUYENDO al que asignó)
    */
   @OnEvent('work-order.assigned')
   async handleWorkOrderAssigned(payload: WorkOrderAssignedEvent) {
     this.logger.log('='.repeat(60));
     this.logger.log(`📢 work-order.assigned: orden ${payload.workOrderId}`);
+    this.logger.log(
+      `👤 Asignado por usuario: ${payload.assignedBy || 'desconocido'}`,
+    );
 
     if (!payload.technicianIds || payload.technicianIds.length === 0) {
       this.logger.warn('⚠️ Evento assigned sin technicianIds');
       return;
     }
 
+    // Filtrar para EXCLUIR al que asignó
+    let technicianIds = payload.technicianIds;
+    if (payload.assignedBy) {
+      technicianIds = payload.technicianIds.filter(
+        (id) => id !== payload.assignedBy,
+      );
+      this.logger.log(
+        `🚫 Excluyendo al asignador ${payload.assignedBy} de la notificación`,
+      );
+    }
+
+    if (technicianIds.length === 0) {
+      this.logger.warn(
+        '⚠️ No hay técnicos para notificar después de excluir al asignador',
+      );
+      return;
+    }
+
     const technicians = await this.usersRepo.find({
       where: {
-        usuarioId: In(payload.technicianIds),
+        usuarioId: In(technicianIds),
         activo: true,
       },
       relations: ['role'],
     });
 
-    // 🔥 FILTRO CORREGIDO - acepta con o sin acento
+    // Filtrar solo técnicos
     const validTechnicians = technicians.filter((t) => {
       const rol = t.role?.nombreRol?.toLowerCase().trim();
       return rol === 'tecnico' || rol === 'técnico';
@@ -198,6 +249,7 @@ export class WorkOrdersNotificationsListener {
           servicioId: payload.servicioId,
           isLeader: esLider,
           leaderId: leaderId,
+          assignedBy: payload.assignedBy,
         },
         accion: {
           label: 'Ver mi orden',
@@ -221,7 +273,6 @@ export class WorkOrdersNotificationsListener {
     this.logger.log(`📢 work-order.started: orden ${payload.workOrderId}`);
 
     try {
-      // Buscar el usuario cliente
       const cliente = await this.usersRepo.findOne({
         where: { usuarioId: payload.clienteId, activo: true },
       });
@@ -240,6 +291,7 @@ export class WorkOrdersNotificationsListener {
         data: {
           workOrderId: payload.workOrderId,
           fechaInicio: payload.fechaInicio,
+          iniciadoPor: payload.iniciadoPor,
         },
         accion: {
           label: 'Seguir orden',
@@ -256,14 +308,17 @@ export class WorkOrdersNotificationsListener {
   }
 
   /**
-   * 4. ORDEN FINALIZADA → Cliente, Secretaria y Admin
+   * 4. ORDEN FINALIZADA → Cliente, Secretaria y Admin (EXCLUYENDO al que finalizó)
    */
   @OnEvent('work-order.completed')
   async handleWorkOrderCompleted(payload: WorkOrderCompletedEvent) {
     this.logger.log(`📢 work-order.completed: orden ${payload.workOrderId}`);
+    this.logger.log(
+      `👤 Completado por usuario: ${payload.completedBy || 'desconocido'}`,
+    );
 
     try {
-      // Buscar Administradores y Secretarias
+      // Buscar Administradores y Secretarias (excluyendo al que completó)
       const adminsAndSecretaries = await this.usersRepo
         .createQueryBuilder('user')
         .innerJoin('user.role', 'role')
@@ -278,11 +333,10 @@ export class WorkOrdersNotificationsListener {
         where: { usuarioId: payload.clienteId, activo: true },
       });
 
-      // Preparar destinatarios: admins + secretarias + cliente (si existe)
-      const destinatarios = [...adminsAndSecretaries];
+      // Preparar destinatarios: admins + secretarias + cliente
+      let destinatarios = [...adminsAndSecretaries];
 
       if (cliente) {
-        // Evitar duplicados si el cliente también es admin (poco probable pero por si acaso)
         const yaIncluido = destinatarios.some(
           (u) => u.usuarioId === cliente.usuarioId,
         );
@@ -291,13 +345,26 @@ export class WorkOrdersNotificationsListener {
         }
       }
 
+      // EXCLUIR al que completó la orden
+      if (payload.completedBy) {
+        destinatarios = destinatarios.filter(
+          (u) => u.usuarioId !== payload.completedBy,
+        );
+        this.logger.log(
+          `🚫 Excluyendo al completador ${payload.completedBy} de la notificación`,
+        );
+      }
+
       if (destinatarios.length === 0) {
         this.logger.warn('⚠️ No hay destinatarios para orden finalizada');
         return;
       }
 
+      this.logger.log(
+        `👥 Enviando notificaciones a ${destinatarios.length} usuarios`,
+      );
+
       const notificaciones = destinatarios.map((user) => {
-        // Determinar si es el cliente para personalizar el mensaje
         const esCliente = user.usuarioId === payload.clienteId;
 
         return this.notificationsService.createAndSend({
@@ -311,6 +378,7 @@ export class WorkOrdersNotificationsListener {
           data: {
             workOrderId: payload.workOrderId,
             fechaFinalizacion: payload.fechaFinalizacion,
+            completedBy: payload.completedBy,
           },
           accion: {
             label: 'Ver orden',
@@ -331,21 +399,32 @@ export class WorkOrdersNotificationsListener {
   }
 
   /**
-   * 5. ORDEN FACTURADA → Administradores y Secretarias
+   * 5. ORDEN FACTURADA → Administradores y Secretarias (EXCLUYENDO al que facturó)
    */
   @OnEvent('work-order.invoiced')
   async handleWorkOrderInvoiced(payload: WorkOrderInvoicedEvent) {
     this.logger.log(`📢 work-order.invoiced: orden ${payload.workOrderId}`);
+    this.logger.log(
+      `👤 Facturado por usuario: ${payload.invoicedBy || 'desconocido'}`,
+    );
 
     try {
-      const adminsAndSecretaries = await this.usersRepo
+      const queryBuilder = this.usersRepo
         .createQueryBuilder('user')
         .innerJoin('user.role', 'role')
         .where('role.nombreRol IN (:...roles)', {
           roles: ['Administrador', 'Secretaria'],
         })
-        .andWhere('user.activo = true')
-        .getMany();
+        .andWhere('user.activo = true');
+
+      // EXCLUIR al que facturó
+      if (payload.invoicedBy) {
+        queryBuilder.andWhere('user.usuarioId != :invoicedBy', {
+          invoicedBy: payload.invoicedBy,
+        });
+      }
+
+      const adminsAndSecretaries = await queryBuilder.getMany();
 
       if (adminsAndSecretaries.length === 0) return;
 
@@ -363,6 +442,7 @@ export class WorkOrdersNotificationsListener {
             workOrderId: payload.workOrderId,
             facturaUrl: payload.facturaPdfUrl,
             estadoPago: payload.estadoPago,
+            invoicedBy: payload.invoicedBy,
           },
           accion: {
             label: 'Ver factura',
@@ -372,6 +452,9 @@ export class WorkOrdersNotificationsListener {
       );
 
       await Promise.all(notificaciones);
+      this.logger.log(
+        `✅ Notificaciones enviadas a ${adminsAndSecretaries.length} usuarios`,
+      );
     } catch (error) {
       this.logger.error(`❌ Error en work-order.invoiced: ${error.message}`);
     }
@@ -385,7 +468,6 @@ export class WorkOrdersNotificationsListener {
     this.logger.log(`📢 work-order.cancelled: orden ${payload.workOrderId}`);
 
     try {
-      // Notificar a Admin/Secretarias
       const admins = await this.usersRepo
         .createQueryBuilder('user')
         .innerJoin('user.role', 'role')
@@ -431,7 +513,6 @@ export class WorkOrdersNotificationsListener {
     );
 
     try {
-      // Notificar a Admin/Secretarias que ya pueden facturar
       const admins = await this.usersRepo
         .createQueryBuilder('user')
         .innerJoin('user.role', 'role')
@@ -467,22 +548,32 @@ export class WorkOrdersNotificationsListener {
   }
 
   /**
-   * ORDEN DE EMERGENCIA CREADA → Notificar a Administradores
+   * ORDEN DE EMERGENCIA CREADA → Notificar a Administradores (EXCLUYENDO al creador)
    */
   @OnEvent('work-order.emergency-created')
   async handleEmergencyCreated(payload: WorkOrderEmergencyCreatedEvent) {
     this.logger.log(
       `📢 work-order.emergency-created: orden emergencia ${payload.emergencyOrderId}`,
     );
+    this.logger.log(
+      `👤 Creado por usuario: ${payload.createdBy || 'desconocido'}`,
+    );
 
     try {
-      // Notificar a todos los admin de la emergencia
-      const admins = await this.usersRepo
+      const queryBuilder = this.usersRepo
         .createQueryBuilder('user')
         .innerJoin('user.role', 'role')
         .where('role.nombreRol = :rol', { rol: 'Administrador' })
-        .andWhere('user.activo = true')
-        .getMany();
+        .andWhere('user.activo = true');
+
+      // EXCLUIR al creador
+      if (payload.createdBy) {
+        queryBuilder.andWhere('user.usuarioId != :createdBy', {
+          createdBy: payload.createdBy,
+        });
+      }
+
+      const admins = await queryBuilder.getMany();
 
       if (admins.length === 0) return;
 
@@ -497,6 +588,7 @@ export class WorkOrdersNotificationsListener {
             data: {
               workOrderId: payload.emergencyOrderId,
               originalOrderId: payload.originalOrderId,
+              createdBy: payload.createdBy,
             },
             accion: {
               label: 'Ver emergencia',

@@ -1,15 +1,23 @@
+// src/sg-sst/sg-sst.service.ts
 import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  InternalServerErrorException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, IsNull, MoreThan } from 'typeorm';
+import { promises as fs } from 'fs';
+import * as path from 'path';
+import { createHash, randomInt } from 'crypto';
+
 import { AtsReport } from './entities/ats-report.entity';
 import { HeightWork } from './entities/height-work.entity';
 import { PreoperationalCheck } from './entities/preoperational-check.entity';
 import { Signature, SignatureType } from './entities/signature.entity';
-import { GeneratedPdf } from './entities/generated-pdf.entity';
+import { SignOtp } from './entities/sign-otp.entity';
+import { Form } from './entities/form.entity';
+
 import { CreateAtsDto } from './dto/create-ats.dto';
 import { CreateHeightWorkDto } from './dto/create-height-work.dto';
 import {
@@ -17,21 +25,30 @@ import {
   PreoperationalCheckDto,
 } from './dto/create-preoperational.dto';
 import { SignFormDto, SignerType } from './dto/sign-form.dto';
-import { CreateAtsWithSignatureDto } from './dto/create-ats-with-signature.dto';
-import { CreatePreoperationalWithSignatureDto } from './dto/create-preoperational-with-signature.dto';
-import { CreateHeightWorkWithSignatureDto } from './dto/create-height-work-with-signature.dto';
+import { CreatePreoperationalChecklistTemplateDto } from './dto/create-preoperational-checklist-template.dto';
+import { RejectFormDto } from './dto/reject-form.dto';
+
 import { WorkOrder } from '../work-orders/entities/work-order.entity';
-import { WorkOrderStatus } from '../shared/index';
+import { WorkOrderStatus, FormStatus, FormType } from '../shared/index';
 import { PreoperationalChecklistTemplate } from './entities/preoperational-checklist-template.entity';
 import { PreoperationalChecklistParameter } from './entities/preoperational-checklist-parameter.entity';
-import { CreatePreoperationalChecklistTemplateDto } from './dto/create-preoperational-checklist-template.dto';
-import { Form } from './entities/form.entity';
-import { FormStatus, FormType } from '../shared/index';
-import { RejectFormDto } from './dto/reject-form.dto';
-import { NotificationsGateway } from 'src/notifications/notifications.gateway';
+
+import { NotificationsGateway } from '../notifications/notifications.gateway';
+import { ConfigService } from '@nestjs/config';
+import { PdfService } from '../pdf/pdf.service';
+import { MailService } from '../mail/mail.service';
+import { User } from '../users/entities/user.entity';
+import { PdfTemplateType } from '../pdf/constants/wkhtmltopdf.config';
+import { buildAtsReportParams } from '../../templates/report/ats-report-html.helper';
+import { buildHeightWorkReportParams } from '../../templates/report/height-work-report-html.helper';
+import { buildPreoperationalReportParams } from '../../templates/report/preoperational-report-html.helper';
+import { AuthorizeHeightWorkDto } from './dto/authorize-height-work.dto';
 
 @Injectable()
 export class SgSstService {
+  private readonly OTP_TTL_MINUTES = 5;
+  private readonly OTP_MAX_ATTEMPTS = 3;
+
   constructor(
     @InjectRepository(Form)
     private formRepository: Repository<Form>,
@@ -43,8 +60,10 @@ export class SgSstService {
     private preoperationalCheckRepository: Repository<PreoperationalCheck>,
     @InjectRepository(Signature)
     private signatureRepository: Repository<Signature>,
-    @InjectRepository(GeneratedPdf)
-    private generatedPdfRepository: Repository<GeneratedPdf>,
+    @InjectRepository(SignOtp)
+    private signOtpRepository: Repository<SignOtp>,
+    @InjectRepository(User)
+    private userRepository: Repository<User>,
     @InjectRepository(WorkOrder)
     private workOrderRepository: Repository<WorkOrder>,
     @InjectRepository(PreoperationalChecklistTemplate)
@@ -52,6 +71,9 @@ export class SgSstService {
     @InjectRepository(PreoperationalChecklistParameter)
     private preopParamRepo: Repository<PreoperationalChecklistParameter>,
     private readonly notificationsGateway: NotificationsGateway,
+    private readonly mailService: MailService,
+    private readonly pdfService: PdfService,
+    private readonly configService: ConfigService,
   ) {}
 
   // ========== ATS METHODS ==========
@@ -78,7 +100,6 @@ export class SgSstService {
         );
       }
 
-      // Verificar si el usuario es uno de los técnicos asignados
       const isAssignedTechnician = workOrder.technicians?.some(
         (tech) => tech.tecnicoId === createAtsDto.userId,
       );
@@ -132,25 +153,8 @@ export class SgSstService {
       });
       const savedAts = await queryRunner.manager.save(AtsReport, atsReport);
 
-      if (createAtsDto.signatureData) {
-        const signature = this.signatureRepository.create({
-          formId: savedForm.id,
-          signatureType: SignatureType.TECHNICIAN,
-          userId: createAtsDto.userId,
-          userName: createAtsDto.workerName,
-          signatureData: createAtsDto.signatureData,
-        });
-
-        await queryRunner.manager.save(Signature, signature);
-
-        savedForm.technicianSignatureDate = new Date();
-        savedForm.status = FormStatus.PENDING_SST;
-        await queryRunner.manager.save(Form, savedForm);
-      }
-
       await queryRunner.commitTransaction();
 
-      // 🔴 WebSocket
       this.notificationsGateway.server.emit('forms.created', {
         formType: FormType.ATS,
         form: savedForm,
@@ -159,7 +163,6 @@ export class SgSstService {
       return {
         form: savedForm,
         ats: savedAts,
-        signatureCreated: !!createAtsDto.signatureData,
       };
     } catch (error) {
       await queryRunner.rollbackTransaction();
@@ -182,7 +185,6 @@ export class SgSstService {
       );
     }
 
-    // Verificar si el usuario es uno de los técnicos asignados
     const isAssignedTechnician = workOrder.technicians?.some(
       (tech) => tech.tecnicoId === createHeightWorkDto.userId,
     );
@@ -221,7 +223,6 @@ export class SgSstService {
 
     const savedHeightWork = await this.heightWorkRepository.save(heightWork);
 
-    // 🔴 WebSocket
     this.notificationsGateway.server.emit('forms.created', {
       formType: FormType.HEIGHT_WORK,
       form: savedForm,
@@ -243,7 +244,6 @@ export class SgSstService {
       );
     }
 
-    // Verificar si el usuario es uno de los técnicos asignados
     const isAssignedTechnician = workOrder.technicians?.some(
       (tech) => tech.tecnicoId === createPreoperationalDto.userId,
     );
@@ -277,7 +277,6 @@ export class SgSstService {
 
     const savedChecks = await this.preoperationalCheckRepository.save(checks);
 
-    // 🔴 WebSocket
     this.notificationsGateway.server.emit('forms.created', {
       formType: FormType.PREOPERATIONAL,
       form: savedForm,
@@ -287,20 +286,28 @@ export class SgSstService {
   }
 
   // ========== SIGNATURE METHODS ==========
-  async signForm(formId: number, signFormDto: SignFormDto) {
+  async signForm(
+    formId: number,
+    currentUserId: number,
+    clientIp: string,
+    userAgent: string,
+    signFormDto: SignFormDto,
+  ) {
     const form = await this.formRepository.findOne({ where: { id: formId } });
+
     if (!form) {
       throw new NotFoundException('Formulario no encontrado');
     }
 
+    const signatureType = this.mapSignerTypeToSignatureType(
+      signFormDto.signerType,
+    );
+
     const existingSignature = await this.signatureRepository.findOne({
       where: {
         formId,
-        signatureType:
-          signFormDto.signerType === SignerType.TECHNICIAN
-            ? SignatureType.TECHNICIAN
-            : SignatureType.SST,
-        userId: signFormDto.userId,
+        signatureType,
+        userId: currentUserId,
       },
     });
 
@@ -308,15 +315,33 @@ export class SgSstService {
       throw new BadRequestException('El usuario ya ha firmado este formulario');
     }
 
+    await this.verifyAndConsumeOtp(
+      formId,
+      signFormDto.signerType,
+      currentUserId,
+      signFormDto.otpCode,
+    );
+
+    const user = await this.userRepository.findOne({
+      where: { usuarioId: currentUserId },
+    });
+
+    if (!user) {
+      throw new NotFoundException('Usuario no encontrado');
+    }
+
+    const userNameReal = `${user.nombre} ${user.apellido ?? ''}`.trim();
+
     const signature = this.signatureRepository.create({
       formId,
-      signatureType:
-        signFormDto.signerType === SignerType.TECHNICIAN
-          ? SignatureType.TECHNICIAN
-          : SignatureType.SST,
-      userId: signFormDto.userId,
-      userName: signFormDto.userName,
+      signatureType,
+      userId: currentUserId,
+      userName: userNameReal,
       signatureData: signFormDto.signatureData,
+      ip: clientIp,
+      userAgent,
+      method: 'OTP_EMAIL',
+      contactSnapshot: user.email ?? '', // string, sin null
     });
 
     await this.signatureRepository.save(signature);
@@ -327,18 +352,21 @@ export class SgSstService {
     } else if (signFormDto.signerType === SignerType.SST) {
       form.sstSignatureDate = new Date();
       form.status = FormStatus.COMPLETED;
+      await this.generateFormPdf(form.id);
     }
 
     await this.formRepository.save(form);
 
-    // 🔴 WebSocket
     this.notificationsGateway.server.emit('forms.updated', form);
 
     return { message: 'Firma registrada exitosamente', form };
   }
 
   // ========== AUTORIZAR TRABAJO EN ALTURAS ==========
-  async authorizeHeightWork(formId: number, authorizeDto: any) {
+  async authorizeHeightWork(
+    formId: number,
+    authorizeDto: AuthorizeHeightWorkDto,
+  ) {
     const queryRunner =
       this.formRepository.manager.connection.createQueryRunner();
     await queryRunner.connect();
@@ -398,29 +426,15 @@ export class SgSstService {
 
       await queryRunner.manager.save(HeightWork, heightWork);
 
-      const signature = this.signatureRepository.create({
-        formId: formId,
-        signatureType: SignatureType.SST,
-        userId: authorizeDto.userId,
-        userName: authorizeDto.userName,
-        signatureData: authorizeDto.signatureData,
-      });
-
-      await queryRunner.manager.save(Signature, signature);
-
-      form.status = FormStatus.COMPLETED;
-      form.sstSignatureDate = new Date();
       await queryRunner.manager.save(Form, form);
 
       await queryRunner.commitTransaction();
 
-      // 🔴 WebSocket
       this.notificationsGateway.server.emit('forms.updated', form);
 
       return {
         form,
         heightWork,
-        signature,
       };
     } catch (error) {
       await queryRunner.rollbackTransaction();
@@ -455,7 +469,6 @@ export class SgSstService {
         'heightWork',
         'preoperationalChecks',
         'signatures',
-        'generatedPdfs',
         'user',
         'workOrder',
       ],
@@ -502,337 +515,12 @@ export class SgSstService {
     return !userSignature;
   }
 
-  // ========== ATS WITH SIGNATURE ==========
-  async createAtsWithSignature(
-    createAtsWithSignatureDto: CreateAtsWithSignatureDto,
-  ) {
-    const queryRunner =
-      this.formRepository.manager.connection.createQueryRunner();
-    await queryRunner.connect();
-    await queryRunner.startTransaction();
-
-    try {
-      const workOrder = await this.workOrderRepository.findOne({
-        where: { ordenId: createAtsWithSignatureDto.workOrderId },
-        relations: [
-          'cliente',
-          'clienteEmpresa',
-          'technicians',
-          'technicians.technician',
-        ],
-      });
-
-      if (!workOrder) {
-        throw new NotFoundException(
-          `Orden de trabajo con ID ${createAtsWithSignatureDto.workOrderId} no encontrada`,
-        );
-      }
-
-      // Verificar si el usuario es uno de los técnicos asignados
-      const isAssignedTechnician = workOrder.technicians?.some(
-        (tech) => tech.tecnicoId === createAtsWithSignatureDto.userId,
-      );
-
-      if (workOrder.technicians?.length > 0 && !isAssignedTechnician) {
-        throw new BadRequestException(
-          'La orden de trabajo no está asignada a este técnico',
-        );
-      }
-
-      const empresa = workOrder.clienteEmpresa;
-      const persona = workOrder.cliente;
-
-      const clientId = empresa ? empresa.idCliente : undefined;
-      const clientName = empresa?.nombre || persona?.nombre || '';
-      const clientNit = empresa?.nit || undefined;
-
-      const form = this.formRepository.create({
-        formType: FormType.ATS,
-        status: FormStatus.DRAFT,
-        userId: createAtsWithSignatureDto.userId,
-        createdBy: createAtsWithSignatureDto.createdBy,
-        workOrderId: workOrder.ordenId,
-      });
-      const savedForm = await queryRunner.manager.save(Form, form);
-
-      const atsReport = this.atsRepository.create({
-        formId: savedForm.id,
-        workerName: createAtsWithSignatureDto.workerName,
-        workerIdentification: createAtsWithSignatureDto.workerIdentification,
-        position: createAtsWithSignatureDto.position,
-        clientId,
-        clientName,
-        clientNit,
-        area: createAtsWithSignatureDto.area,
-        subArea: createAtsWithSignatureDto.subArea,
-        workToPerform: createAtsWithSignatureDto.workToPerform,
-        location: createAtsWithSignatureDto.location,
-        startTime: createAtsWithSignatureDto.startTime,
-        endTime: createAtsWithSignatureDto.endTime,
-        date: createAtsWithSignatureDto.date,
-        observations: createAtsWithSignatureDto.observations,
-        selectedRisks: createAtsWithSignatureDto.selectedRisks,
-        requiredPpe: createAtsWithSignatureDto.requiredPpe,
-      });
-      const savedAts = await queryRunner.manager.save(AtsReport, atsReport);
-
-      const signature = this.signatureRepository.create({
-        formId: savedForm.id,
-        signatureType:
-          createAtsWithSignatureDto.signerType === 'TECHNICIAN'
-            ? SignatureType.TECHNICIAN
-            : SignatureType.SST,
-        userId: createAtsWithSignatureDto.userId,
-        userName: createAtsWithSignatureDto.userName,
-        signatureData: createAtsWithSignatureDto.signatureData,
-      });
-      await queryRunner.manager.save(Signature, signature);
-
-      if (createAtsWithSignatureDto.signerType === 'TECHNICIAN') {
-        savedForm.technicianSignatureDate = new Date();
-        savedForm.status = FormStatus.PENDING_SST;
-      } else if (createAtsWithSignatureDto.signerType === 'SST') {
-        savedForm.sstSignatureDate = new Date();
-        savedForm.status = FormStatus.COMPLETED;
-      }
-      await queryRunner.manager.save(Form, savedForm);
-
-      await queryRunner.commitTransaction();
-
-      this.notificationsGateway.server.emit('forms.created', {
-        formType: FormType.ATS,
-        form: savedForm,
-      });
-      return { form: savedForm, ats: savedAts, signature };
-    } catch (error) {
-      await queryRunner.rollbackTransaction();
-      throw error;
-    } finally {
-      await queryRunner.release();
-    }
-  }
-
-  // ========== HEIGHT WORK WITH SIGNATURE ==========
-  async createHeightWorkWithSignature(
-    createHeightWorkWithSignatureDto: CreateHeightWorkWithSignatureDto,
-  ) {
-    const queryRunner =
-      this.formRepository.manager.connection.createQueryRunner();
-    await queryRunner.connect();
-    await queryRunner.startTransaction();
-
-    try {
-      const workOrder = await this.workOrderRepository.findOne({
-        where: { ordenId: createHeightWorkWithSignatureDto.workOrderId },
-        relations: [
-          'cliente',
-          'clienteEmpresa',
-          'technicians',
-          'technicians.technician',
-        ],
-      });
-
-      if (!workOrder) {
-        throw new NotFoundException(
-          `Orden de trabajo con ID ${createHeightWorkWithSignatureDto.workOrderId} no encontrada`,
-        );
-      }
-
-      // Verificar si el usuario es uno de los técnicos asignados
-      const isAssignedTechnician = workOrder.technicians?.some(
-        (tech) => tech.tecnicoId === createHeightWorkWithSignatureDto.userId,
-      );
-
-      if (workOrder.technicians?.length > 0 && !isAssignedTechnician) {
-        throw new BadRequestException(
-          'La orden de trabajo no está asignada a este técnico',
-        );
-      }
-
-      const form = this.formRepository.create({
-        formType: FormType.HEIGHT_WORK,
-        status: FormStatus.DRAFT,
-        userId: createHeightWorkWithSignatureDto.userId,
-        createdBy: createHeightWorkWithSignatureDto.createdBy,
-        workOrderId: workOrder.ordenId,
-      });
-      const savedForm = await queryRunner.manager.save(Form, form);
-
-      const heightWork = this.heightWorkRepository.create({
-        formId: savedForm.id,
-        workerName: createHeightWorkWithSignatureDto.workerName,
-        identification: createHeightWorkWithSignatureDto.identification,
-        position: createHeightWorkWithSignatureDto.position,
-        workDescription: createHeightWorkWithSignatureDto.workDescription,
-        location: createHeightWorkWithSignatureDto.location,
-        estimatedTime: createHeightWorkWithSignatureDto.estimatedTime,
-        protectionElements: createHeightWorkWithSignatureDto.protectionElements,
-        physicalCondition: createHeightWorkWithSignatureDto.physicalCondition,
-        instructionsReceived:
-          createHeightWorkWithSignatureDto.instructionsReceived,
-        fitForHeightWork: createHeightWorkWithSignatureDto.fitForHeightWork,
-        authorizerName: createHeightWorkWithSignatureDto.authorizerName,
-        authorizerIdentification:
-          createHeightWorkWithSignatureDto.authorizerIdentification,
-      });
-      const savedHeightWork = await queryRunner.manager.save(
-        HeightWork,
-        heightWork,
-      );
-
-      const signature = this.signatureRepository.create({
-        formId: savedForm.id,
-        signatureType:
-          createHeightWorkWithSignatureDto.signerType === 'TECHNICIAN'
-            ? SignatureType.TECHNICIAN
-            : SignatureType.SST,
-        userId: createHeightWorkWithSignatureDto.userId,
-        userName: createHeightWorkWithSignatureDto.userName,
-        signatureData: createHeightWorkWithSignatureDto.signatureData,
-      });
-      const savedSignature = await queryRunner.manager.save(
-        Signature,
-        signature,
-      );
-
-      if (createHeightWorkWithSignatureDto.signerType === 'TECHNICIAN') {
-        savedForm.technicianSignatureDate = new Date();
-        savedForm.status = FormStatus.PENDING_SST;
-      } else if (createHeightWorkWithSignatureDto.signerType === 'SST') {
-        savedForm.sstSignatureDate = new Date();
-        savedForm.status = FormStatus.COMPLETED;
-      }
-      await queryRunner.manager.save(Form, savedForm);
-
-      await queryRunner.commitTransaction();
-
-      this.notificationsGateway.server.emit('forms.created', {
-        formType: FormType.HEIGHT_WORK, // o HEIGHT_WORK / PREOPERATIONAL
-        form: savedForm,
-      });
-      return {
-        form: savedForm,
-        heightWork: savedHeightWork,
-        signature: savedSignature,
-      };
-    } catch (error) {
-      await queryRunner.rollbackTransaction();
-      throw error;
-    } finally {
-      await queryRunner.release();
-    }
-  }
-
-  // ========== PREOPERATIONAL WITH SIGNATURE ==========
-  async createPreoperationalWithSignature(
-    createPreoperationalWithSignatureDto: CreatePreoperationalWithSignatureDto,
-  ) {
-    const queryRunner =
-      this.formRepository.manager.connection.createQueryRunner();
-    await queryRunner.connect();
-    await queryRunner.startTransaction();
-
-    try {
-      const workOrder = await this.workOrderRepository.findOne({
-        where: { ordenId: createPreoperationalWithSignatureDto.workOrderId },
-        relations: [
-          'cliente',
-          'clienteEmpresa',
-          'technicians',
-          'technicians.technician',
-        ],
-      });
-
-      if (!workOrder) {
-        throw new NotFoundException(
-          `Orden de trabajo con ID ${createPreoperationalWithSignatureDto.workOrderId} no encontrada`,
-        );
-      }
-
-      // Verificar si el usuario es uno de los técnicos asignados
-      const isAssignedTechnician = workOrder.technicians?.some(
-        (tech) =>
-          tech.tecnicoId === createPreoperationalWithSignatureDto.userId,
-      );
-
-      if (workOrder.technicians?.length > 0 && !isAssignedTechnician) {
-        throw new BadRequestException(
-          'La orden de trabajo no está asignada a este técnico',
-        );
-      }
-
-      const form = this.formRepository.create({
-        formType: FormType.PREOPERATIONAL,
-        status: FormStatus.DRAFT,
-        equipmentTool: createPreoperationalWithSignatureDto.equipmentTool,
-        userId: createPreoperationalWithSignatureDto.userId,
-        createdBy: createPreoperationalWithSignatureDto.createdBy,
-        workOrderId: workOrder.ordenId,
-      });
-      const savedForm = await queryRunner.manager.save(Form, form);
-
-      const checks = createPreoperationalWithSignatureDto.checks.map(
-        (checkDto) =>
-          this.preoperationalCheckRepository.create({
-            formId: savedForm.id,
-            parameter: checkDto.parameter,
-            value: checkDto.value,
-            observations: checkDto.observations,
-          }),
-      );
-      const savedChecks = await queryRunner.manager.save(
-        PreoperationalCheck,
-        checks,
-      );
-
-      const signature = this.signatureRepository.create({
-        formId: savedForm.id,
-        signatureType:
-          createPreoperationalWithSignatureDto.signerType === 'TECHNICIAN'
-            ? SignatureType.TECHNICIAN
-            : SignatureType.SST,
-        userId: createPreoperationalWithSignatureDto.userId,
-        userName: createPreoperationalWithSignatureDto.userName,
-        signatureData: createPreoperationalWithSignatureDto.signatureData,
-      });
-      const savedSignature = await queryRunner.manager.save(
-        Signature,
-        signature,
-      );
-
-      if (createPreoperationalWithSignatureDto.signerType === 'TECHNICIAN') {
-        savedForm.technicianSignatureDate = new Date();
-        savedForm.status = FormStatus.PENDING_SST;
-      } else if (createPreoperationalWithSignatureDto.signerType === 'SST') {
-        savedForm.sstSignatureDate = new Date();
-        savedForm.status = FormStatus.COMPLETED;
-      }
-      await queryRunner.manager.save(Form, savedForm);
-
-      await queryRunner.commitTransaction();
-      this.notificationsGateway.server.emit('forms.created', {
-        formType: FormType.PREOPERATIONAL,
-        form: savedForm,
-      });
-      return {
-        form: savedForm,
-        checks: savedChecks,
-        signature: savedSignature,
-      };
-    } catch (error) {
-      await queryRunner.rollbackTransaction();
-      throw error;
-    } finally {
-      await queryRunner.release();
-    }
-  }
-
+  // ========== PREOPERATIONAL CHECKLIST TEMPLATES ==========
   async createPreoperationalChecklistTemplate(
     dto: CreatePreoperationalChecklistTemplateDto,
   ) {
     const normalizedToolType = dto.toolType.trim().toUpperCase();
 
-    // Opcional: evitar duplicados por toolType
     const existing = await this.preopTemplateRepo.findOne({
       where: { toolType: normalizedToolType, isActive: true },
     });
@@ -843,7 +531,6 @@ export class SgSstService {
       );
     }
 
-    // 👉 Rellenar códigos faltantes
     const paramsWithCodes = this.fillMissingParameterCodes(dto.parameters);
 
     const template = this.preopTemplateRepo.create({
@@ -877,10 +564,98 @@ export class SgSstService {
         },
       } as any,
     });
-    // 🔴 WebSocket
     this.notificationsGateway.server.emit('preopTemplates.updated', withParams);
 
     return withParams;
+  }
+
+  async updatePreoperationalChecklistTemplate(
+    id: number,
+    dto: CreatePreoperationalChecklistTemplateDto,
+  ) {
+    const template = await this.preopTemplateRepo.findOne({
+      where: { id },
+      relations: ['parameters'],
+    });
+
+    if (!template) {
+      throw new NotFoundException('Plantilla preoperacional no encontrada');
+    }
+
+    const normalizedToolType = dto.toolType.trim().toUpperCase();
+    const paramsWithCodes = this.fillMissingParameterCodes(dto.parameters);
+
+    await this.preopParamRepo.delete({ templateId: template.id });
+
+    template.toolType = normalizedToolType;
+    template.toolCategory = dto.toolCategory;
+    template.estimatedTime = dto.estimatedTime ?? template.estimatedTime;
+    template.additionalInstructions = dto.additionalInstructions;
+    template.requiresTools = dto.requiresTools ?? [];
+    template.isActive = true;
+
+    template.parameters = paramsWithCodes.map((p, idx) =>
+      this.preopParamRepo.create({
+        templateId: template.id,
+        parameterCode: p.parameterCode,
+        parameter: p.parameter,
+        description: p.description,
+        category: p.category,
+        required: p.required,
+        critical: p.critical,
+        displayOrder: p.displayOrder ?? idx,
+      }),
+    );
+
+    const saved = await this.preopTemplateRepo.save(template);
+
+    const withParams = await this.preopTemplateRepo.findOne({
+      where: { id: saved.id },
+      relations: ['parameters'],
+      order: {
+        parameters: {
+          displayOrder: 'ASC',
+        },
+      } as any,
+    });
+
+    return withParams;
+  }
+
+  private fillMissingParameterCodes(
+    params: CreatePreoperationalChecklistTemplateDto['parameters'],
+    digits = 5,
+  ): CreatePreoperationalChecklistTemplateDto['parameters'] {
+    if (!params || params.length === 0) return [];
+
+    let max = 0;
+
+    for (const p of params) {
+      const raw = p.parameterCode?.trim();
+      if (raw && /^\d+$/.test(raw)) {
+        const n = parseInt(raw, 10);
+        if (n > max) max = n;
+      }
+    }
+
+    let current = max;
+
+    return params.map((p) => {
+      const raw = p.parameterCode?.trim();
+
+      if (!raw) {
+        current += 1;
+        return {
+          ...p,
+          parameterCode: String(current).padStart(digits, '0'),
+        };
+      }
+
+      return {
+        ...p,
+        parameterCode: raw,
+      };
+    });
   }
 
   async getPreoperationalChecklistByToolType(rawToolType: string) {
@@ -934,7 +709,6 @@ export class SgSstService {
       );
     }
 
-    // Aquí podrías validar que rejectFormDto.userId tenga rol de SST, si quisieras.
     form.status = FormStatus.REJECTED;
     form.rejectionReason = rejectFormDto.reason || undefined;
     form.rejectedByUserId = rejectFormDto.userId;
@@ -943,7 +717,6 @@ export class SgSstService {
 
     await this.formRepository.save(form);
 
-    // 🔴 WebSocket
     this.notificationsGateway.server.emit('forms.updated', form);
 
     return {
@@ -952,96 +725,294 @@ export class SgSstService {
     };
   }
 
-  private fillMissingParameterCodes(
-    params: CreatePreoperationalChecklistTemplateDto['parameters'],
-    digits = 5, // 00021 -> 5 dígitos
-  ): CreatePreoperationalChecklistTemplateDto['parameters'] {
-    if (!params || params.length === 0) return [];
+  // ========== OTP HELPERS ==========
+  private hashOtp(code: string): string {
+    return createHash('sha256').update(code).digest('hex');
+  }
 
-    let max = 0;
+  private mapSignerTypeToSignatureType(signerType: SignerType): SignatureType {
+    return signerType === SignerType.TECHNICIAN
+      ? SignatureType.TECHNICIAN
+      : SignatureType.SST;
+  }
 
-    for (const p of params) {
-      const raw = p.parameterCode?.trim();
-      if (raw && /^\d+$/.test(raw)) {
-        const n = parseInt(raw, 10);
-        if (n > max) max = n;
-      }
+  async requestSignOtp(
+    formId: number,
+    signerType: SignerType,
+    userId: number,
+  ): Promise<void> {
+    const form = await this.formRepository.findOne({
+      where: { id: formId },
+      relations: ['signatures'],
+    });
+
+    if (!form) {
+      throw new NotFoundException('Formulario no encontrado');
     }
 
-    let current = max;
+    const signatureType = this.mapSignerTypeToSignatureType(signerType);
 
-    return params.map((p) => {
-      const raw = p.parameterCode?.trim();
+    const existingSignature = form.signatures?.find(
+      (s) => s.userId === userId && s.signatureType === signatureType,
+    );
+    if (existingSignature) {
+      throw new BadRequestException(
+        'Este usuario ya firmó este formulario con ese rol',
+      );
+    }
 
-      if (!raw) {
-        current += 1;
-        return {
-          ...p,
-          parameterCode: String(current).padStart(digits, '0'),
-        };
-      }
+    const user = await this.userRepository.findOne({
+      where: { usuarioId: userId },
+    });
 
-      return {
-        ...p,
-        parameterCode: raw,
-      };
+    if (!user) {
+      throw new NotFoundException('Usuario no encontrado');
+    }
+
+    if (!user.email) {
+      throw new BadRequestException(
+        'El usuario no tiene un correo electrónico registrado',
+      );
+    }
+
+    await this.signOtpRepository.update(
+      {
+        userId,
+        formId,
+        signatureType,
+        usedAt: IsNull(),
+        expiresAt: MoreThan(new Date()),
+      },
+      { usedAt: new Date() },
+    );
+
+    const code = randomInt(100000, 999999).toString();
+    const now = new Date();
+    const expiresAt = new Date(
+      now.getTime() + this.OTP_TTL_MINUTES * 60 * 1000,
+    );
+
+    const otp = this.signOtpRepository.create({
+      userId,
+      formId,
+      signatureType,
+      codeHash: this.hashOtp(code),
+      channel: 'EMAIL',
+      expiresAt,
+    });
+
+    await this.signOtpRepository.save(otp);
+
+    await this.mailService.sendSignOtpEmail({
+      to: user.email,
+      code,
+      formId,
+      signerType,
+      nameuser: user.nombre,
+      ttlMinutes: this.OTP_TTL_MINUTES,
     });
   }
 
-  async updatePreoperationalChecklistTemplate(
-    id: number,
-    dto: CreatePreoperationalChecklistTemplateDto,
-  ) {
-    const template = await this.preopTemplateRepo.findOne({
-      where: { id },
-      relations: ['parameters'],
+  private async verifyAndConsumeOtp(
+    formId: number,
+    signerType: SignerType,
+    userId: number,
+    code: string,
+  ): Promise<void> {
+    const signatureType = this.mapSignerTypeToSignatureType(signerType);
+
+    const otp = await this.signOtpRepository.findOne({
+      where: {
+        userId,
+        formId,
+        signatureType,
+        usedAt: IsNull(),
+        expiresAt: MoreThan(new Date()),
+      },
+      order: { createdAt: 'DESC' },
     });
 
-    if (!template) {
-      throw new NotFoundException('Plantilla preoperacional no encontrada');
+    if (!otp) {
+      throw new BadRequestException(
+        'No se encontró un código OTP válido para este formulario',
+      );
     }
 
-    const normalizedToolType = dto.toolType.trim().toUpperCase();
+    if (otp.attempts >= this.OTP_MAX_ATTEMPTS) {
+      throw new BadRequestException(
+        'Has superado el número máximo de intentos para este código OTP',
+      );
+    }
 
-    // 👉 Rellenar códigos faltantes en los parámetros recibidos
-    const paramsWithCodes = this.fillMissingParameterCodes(dto.parameters);
+    const providedHash = this.hashOtp(code);
 
-    // Opción simple: eliminar todos los parámetros anteriores y recrearlos
-    await this.preopParamRepo.delete({ templateId: template.id });
+    if (providedHash !== otp.codeHash) {
+      otp.attempts += 1;
+      await this.signOtpRepository.save(otp);
+      throw new BadRequestException('Código OTP inválido');
+    }
 
-    template.toolType = normalizedToolType;
-    template.toolCategory = dto.toolCategory;
-    template.estimatedTime = dto.estimatedTime ?? template.estimatedTime;
-    template.additionalInstructions = dto.additionalInstructions;
-    template.requiresTools = dto.requiresTools ?? [];
-    template.isActive = true;
+    otp.usedAt = new Date();
+    await this.signOtpRepository.save(otp);
+  }
 
-    template.parameters = paramsWithCodes.map((p, idx) =>
-      this.preopParamRepo.create({
-        templateId: template.id,
-        parameterCode: p.parameterCode,
-        parameter: p.parameter,
-        description: p.description,
-        category: p.category,
-        required: p.required,
-        critical: p.critical,
-        displayOrder: p.displayOrder ?? idx,
-      }),
-    );
+  // ========== PDF GENERATION ==========
 
-    const saved = await this.preopTemplateRepo.save(template);
+  private sanitizeFileName(text: string): string {
+    if (!text) return 'UNKNOWN';
+    return text
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-zA-Z0-9]/g, '_')
+      .replace(/_+/g, '_')
+      .toUpperCase();
+  }
 
-    // Devolver ordenado
-    const withParams = await this.preopTemplateRepo.findOne({
-      where: { id: saved.id },
-      relations: ['parameters'],
-      order: {
-        parameters: {
-          displayOrder: 'ASC',
-        },
-      } as any,
+  private async generateFormPdf(formId: number): Promise<void> {
+    const form = await this.formRepository.findOne({
+      where: { id: formId },
+      relations: [
+        'atsReport',
+        'heightWork',
+        'preoperationalChecks',
+        'signatures',
+        'user',
+        'workOrder',
+      ],
     });
 
-    return withParams;
+    if (!form) {
+      throw new NotFoundException('Formulario no encontrado');
+    }
+
+    const headerImageUrl =
+      this.configService.get<string>('PDF_HEADER_IMAGE_URL') || '';
+
+    let templateName: PdfTemplateType;
+    let params: Record<string, any>;
+    let fileNameBase = '';
+
+    switch (form.formType) {
+      case FormType.ATS:
+        if (!form.atsReport)
+          throw new InternalServerErrorException('Reporte ATS no encontrado');
+        templateName = 'ats_report';
+        params = buildAtsReportParams(form, { headerImageUrl });
+
+        const atsWorker = this.sanitizeFileName(
+          form.atsReport.workerName || 'TRABAJADOR',
+        );
+        fileNameBase = `ATS_${atsWorker}_${form.atsReport.id}`;
+        break;
+
+      case FormType.HEIGHT_WORK:
+        if (!form.heightWork)
+          throw new InternalServerErrorException(
+            'Reporte de Alturas no encontrado',
+          );
+        templateName = 'height_work_report';
+        params = buildHeightWorkReportParams(form, { headerImageUrl });
+
+        const heightWorker = this.sanitizeFileName(
+          form.heightWork.workerName || 'TRABAJADOR',
+        );
+        fileNameBase = `TRABAJO_ALTURAS_${heightWorker}_${form.heightWork.id}`;
+        break;
+
+      case FormType.PREOPERATIONAL:
+        templateName = 'preoperational_report';
+        params = buildPreoperationalReportParams(form, { headerImageUrl });
+
+        const techSignature = form.signatures?.find(
+          (s) => s.signatureType === SignatureType.TECHNICIAN,
+        );
+        const preopWorkerName =
+          techSignature?.userName || form.user?.nombre || 'TRABAJADOR';
+        const preopWorker = this.sanitizeFileName(preopWorkerName);
+
+        fileNameBase = `PREOPERACIONAL_${preopWorker}_${form.id}`;
+        break;
+
+      default:
+        throw new InternalServerErrorException(
+          `Tipo de formulario no soportado para PDF: ${form.formType}`,
+        );
+    }
+
+    const pdfBuffer = await this.pdfService.generatePdf({
+      templateName,
+      params,
+    });
+
+    const outDir = path.resolve(process.cwd(), 'generated', 'forms');
+    await fs.mkdir(outDir, { recursive: true });
+
+    const fileName = `${fileNameBase}.pdf`;
+    const filePath = path.join(outDir, fileName);
+
+    await fs.writeFile(filePath, pdfBuffer);
+
+    const pdfHash = createHash('sha256').update(pdfBuffer).digest('hex');
+
+    form.pdfFilePath = filePath;
+    form.pdfFileName = fileName;
+    form.pdfFileSize = pdfBuffer.length;
+    form.pdfHash = pdfHash;
+    form.pdfGeneratedAt = new Date();
+
+    await this.formRepository.save(form);
+  }
+
+  async getFormPdf(
+    formId: number,
+  ): Promise<{ buffer: Buffer; fileName: string; fileSize: number }> {
+    let form = await this.formRepository.findOne({ where: { id: formId } });
+
+    if (!form) {
+      throw new NotFoundException('Formulario no encontrado');
+    }
+
+    let fileExists = false;
+    if (form.pdfFilePath) {
+      try {
+        await fs.access(form.pdfFilePath);
+        fileExists = true;
+      } catch {
+        fileExists = false;
+      }
+    }
+
+    if (!form.pdfFilePath || !fileExists) {
+      if (form.status !== FormStatus.COMPLETED) {
+        throw new BadRequestException(
+          'El PDF solo está disponible cuando el formulario está completado y firmado por SST.',
+        );
+      }
+
+      await this.generateFormPdf(formId);
+      form = await this.formRepository.findOne({ where: { id: formId } });
+    }
+
+    if (!form || !form.pdfFilePath) {
+      throw new InternalServerErrorException(
+        'Error crítico: No se pudo generar o encontrar el PDF.',
+      );
+    }
+
+    try {
+      const buffer = await fs.readFile(form.pdfFilePath);
+      const fileName = form.pdfFileName || `form-${form.id}.pdf`;
+
+      return {
+        buffer,
+        fileName,
+        fileSize: buffer.length,
+      };
+    } catch (error) {
+      console.error('Error leyendo archivo PDF:', error);
+      throw new InternalServerErrorException(
+        'No se pudo leer el archivo PDF del disco.',
+      );
+    }
   }
 }

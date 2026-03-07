@@ -25,6 +25,9 @@ export const WKHTMLTOPDF_CONFIG = {
     orden_trabajo_interno: 'orden_trabajo_interno',
     orden_trabajo_cliente: 'orden_trabajo_cliente',
     equipment_history: 'historial_equipo',
+    ats_report: 'ats_report',
+    height_work_report: 'height_work_report',
+    preoperational_report: 'preoperational_report',
   } as const,
 };
 

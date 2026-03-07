@@ -104,15 +104,6 @@ export class CreateAtsDto {
   createdBy: number;
 
   @ApiProperty({
-    description: 'Firma del trabajador en formato base64',
-    required: false,
-    example: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA...',
-  })
-  @IsString()
-  @IsOptional()
-  signatureData?: string;
-
-  @ApiProperty({
     description: 'ID de la orden de trabajo asociada',
     example: 5,
   })

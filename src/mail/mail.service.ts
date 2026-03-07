@@ -220,4 +220,50 @@ Este es un correo automático de recordatorio.
       attachments,
     });
   }
+
+  async sendSignOtpEmail(params: {
+    to: string;
+    code: string;
+    formId: number;
+    signerType: string;
+    nameuser?: string;
+    ttlMinutes?: number;
+  }): Promise<void> {
+    const { to, code, formId, signerType, nameuser, ttlMinutes = 5 } = params;
+
+    const subject = `Código de verificación para firma de formulario #${formId}`;
+
+    const saludo = nameuser ? `Hola ${nameuser},` : 'Hola,';
+
+    const text = `
+${saludo}
+
+Has solicitado firmar el formulario #${formId} como ${signerType}.
+
+Tu código de verificación es: ${code}
+Este código es válido por ${ttlMinutes} minutos.
+
+Si no fuiste tú quien realizó esta solicitud, ignora este correo.
+
+Saludos,
+Equipo de Imec del Norte
+    `.trim();
+
+    const html = `
+      <p>${saludo}</p>
+      <p>Has solicitado firmar el formulario <strong>#${formId}</strong> como <strong>${signerType}</strong>.</p>
+      <p>Tu código de verificación es:</p>
+      <p style="font-size: 24px; font-weight: bold;">${code}</p>
+      <p>Este código es válido por <strong>${ttlMinutes}</strong> minutos.</p>
+      <p>Si no fuiste tú quien realizó esta solicitud, puedes ignorar este correo.</p>
+      <p>Saludos,<br/>Equipo de Imec del Norte</p>
+    `;
+
+    await this.sendMail({
+      to,
+      subject,
+      text,
+      html,
+    });
+  }
 }

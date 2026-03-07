@@ -33,7 +33,10 @@ export class ClientResponseDto {
   @ApiProperty({ example: '900123456-7', description: 'NIT del cliente' })
   nit: string;
 
-  @ApiProperty({ example: "7", description: 'Este es el digito de verificación' })
+  @ApiProperty({
+    example: '7',
+    description: 'Este es el digito de verificación',
+  })
   verification_digit?: string;
 
   @ApiProperty({
@@ -86,6 +89,12 @@ export class ClientResponseDto {
     description: 'Fecha de creación de la empresa',
   })
   fechaCreacionEmpresa: string;
+
+  @ApiProperty({
+    example: false,
+    description: 'Plan de mantenimiento automático',
+  })
+  planMantenimientoAutomatico: boolean;
 
   @ApiProperty({
     description: 'Usuarios contacto del cliente',
