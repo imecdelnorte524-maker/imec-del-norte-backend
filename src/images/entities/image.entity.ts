@@ -5,6 +5,7 @@ import {
   CreateDateColumn,
   ManyToOne,
   JoinColumn,
+  RelationId,
 } from 'typeorm';
 import { Tool } from '../../tools/entities/tool.entity';
 import { Supply } from '../../supplies/entities/supply.entity';
@@ -34,7 +35,6 @@ export class Image {
   @Column({ name: 'is_logo', type: 'boolean', default: false })
   isLogo: boolean;
 
-  // Herramienta
   @ManyToOne(() => Tool, (tool) => tool.images, {
     onDelete: 'CASCADE',
     nullable: true,
@@ -42,7 +42,6 @@ export class Image {
   @JoinColumn({ name: 'tool_id' })
   tool?: Tool;
 
-  // Insumo
   @ManyToOne(() => Supply, (supply) => supply.images, {
     onDelete: 'CASCADE',
     nullable: true,
@@ -50,7 +49,6 @@ export class Image {
   @JoinColumn({ name: 'supply_id' })
   supply?: Supply;
 
-  // Usuario
   @ManyToOne(() => User, (user) => user.images, {
     nullable: true,
     onDelete: 'CASCADE',
@@ -58,15 +56,14 @@ export class Image {
   @JoinColumn({ name: 'user_id' })
   user?: User;
 
-  // Equipo (hoja de vida)
-  @ManyToOne(() => Equipment, {
-    nullable: true,
-    onDelete: 'CASCADE',
-  })
+  @ManyToOne(() => Equipment, { nullable: true, onDelete: 'CASCADE' })
   @JoinColumn({ name: 'equipment_id' })
   equipment?: Equipment;
 
-  // Cliente
+  // ✅ esto te da equipmentId sin duplicar columna
+  @RelationId((img: Image) => img.equipment)
+  equipmentId?: number | null;
+
   @ManyToOne(() => Client, (client) => client.images, {
     nullable: true,
     onDelete: 'CASCADE',
@@ -84,7 +81,7 @@ export class Image {
 
   @Column({ type: 'text', nullable: true })
   observation?: string | null;
-  
+
   @ManyToOne(() => WorkOrder, (wo) => wo.images, {
     nullable: true,
     onDelete: 'CASCADE',

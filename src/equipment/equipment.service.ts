@@ -680,6 +680,7 @@ export class EquipmentService
   private async validateCategoryAndAirConditionerType(
     dto: CreateEquipmentDto | UpdateEquipmentDto,
     currentCategory?: ServiceCategory,
+    currentAirTypeId?: number | null, // 👈 NUEVO PARÁMETRO
   ): Promise<void> {
     const finalCategory =
       dto.category !== undefined ? dto.category : currentCategory;
@@ -689,7 +690,11 @@ export class EquipmentService
     }
 
     if (finalCategory === ServiceCategory.AIRES_ACONDICIONADOS) {
-      const acTypeId = dto.airConditionerTypeId;
+      // 👈 USAR EL ACTUAL SI EL DTO NO LO TRAE
+      const acTypeId =
+        dto.airConditionerTypeId !== undefined
+          ? dto.airConditionerTypeId
+          : currentAirTypeId;
 
       if (!acTypeId) {
         throw new BadRequestException(
@@ -707,6 +712,7 @@ export class EquipmentService
 
       return;
     }
+
     if (dto.airConditionerTypeId != null) {
       throw new BadRequestException(
         'Solo aires acondicionados pueden tener tipo de aire',
@@ -1167,7 +1173,11 @@ export class EquipmentService
       // ────────────────────────────────────────────────
       // Ahora manejar categoría y tipo de aire (después de los campos básicos)
       // ────────────────────────────────────────────────
-      await this.validateCategoryAndAirConditionerType(dto, equipment.category);
+      await this.validateCategoryAndAirConditionerType(
+        dto,
+        equipment.category,
+        equipment.airConditionerTypeId,
+      );
       await this.handleCategoryUpdate(equipment, dto);
 
       // Si se cambió el tipo de aire, cargar la entidad para la respuesta

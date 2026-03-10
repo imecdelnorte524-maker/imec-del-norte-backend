@@ -1,4 +1,9 @@
-import { Injectable, NotFoundException, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  Logger,
+  BadRequestException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Image } from './entities/image.entity';
@@ -9,7 +14,7 @@ import { User } from '../users/entities/user.entity';
 import { Equipment } from '../equipment/entities/equipment.entity';
 import { Client } from '../client/entities/client.entity';
 import { WorkOrder } from 'src/work-orders/entities/work-order.entity';
-import { WorkOrderEvidencePhase } from 'src/shared/index';
+import { WorkOrderEvidencePhase, WorkOrderStatus } from 'src/shared/index';
 import { NotificationsGateway } from 'src/notifications/notifications.gateway';
 
 @Injectable()
@@ -393,9 +398,12 @@ export class ImagesService {
       throw new NotFoundException('Equipo no encontrado');
     }
 
+    // ✅ Solo imágenes de hoja de vida (no evidencias OT)
     const images = await this.imageRepo
       .createQueryBuilder('image')
       .where('image.equipment_id = :id', { id: equipmentId })
+      .andWhere('image.folder = :folder', { folder: 'equipment' })
+      .andWhere('image.work_order_id IS NULL')
       .orderBy('image.created_at', 'DESC')
       .getMany();
 
@@ -403,9 +411,12 @@ export class ImagesService {
   }
 
   async deleteByEquipment(equipmentId: number) {
+    // ✅ Solo imágenes de hoja de vida (no evidencias OT)
     const images = await this.imageRepo
       .createQueryBuilder('image')
       .where('image.equipment_id = :id', { id: equipmentId })
+      .andWhere('image.folder = :folder', { folder: 'equipment' })
+      .andWhere('image.work_order_id IS NULL')
       .getMany();
 
     if (!images.length) return;
@@ -415,7 +426,6 @@ export class ImagesService {
     );
     await this.imageRepo.remove(images);
 
-    // 🔴 Evento WebSocket
     this.notificationsGateway.server.emit('equipment.imagesUpdated', {
       equipmentId,
       images: [],
@@ -609,13 +619,25 @@ export class ImagesService {
     files: Express.Multer.File[],
     phase?: WorkOrderEvidencePhase,
     observation?: string,
+    equipmentId?: number,
   ) {
     const workOrder = await this.workOrderRepo.findOne({
       where: { ordenId },
+      relations: ['service', 'equipmentWorkOrders'],
     });
 
     if (!workOrder) {
       throw new NotFoundException('Orden de trabajo no encontrada');
+    }
+
+    // ✅ bloquear si está completada o cancelada
+    if (
+      workOrder.estado === WorkOrderStatus.COMPLETED ||
+      workOrder.estado === WorkOrderStatus.CANCELED
+    ) {
+      throw new BadRequestException(
+        'No se pueden subir evidencias a una orden completada o cancelada',
+      );
     }
 
     if (!files || files.length === 0) {
@@ -624,15 +646,52 @@ export class ImagesService {
 
     const effectivePhase = phase || WorkOrderEvidencePhase.DURING;
 
-    const uploadPromises = files.map((file, index) =>
-      this.cloudinary.upload(
-        file,
-        `work-orders/${ordenId}/evidence/${Date.now()}_${index}`,
+    // Detectar AC
+    const isAC =
+      (workOrder.service?.categoriaServicio || '').toLowerCase().trim() ===
+      'aires acondicionados';
+
+    const equipmentIdsInOrder = (workOrder.equipmentWorkOrders || []).map(
+      (x) => x.equipmentId,
+    );
+
+    // ✅ Para AC (haya 1 o varios equipos): equipmentId SIEMPRE obligatorio
+    if (isAC && !equipmentId) {
+      throw new BadRequestException(
+        'Debe enviar equipmentId para evidencias de órdenes de Aires Acondicionados',
+      );
+    }
+
+    let equipment: Equipment | null = null;
+
+    if (equipmentId) {
+      const eqId = Number(equipmentId);
+
+      if (!equipmentIdsInOrder.includes(eqId)) {
+        throw new BadRequestException(
+          'El equipo no pertenece a esta orden de trabajo',
+        );
+      }
+
+      equipment = await this.equipmentRepo.findOne({
+        where: { equipmentId: eqId },
+      });
+
+      if (!equipment) {
+        throw new NotFoundException('Equipo no encontrado');
+      }
+    }
+
+    const uploadResults = await Promise.all(
+      files.map((file, index) =>
+        this.cloudinary.upload(
+          file,
+          `work-orders/${ordenId}/evidence/${Date.now()}_${index}`,
+        ),
       ),
     );
 
-    const uploadResults = await Promise.all(uploadPromises);
-
+    // ✅ Guardar relación con equipment (no equipmentId suelto)
     const imageEntities = uploadResults.map((upload) =>
       this.imageRepo.create({
         url: upload.secure_url,
@@ -641,6 +700,7 @@ export class ImagesService {
         workOrder,
         evidencePhase: effectivePhase,
         observation: observation || null,
+        equipment: equipment || undefined,
       }),
     );
 
