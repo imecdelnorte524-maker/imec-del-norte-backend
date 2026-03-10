@@ -303,4 +303,7 @@ export class EquipmentResponseDto {
 
   @ApiPropertyOptional({ type: PlanMantenimientoResponseDto })
   planMantenimiento?: PlanMantenimientoResponseDto | null;
+
+  @ApiPropertyOptional({ example: false })
+  planMantenimientoAutomatico?: boolean;
 }

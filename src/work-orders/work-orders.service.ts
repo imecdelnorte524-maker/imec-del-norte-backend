@@ -27,7 +27,7 @@ import { CreateWorkOrderDto } from './dto/create-work-order.dto';
 import { UpdateWorkOrderDto } from './dto/update-work-order.dto';
 import { AddSupplyDetailDto } from './dto/add-supply-detail.dto';
 import { AddToolDetailDto } from './dto/add-tool-detail.dto';
-import { ToolStatus, SupplyStatus } from '../shared/index';
+import { ToolStatus, SupplyStatus, EquipmentStatus } from '../shared/index';
 import { WorkOrderStatus } from '../shared/index';
 import { BillingStatus } from '../shared/index';
 import { EventEmitter2 } from '@nestjs/event-emitter';
@@ -662,40 +662,44 @@ export class WorkOrdersService {
         id,
         AcInspectionPhase.BEFORE,
       );
+
       if (!atLeastOne) {
         throw new BadRequestException(
-          'Debe registrar la inspección inicial de al menos un equipo para iniciar',
-        );
-      }
-      const hasPhoto = await this.hasAcEvidence(
-        id,
-        WorkOrderEvidencePhase.BEFORE,
-      );
-      if (!hasPhoto) {
-        throw new BadRequestException(
-          'Debe subir al menos una evidencia fotográfica inicial',
+          'Debe registrar al menos un registro de datos iniciales (antes) para iniciar',
         );
       }
     }
 
     if (isAC && updateWorkOrderDto.estado === WorkOrderStatus.COMPLETED) {
-      const allDone = await this.areAllAcInspectionsDone(
-        id,
-        AcInspectionPhase.AFTER,
-      );
-      if (!allDone) {
+      // Firma obligatoria
+      if (!workOrder.receivedByName || !workOrder.receivedBySignatureData) {
         throw new BadRequestException(
-          'Faltan equipos por registrar con parámetros finales para completar la orden',
+          'Debe registrar la firma de recibido antes de completar la orden',
         );
       }
-      const hasFinalPhoto = await this.hasAcEvidence(
-        id,
+
+      // ✅ Datos (parámetros) obligatorios: BEFORE y AFTER para cada equipo
+      for (const ph of [AcInspectionPhase.BEFORE, AcInspectionPhase.AFTER]) {
+        const ok = await this.areAllAcInspectionsDoneForAllEquipments(id, ph);
+        if (!ok) {
+          throw new BadRequestException(
+            `Faltan datos de inspección (${ph}) de al menos un equipo para completar la orden`,
+          );
+        }
+      }
+
+      // ✅ Fotos obligatorias: BEFORE, DURING, AFTER para cada equipo
+      for (const ph of [
+        WorkOrderEvidencePhase.BEFORE,
+        WorkOrderEvidencePhase.DURING,
         WorkOrderEvidencePhase.AFTER,
-      );
-      if (!hasFinalPhoto) {
-        throw new BadRequestException(
-          'Debe subir evidencias fotográficas finales antes de completar',
-        );
+      ]) {
+        const ok = await this.hasAcEvidenceForAllEquipments(id, ph);
+        if (!ok) {
+          throw new BadRequestException(
+            `Faltan evidencias fotográficas (${ph}) de al menos un equipo para completar la orden`,
+          );
+        }
       }
     }
 
@@ -2577,6 +2581,29 @@ export class WorkOrdersService {
     dto: CreateAcInspectionDto,
     currentUser: any,
   ) {
+    const order = await this.workOrdersRepository.findOne({
+      where: { ordenId },
+      relations: ['equipmentWorkOrders'],
+    });
+    if (!order) throw new NotFoundException(`Orden ${ordenId} no encontrada`);
+
+    if (
+      [WorkOrderStatus.COMPLETED, WorkOrderStatus.CANCELED].includes(
+        order.estado,
+      )
+    ) {
+      throw new BadRequestException(
+        'No se pueden editar parámetros en una orden completada o cancelada',
+      );
+    }
+
+    const equipmentIds = (order.equipmentWorkOrders || []).map(
+      (x) => x.equipmentId,
+    );
+    if (!equipmentIds.includes(dto.equipmentId)) {
+      throw new BadRequestException('El equipo no pertenece a esta orden');
+    }
+
     let inspection = await this.acInspectionRepository.findOne({
       where: { workOrderId: ordenId, phase, equipmentId: dto.equipmentId },
     });
@@ -2634,6 +2661,54 @@ export class WorkOrdersService {
       where: { workOrder: { ordenId }, evidencePhase: phase },
     });
     return count > 0;
+  }
+
+  private async getOrderEquipmentIds(ordenId: number): Promise<number[]> {
+    const order = await this.workOrdersRepository.findOne({
+      where: { ordenId },
+      relations: ['equipmentWorkOrders'],
+    });
+    return (order?.equipmentWorkOrders || []).map((x) => x.equipmentId);
+  }
+
+  private async areAllAcInspectionsDoneForAllEquipments(
+    ordenId: number,
+    phase: AcInspectionPhase,
+  ): Promise<boolean> {
+    const equipmentIds = await this.getOrderEquipmentIds(ordenId);
+    if (!equipmentIds.length) return false;
+
+    const rows = await this.acInspectionRepository
+      .createQueryBuilder('insp')
+      .select('insp.equipmentId', 'equipmentId')
+      .where('insp.workOrderId = :ordenId', { ordenId })
+      .andWhere('insp.phase = :phase', { phase })
+      .andWhere('insp.equipmentId IN (:...equipmentIds)', { equipmentIds })
+      .groupBy('insp.equipmentId')
+      .getRawMany();
+
+    const done = new Set(rows.map((r) => Number(r.equipmentId)));
+    return equipmentIds.every((id) => done.has(id));
+  }
+
+  private async hasAcEvidenceForAllEquipments(
+    ordenId: number,
+    phase: WorkOrderEvidencePhase,
+  ): Promise<boolean> {
+    const equipmentIds = await this.getOrderEquipmentIds(ordenId);
+    if (!equipmentIds.length) return false;
+
+    const rows = await this.imageRepository
+      .createQueryBuilder('img')
+      .select('img.equipment_id', 'equipmentId')
+      .where('img.work_order_id = :ordenId', { ordenId })
+      .andWhere('img.evidence_phase = :phase', { phase })
+      .andWhere('img.equipment_id IN (:...equipmentIds)', { equipmentIds })
+      .groupBy('img.equipment_id')
+      .getRawMany();
+
+    const has = new Set(rows.map((r) => Number(r.equipmentId)));
+    return equipmentIds.every((id) => has.has(id));
   }
 
   // ─────────────────────────────────────────────────────────────
@@ -3203,17 +3278,27 @@ export class WorkOrdersService {
     const hoyCol = this.startOfDay(this.getColombiaTime());
     const { weekStart, weekEnd } = this.getNextWeekRangeFromFriday(hoyCol);
 
-    const planes = await this.planRepo.find({
-      where: { fechaProgramada: Between(weekStart, weekEnd) },
-      relations: ['equipment', 'equipment.client'],
-    });
+    const planes = await this.planRepo
+      .createQueryBuilder('plan')
+      .innerJoinAndSelect('plan.equipment', 'equipment')
+      .where('plan.fechaProgramada BETWEEN :weekStart AND :weekEnd', {
+        weekStart: this.dateOnlyStr(weekStart),
+        weekEnd: this.dateOnlyStr(weekEnd),
+      })
+      .andWhere('equipment.status = :status', {
+        status: EquipmentStatus.ACTIVE,
+      })
+      .andWhere('equipment.planMantenimientoAutomatico = true')
+      .getMany();
 
     if (!planes.length) return { created: 0, skipped: 0 };
 
     const groups = new Map<string, PlanMantenimiento[]>();
+
     for (const plan of planes) {
       const eq = plan.equipment;
       if (!eq?.clientId || !eq?.category) continue;
+
       const key = `${eq.clientId}::${eq.category}`;
       if (!groups.has(key)) groups.set(key, []);
       groups.get(key)!.push(plan);
@@ -3226,15 +3311,6 @@ export class WorkOrdersService {
       const [clienteEmpresaIdStr, categoryStr] = key.split('::');
       const clienteEmpresaId = Number(clienteEmpresaIdStr);
       const category = categoryStr as ServiceCategory;
-
-      const clienteEmpresa = await this.clientsRepository.findOne({
-        where: { idCliente: clienteEmpresaId },
-      });
-
-      if (!clienteEmpresa || !clienteEmpresa.planMantenimientoAutomatico) {
-        skipped++;
-        continue;
-      }
 
       const servicio = await this.servicesRepository.findOne({
         where: { categoriaServicio: category },
@@ -3298,7 +3374,9 @@ export class WorkOrdersService {
           clienteEmpresaId,
           clienteId: usuarioContacto.usuarioId,
           fechaProgramada: weekStart,
-          comentarios: `Mantenimiento automático semanal (${this.dateOnlyStr(weekStart)} a ${this.dateOnlyStr(weekEnd)})`,
+          comentarios: `Mantenimiento automático semanal (${this.dateOnlyStr(
+            weekStart,
+          )} a ${this.dateOnlyStr(weekEnd)})`,
           estado: WorkOrderStatus.REQUESTED_UNASSIGNED,
           estadoFacturacion: null,
           estadoPago: null,
@@ -3350,7 +3428,6 @@ export class WorkOrdersService {
         created++;
       } catch (e: any) {
         await queryRunner.rollbackTransaction();
-        // Si choca por unique constraint de autoBatchKey (doble ejecución), no tumbar
         if (e?.code === '23505') {
           skipped++;
           continue;

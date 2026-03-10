@@ -507,6 +507,7 @@ export class EquipmentController {
             notas: equipment.planMantenimiento.notas,
           }
         : null,
+      planMantenimientoAutomatico: equipment.planMantenimientoAutomatico,
     };
   }
 }

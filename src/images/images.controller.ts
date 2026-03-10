@@ -271,21 +271,18 @@ export class ImagesController {
       properties: {
         files: {
           type: 'array',
-          items: {
-            type: 'string',
-            format: 'binary',
-          },
+          items: { type: 'string', format: 'binary' },
         },
         phase: {
           type: 'string',
           enum: ['BEFORE', 'DURING', 'AFTER'],
+        },
+        equipmentId: {
+          type: 'number',
           description:
-            'Fase de la evidencia: BEFORE (antes), DURING (durante), AFTER (después)',
+            'ID del equipo (obligatorio en AC multi-equipo para que cuente en el cierre)',
         },
-        observation: {
-          type: 'string',
-          description: 'Observación para este conjunto de evidencias',
-        },
+        observation: { type: 'string' },
       },
     },
   })
@@ -293,13 +290,24 @@ export class ImagesController {
   uploadWorkOrderImages(
     @Param('id', ParseIntPipe) id: number,
     @UploadedFiles() files: Express.Multer.File[],
-    @Body() body: { phase?: WorkOrderEvidencePhase; observation?: string },
+    @Body()
+    body: {
+      phase?: WorkOrderEvidencePhase;
+      observation?: string;
+      equipmentId?: number;
+    },
   ) {
     const phase =
       (body.phase as WorkOrderEvidencePhase) || WorkOrderEvidencePhase.DURING;
     const observation = body.observation || undefined;
 
-    return this.imagesService.uploadForWorkOrder(id, files, phase, observation);
+    return this.imagesService.uploadForWorkOrder(
+      id,
+      files,
+      phase,
+      observation,
+      body.equipmentId ? Number(body.equipmentId) : undefined,
+    );
   }
 
   @Get('work-order/:id')

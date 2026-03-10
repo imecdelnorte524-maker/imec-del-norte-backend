@@ -12,7 +12,7 @@ import {
 import { Client } from '../../client/entities/client.entity';
 import { Area } from '../../area/entities/area.entity';
 import { SubArea } from '../../sub-area/entities/sub-area.entity';
-import { EquipmentStatus } from '../../shared/index'
+import { EquipmentStatus } from '../../shared/index';
 import { ServiceCategory } from '../../shared/index';
 import { Image } from '../../images/entities/image.entity';
 import { AirConditionerType } from '../../air-conditioner-types/entities/air-conditioner-type.entity';
@@ -138,4 +138,11 @@ export class Equipment {
     cascade: true,
   })
   documents: EquipmentDocument[];
+  
+  @Column({
+    name: 'plan_mantenimiento_automatico',
+    type: 'boolean',
+    default: false,
+  })
+  planMantenimientoAutomatico: boolean;
 }

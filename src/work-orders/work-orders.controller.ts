@@ -1011,6 +1011,7 @@ export class WorkOrdersController {
         id: img.id,
         url: img.url,
         evidencePhase: img.evidencePhase ?? null,
+        equipmentId: img.equipmentId ?? null,
         observation: img.observation ?? null,
         createdAt: img.created_at,
       })) || [];

@@ -6,6 +6,7 @@ import {
   IsEnum,
   IsDateString,
   ValidateNested,
+  IsBoolean,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { ServiceCategory } from '../../shared/index';
@@ -41,13 +42,17 @@ export class CreateEquipmentDto {
 
   @ApiPropertyOptional({
     example: 1,
-    description: 'ID del tipo de aire (solo si category = AIRES_ACONDICIONADOS)',
+    description:
+      'ID del tipo de aire (solo si category = AIRES_ACONDICIONADOS)',
   })
   @IsOptional()
   @IsNumber()
   airConditionerTypeId?: number;
 
-  @ApiPropertyOptional({ example: EquipmentStatus.ACTIVE, enum: EquipmentStatus })
+  @ApiPropertyOptional({
+    example: EquipmentStatus.ACTIVE,
+    enum: EquipmentStatus,
+  })
   @IsOptional()
   @IsEnum(EquipmentStatus)
   status?: EquipmentStatus;
@@ -79,4 +84,9 @@ export class CreateEquipmentDto {
   @ValidateNested()
   @Type(() => PlanMantenimientoDto)
   planMantenimiento?: PlanMantenimientoDto;
+
+  @ApiPropertyOptional({ example: false })
+  @IsOptional()
+  @IsBoolean()
+  planMantenimientoAutomatico?: boolean;
 }

@@ -80,15 +80,6 @@ export class Client {
   @IsNotEmpty()
   fechaCreacionEmpresa: Date;
 
-  @Column({
-    name: 'plan_mantenimiento_automatico',
-    type: 'boolean',
-    default: false,
-  })
-  @IsOptional()
-  @IsBoolean()
-  planMantenimientoAutomatico: boolean;
-
   // RELACIÓN CON MÚLTIPLES USUARIOS CONTACTO
   @ManyToMany(() => User, { eager: true })
   @JoinTable({
