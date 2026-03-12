@@ -3,10 +3,10 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { MaintenanceTypesService } from './maintenance-types.service';
 import { MaintenanceTypesController } from './maintenance-types.controller';
 import { MaintenanceType } from './entities/maintenance-type.entity';
-import { NotificationsModule } from '../notifications/notifications.module';
+import { RealtimeModule } from '../realtime/realtime.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([MaintenanceType]), NotificationsModule],
+  imports: [TypeOrmModule.forFeature([MaintenanceType]), RealtimeModule],
   controllers: [MaintenanceTypesController],
   providers: [MaintenanceTypesService],
   exports: [MaintenanceTypesService],

@@ -12,10 +12,11 @@ import { SignOtp } from './entities/sign-otp.entity';
 import { WorkOrder } from '../work-orders/entities/work-order.entity';
 import { PreoperationalChecklistTemplate } from './entities/preoperational-checklist-template.entity';
 import { PreoperationalChecklistParameter } from './entities/preoperational-checklist-parameter.entity';
-import { NotificationsModule } from '../notifications/notifications.module';
+ 
 import { PdfModule } from '../pdf/pdf.module';
 import { User } from '../users/entities/user.entity';
 import { MailModule } from '../mail/mail.module';
+import { RealtimeModule } from '../realtime/realtime.module';
 
 @Module({
   imports: [
@@ -31,7 +32,7 @@ import { MailModule } from '../mail/mail.module';
       PreoperationalChecklistParameter,
       User,
     ]),
-    NotificationsModule,
+    RealtimeModule,
     PdfModule,
     MailModule,
   ],

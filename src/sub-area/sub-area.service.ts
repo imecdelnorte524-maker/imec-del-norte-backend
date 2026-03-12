@@ -1,4 +1,3 @@
-// src/sub-area/sub-area.service.ts
 import {
   Injectable,
   NotFoundException,
@@ -12,7 +11,7 @@ import { SubArea } from './entities/sub-area.entity';
 import { Area } from '../area/entities/area.entity';
 import { CreateSubAreaDto } from './dto/create-sub-area.dto';
 import { UpdateSubAreaDto } from './dto/update-sub-area.dto';
-import { NotificationsGateway } from 'src/notifications/notifications.gateway';
+import { RealtimeService } from '../realtime/realtime.service';
 
 @Injectable()
 export class SubAreaService {
@@ -23,7 +22,7 @@ export class SubAreaService {
     private subAreaRepository: Repository<SubArea>,
     @InjectRepository(Area)
     private areaRepository: Repository<Area>,
-    private readonly notificationsGateway: NotificationsGateway,
+    private readonly realtime: RealtimeService,
   ) {}
 
   async create(createSubAreaDto: CreateSubAreaDto): Promise<SubArea> {
@@ -87,9 +86,8 @@ export class SubAreaService {
 
     const savedSubArea = await this.subAreaRepository.save(subArea);
 
-    // 🔴 WebSocket
     const full = await this.findOne(savedSubArea.idSubArea);
-    this.notificationsGateway.server.emit('subAreas.created', full);
+    this.realtime.emitEntityUpdate('subAreas', 'created', full);
 
     return full;
   }
@@ -223,9 +221,8 @@ export class SubAreaService {
     Object.assign(subArea, updateSubAreaDto);
     const saved = await this.subAreaRepository.save(subArea);
 
-    // 🔴 WebSocket
     const full = await this.findOne(saved.idSubArea);
-    this.notificationsGateway.server.emit('subAreas.updated', full);
+    this.realtime.emitEntityUpdate('subAreas', 'updated', full);
 
     return full;
   }
@@ -233,8 +230,8 @@ export class SubAreaService {
   async remove(id: number): Promise<void> {
     const subArea = await this.findOne(id);
     await this.subAreaRepository.remove(subArea);
-    // 🔴 WebSocket
-    this.notificationsGateway.server.emit('subAreas.deleted', { id });
+
+    this.realtime.emitEntityUpdate('subAreas', 'deleted', { id });
   }
 
   async getHierarchy(subAreaId: number): Promise<any> {
@@ -247,7 +244,6 @@ export class SubAreaService {
       throw new NotFoundException(`Subárea con ID ${subAreaId} no encontrada`);
     }
 
-    // Tomar el primer usuario contacto (o puedes ajustar según tu lógica)
     const primerUsuarioContacto =
       subArea.area.cliente.usuariosContacto?.[0] || null;
 
@@ -275,8 +271,6 @@ export class SubAreaService {
     };
   }
 
-  // ✅ NUEVOS MÉTODOS
-
   async findByParentSubAreaId(parentSubAreaId: number): Promise<SubArea[]> {
     return await this.subAreaRepository.find({
       where: { parentSubAreaId },
@@ -300,7 +294,6 @@ export class SubAreaService {
       order: { createdAt: 'ASC' },
     });
 
-    // Función recursiva para poblar hijos
     const populateChildren = async (subArea: SubArea): Promise<any> => {
       const children = await this.subAreaRepository.find({
         where: { parentSubAreaId: subArea.idSubArea },

@@ -1,4 +1,3 @@
-// notifications/notifications.controller.ts
 import {
   Controller,
   Get,
@@ -7,6 +6,9 @@ import {
   UseGuards,
   Query,
   Delete,
+  Post,
+  Body,
+  ParseIntPipe,
 } from '@nestjs/common';
 import { NotificationsService } from './notifications.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -45,6 +47,12 @@ export class NotificationsController {
     return this.notificationsService.getUnreadCountByModule(userId);
   }
 
+  @Get('unread-total')
+  async getUnreadTotal(@CurrentUser('userId') userId: number) {
+    const total = await this.notificationsService.getUnreadCount(userId);
+    return { total };
+  }
+
   @Get('summary')
   async getSummary(@CurrentUser('userId') userId: number) {
     const [recent, unreadCounts] = await Promise.all([
@@ -59,12 +67,20 @@ export class NotificationsController {
     };
   }
 
+  @Get(':id')
+  async findOne(
+    @CurrentUser('userId') userId: number,
+    @Param('id', ParseIntPipe) id: number,
+  ) {
+    return this.notificationsService.findOne(id);
+  }
+
   @Patch(':id/read')
   async markAsRead(
     @CurrentUser('userId') userId: number,
-    @Param('id') id: string,
+    @Param('id', ParseIntPipe) id: number,
   ) {
-    await this.notificationsService.markAsRead(userId, Number(id));
+    await this.notificationsService.markAsRead(userId, id);
     return { success: true };
   }
 
@@ -79,7 +95,6 @@ export class NotificationsController {
 
   @Delete('clean')
   async cleanOldNotifications() {
-    // Endpoint administrativo, deberías agregar otro guard aquí
     const deleted = await this.notificationsService.cleanOldNotifications();
     return { deleted };
   }

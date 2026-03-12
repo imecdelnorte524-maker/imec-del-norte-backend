@@ -1,3 +1,4 @@
+// src/equipment/equipment.module.ts
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { EquipmentController } from './equipment.controller';
@@ -6,7 +7,7 @@ import { Equipment } from './entities/equipment.entity';
 import { Client } from '../client/entities/client.entity';
 import { Area } from '../area/entities/area.entity';
 import { SubArea } from '../sub-area/entities/sub-area.entity';
-import { ImagesModule } from '../images/images.module';
+import { ImagesModule } from '../images/images.module'; // ✅ IMPORTADO
 import { AirConditionerType } from '../air-conditioner-types/entities/air-conditioner-type.entity';
 import { EquipmentMotor } from './entities/motor.entity';
 import { EquipmentEvaporator } from './entities/evaporator.entity';
@@ -14,13 +15,12 @@ import { EquipmentCondenser } from './entities/condenser.entity';
 import { EquipmentCompressor } from './entities/compressor.entity';
 import { PlanMantenimiento } from './entities/plan-mantenimiento.entity';
 import { WorkOrdersModule } from 'src/work-orders/work-orders.module';
-
 import { EquipmentDocumentsService } from './equipment-documents.service';
 import { EquipmentDocumentsController } from './equipment-documents.controller';
 import { EquipmentDocument } from './entities/equipment-document.entity';
-import { NotificationsModule } from '../notifications/notifications.module';
 import { PdfModule } from '../pdf/pdf.module';
 import { User } from '../users/entities/user.entity';
+import { RealtimeModule } from '../realtime/realtime.module';
 
 @Module({
   imports: [
@@ -40,7 +40,7 @@ import { User } from '../users/entities/user.entity';
     ]),
     ImagesModule,
     WorkOrdersModule,
-    NotificationsModule,
+    RealtimeModule,
     PdfModule,
   ],
   controllers: [EquipmentController, EquipmentDocumentsController],

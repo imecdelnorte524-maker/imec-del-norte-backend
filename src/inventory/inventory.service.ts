@@ -14,8 +14,9 @@ import { Warehouse } from '../warehouses/entities/warehouse.entity';
 import { CreateInventoryDto } from './dto/create-inventory.dto';
 import { UpdateInventoryDto } from './dto/update-inventory.dto';
 import { SupplyStatus } from '../shared';
-import { NotificationsGateway } from 'src/notifications/notifications.gateway';
+import { RealtimeService } from '../realtime/realtime.service';
 import { buildInventoryExcel } from '../../templates/excel/inventory-inventory.template';
+
 @Injectable()
 export class InventoryService {
   private readonly logger = new Logger(InventoryService.name);
@@ -30,7 +31,7 @@ export class InventoryService {
     @InjectRepository(Warehouse)
     private warehouseRepository: Repository<Warehouse>,
     private dataSource: DataSource,
-    private readonly notificationsGateway: NotificationsGateway,
+    private readonly realtime: RealtimeService,
   ) {}
 
   async create(createInventoryDto: CreateInventoryDto): Promise<Inventory> {
@@ -100,10 +101,7 @@ export class InventoryService {
           const fullInventory = await this.findOne(
             updatedInventory.inventarioId,
           );
-          this.notificationsGateway.server.emit(
-            'inventory.updated',
-            fullInventory,
-          );
+          this.realtime.emitEntityUpdate('inventory', 'updated', fullInventory);
 
           return fullInventory;
         }
@@ -169,10 +167,7 @@ export class InventoryService {
           const fullInventory = await this.findOne(
             updatedInventory.inventarioId,
           );
-          this.notificationsGateway.server.emit(
-            'inventory.updated',
-            fullInventory,
-          );
+          this.realtime.emitEntityUpdate('inventory', 'updated', fullInventory);
 
           return fullInventory;
         }
@@ -231,7 +226,7 @@ export class InventoryService {
 
       const fullInventory = await this.findOne(savedInventory.inventarioId);
 
-      this.notificationsGateway.server.emit('inventory.created', fullInventory);
+      this.realtime.emitEntityUpdate('inventory', 'created', fullInventory);
 
       return fullInventory;
     } catch (error) {
@@ -401,7 +396,7 @@ export class InventoryService {
 
       const fullInventory = await this.findOne(id);
 
-      this.notificationsGateway.server.emit('inventory.updated', fullInventory);
+      this.realtime.emitEntityUpdate('inventory', 'updated', fullInventory);
 
       return fullInventory;
     } catch (error) {
@@ -416,10 +411,7 @@ export class InventoryService {
     await this.findOne(id);
     await this.inventoryRepository.softDelete(id);
 
-    this.notificationsGateway.server.emit('inventory.deleted', {
-      id,
-      soft: true,
-    });
+    this.realtime.emitEntityUpdate('inventory', 'deleted', { id, soft: true });
   }
 
   async removeComplete(id: number): Promise<{
@@ -467,7 +459,6 @@ export class InventoryService {
           categoria: inventory.supply.categoria,
         };
 
-        // Eliminamos primero el insumo; el CASCADE en Inventory se encarga de borrar inventarios
         await queryRunner.manager.remove(inventory.supply);
       } else if (inventory.herramientaId && inventory.tool) {
         deletedInfo.item = {
@@ -479,16 +470,12 @@ export class InventoryService {
 
         await queryRunner.manager.remove(inventory.tool);
       } else {
-        // Si por alguna razón no tiene supply/tool asociado, al menos eliminamos el inventario
         await queryRunner.manager.remove(inventory);
       }
 
       await queryRunner.commitTransaction();
 
-      this.notificationsGateway.server.emit(
-        'inventory.deletedPermanent',
-        deletedInfo,
-      );
+      this.realtime.emitGlobal('inventory.deletedPermanent', deletedInfo);
 
       return {
         deletedInventory: deletedInfo.inventory,
@@ -576,11 +563,7 @@ export class InventoryService {
       await queryRunner.commitTransaction();
       const fullInventory = await this.findOne(inventarioId);
 
-      this.notificationsGateway.server.emit(
-        'inventory.stockUpdated',
-        fullInventory,
-      );
-      this.notificationsGateway.server.emit('inventory.updated', fullInventory);
+      this.realtime.emitEntityUpdate('inventory', 'updated', fullInventory);
 
       return fullInventory;
     } catch (error) {
@@ -653,7 +636,6 @@ export class InventoryService {
         .orderBy('bodega.nombre', 'ASC')
         .getRawMany();
 
-      // Calculamos los estados en memoria, sin depender de una columna en BD
       const allInventories = await queryRunner.manager.find(Inventory, {
         relations: ['supply'],
       });
@@ -716,12 +698,11 @@ export class InventoryService {
 
     const restored = await this.findOne(id);
 
-    this.notificationsGateway.server.emit('inventory.restored', restored);
+    this.realtime.emitEntityUpdate('inventory', 'updated', restored);
 
     return restored;
   }
 
-  // Estado textual del inventario (no se persiste en BD)
   public getInventoryStatus(cantidad: number, stockMin: number = 0): string {
     if (cantidad <= 0) return 'Sin Stock';
     if (stockMin > 0 && cantidad <= stockMin) return 'Stock Bajo';
@@ -761,13 +742,11 @@ export class InventoryService {
         .leftJoinAndSelect('bodega.cliente', 'cliente')
         .orderBy('inventory.fechaUltimaActualizacion', 'DESC');
 
-      // Aplicar filtro de bodega solo si se proporciona un ID válido
       if (bodegaId !== undefined && !isNaN(bodegaId)) {
         query.andWhere('bodega.bodegaId = :bodegaId', { bodegaId });
         this.logger.log(`Filtrando por bodega ID: ${bodegaId}`);
       }
 
-      // Manejar registros eliminados
       if (includeDeleted) {
         query.withDeleted();
       }

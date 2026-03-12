@@ -4,13 +4,14 @@ import { ModulesController } from './modules.controller';
 import { ModulesService } from './modules.service';
 import { Module as ModuleEntity } from './entities/module.entity'; 
 import { RolesModule } from '../roles/roles.module';
-import { NotificationsModule } from '../notifications/notifications.module';
+import { RealtimeModule } from '../realtime/realtime.module';
+ 
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([ModuleEntity]),
     RolesModule,
-    NotificationsModule
+    RealtimeModule,
   ],
   controllers: [ModulesController],
   providers: [ModulesService],

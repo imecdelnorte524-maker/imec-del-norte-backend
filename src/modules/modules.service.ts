@@ -12,7 +12,7 @@ import { CreateModuleDto } from './dto/create-module.dto';
 import { UpdateModuleDto } from './dto/update-module.dto';
 import { RolesService } from '../roles/roles.service';
 import { Role } from '../roles/entities/role.entity';
-import { NotificationsGateway } from 'src/notifications/notifications.gateway';
+import { RealtimeService } from '../realtime/realtime.service';
 
 @Injectable()
 export class ModulesService {
@@ -22,7 +22,7 @@ export class ModulesService {
     @InjectRepository(Module)
     private modulesRepository: Repository<Module>,
     private readonly rolesService: RolesService,
-    private readonly notificationsGateway: NotificationsGateway,
+    private readonly realtime: RealtimeService,
   ) {}
 
   async create(createModuleDto: CreateModuleDto): Promise<Module> {
@@ -61,8 +61,8 @@ export class ModulesService {
         `✅ Módulo creado exitosamente: ${savedModule.moduloId} - ${savedModule.nombreModulo}`,
       );
 
-      // 🔴 Evento WebSocket
-      this.notificationsGateway.server.emit('modules.created', savedModule);
+      // Evento WebSocket
+      this.realtime.emitEntityUpdate('modules', 'created', savedModule);
 
       return savedModule;
     } catch (error) {
@@ -140,8 +140,8 @@ export class ModulesService {
         `✅ Módulo actualizado exitosamente: ${id} - ${updatedModule.nombreModulo}`,
       );
 
-      // 🔴 Evento WebSocket
-      this.notificationsGateway.server.emit('modules.updated', updatedModule);
+      // Evento WebSocket
+      this.realtime.emitEntityUpdate('modules', 'updated', updatedModule);
 
       return updatedModule;
     } catch (error) {
@@ -160,8 +160,8 @@ export class ModulesService {
     await this.modulesRepository.remove(module);
     this.logger.log(`🗑️ Módulo eliminado: ${id}`);
 
-    // 🔴 Evento WebSocket
-    this.notificationsGateway.server.emit('modules.deleted', { id });
+    // Evento WebSocket
+    this.realtime.emitEntityUpdate('modules', 'deleted', { id });
   }
 
   private async getRolesByIds(roleIds: number[]): Promise<Role[]> {
@@ -200,8 +200,8 @@ export class ModulesService {
     const updated = await this.modulesRepository.save(moduleToUpdate);
     this.logger.log(`🔗 Roles actualizados para módulo ${id}`);
 
-    // 🔴 Evento WebSocket
-    this.notificationsGateway.server.emit('modules.updated', updated);
+    // Evento WebSocket
+    this.realtime.emitEntityUpdate('modules', 'updated', updated);
 
     return updated;
   }
@@ -218,8 +218,8 @@ export class ModulesService {
       const saved = await this.modulesRepository.save(module);
       this.logger.log(`🔗 Rol ${roleId} asignado al módulo ${moduleId}`);
 
-      // 🔴 Evento WebSocket
-      this.notificationsGateway.server.emit('modules.updated', saved);
+      // Evento WebSocket
+      this.realtime.emitEntityUpdate('modules', 'updated', saved);
 
       return saved;
     }
@@ -236,7 +236,7 @@ export class ModulesService {
     const saved = await this.modulesRepository.save(module);
     this.logger.log(`❌ Rol ${roleId} removido del módulo ${moduleId}`);
 
-    // 🔴 Evento WebSocket
-    this.notificationsGateway.server.emit('modules.updated', saved);
+    // Evento WebSocket
+    this.realtime.emitEntityUpdate('modules', 'updated', saved);
   }
 }

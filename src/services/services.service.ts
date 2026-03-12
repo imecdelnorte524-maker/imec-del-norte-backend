@@ -1,4 +1,3 @@
-// src/services/services.service.ts
 import {
   Injectable,
   NotFoundException,
@@ -10,18 +9,17 @@ import { Service } from './entities/service.entity';
 import { CreateServiceDto } from './dto/create-service.dto';
 import { UpdateServiceDto } from './dto/update-service.dto';
 import { ServiceCategory } from '../shared/index';
-import { NotificationsGateway } from 'src/notifications/notifications.gateway';
+import { RealtimeService } from '../realtime/realtime.service';
 
 @Injectable()
 export class ServicesService {
   constructor(
     @InjectRepository(Service)
     private servicesRepository: Repository<Service>,
-    private readonly notificationsGateway: NotificationsGateway,
+    private readonly realtime: RealtimeService,
   ) {}
 
   async create(createServiceDto: CreateServiceDto): Promise<Service> {
-    // Verificar si el nombre del servicio ya existe
     const existingService = await this.findByName(
       createServiceDto.nombreServicio,
     );
@@ -32,8 +30,8 @@ export class ServicesService {
     const service = this.servicesRepository.create(createServiceDto);
     const saved = await this.servicesRepository.save(service);
 
-    // 🔴 WebSocket
-    this.notificationsGateway.server.emit('services.created', saved);
+    // WebSocket
+    this.realtime.emitEntityUpdate('services', 'created', saved);
 
     return saved;
   }
@@ -68,7 +66,6 @@ export class ServicesService {
   ): Promise<Service> {
     const service = await this.findOne(id);
 
-    // Verificar si se está actualizando el nombre y si ya existe
     if (
       updateServiceDto.nombreServicio &&
       updateServiceDto.nombreServicio !== service.nombreServicio
@@ -84,8 +81,8 @@ export class ServicesService {
     await this.servicesRepository.update(id, updateServiceDto);
     const updated = await this.findOne(id);
 
-    // 🔴 WebSocket
-    this.notificationsGateway.server.emit('services.updated', updated);
+    // WebSocket
+    this.realtime.emitEntityUpdate('services', 'updated', updated);
 
     return updated;
   }
@@ -93,7 +90,6 @@ export class ServicesService {
   async remove(id: number): Promise<void> {
     const service = await this.findOne(id);
 
-    // Verificar si el servicio está siendo usado en órdenes de trabajo
     const hasWorkOrders = await this.servicesRepository
       .createQueryBuilder('service')
       .innerJoin('service.workOrders', 'workOrder')
@@ -108,8 +104,8 @@ export class ServicesService {
 
     await this.servicesRepository.remove(service);
 
-    // 🔴 WebSocket
-    this.notificationsGateway.server.emit('services.deleted', { id });
+    // WebSocket
+    this.realtime.emitEntityUpdate('services', 'deleted', { id });
   }
 
   async searchServices(keyword: string): Promise<Service[]> {
@@ -142,7 +138,6 @@ export class ServicesService {
       .getRawMany();
   }
 
-  // Nuevo método: Obtener servicios por categoría
   async findByCategory(category: ServiceCategory): Promise<Service[]> {
     return await this.servicesRepository.find({
       where: { categoriaServicio: category },

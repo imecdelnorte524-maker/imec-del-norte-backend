@@ -1,18 +1,21 @@
-import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ConflictException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { AirConditionerType } from './entities/air-conditioner-type.entity';
 import { CreateAirConditionerTypeDto } from './dto/create-air-conditioner-type.dto';
 import { UpdateAirConditionerTypeDto } from './dto/update-air-conditioner-type.dto';
-import { NotificationsGateway } from 'src/notifications/notifications.gateway';
- 
+import { RealtimeService } from '../realtime/realtime.service';
 
 @Injectable()
 export class AirConditionerTypesService {
   constructor(
     @InjectRepository(AirConditionerType)
     private readonly acTypeRepository: Repository<AirConditionerType>,
-    private readonly notificationsGateway: NotificationsGateway,
+    private readonly realtime: RealtimeService,
   ) {}
 
   async create(
@@ -28,7 +31,7 @@ export class AirConditionerTypesService {
     const saved = await this.acTypeRepository.save(acType);
 
     // Emitir evento de creación
-    this.notificationsGateway.server.emit('airConditionerTypes.created', saved);
+    this.realtime.emitEntityUpdate('airConditionerTypes', 'created', saved);
 
     return saved;
   }
@@ -66,7 +69,7 @@ export class AirConditionerTypesService {
     const updated = await this.acTypeRepository.save(acType);
 
     // Emitir evento de actualización
-    this.notificationsGateway.server.emit('airConditionerTypes.updated', updated);
+    this.realtime.emitEntityUpdate('airConditionerTypes', 'updated', updated);
 
     return updated;
   }
@@ -75,7 +78,7 @@ export class AirConditionerTypesService {
     const acType = await this.findOne(id);
     await this.acTypeRepository.remove(acType);
 
-    // Emitir evento de eliminación (enviamos solo el id)
-    this.notificationsGateway.server.emit('airConditionerTypes.deleted', { id });
+    // Emitir evento de eliminación
+    this.realtime.emitEntityUpdate('airConditionerTypes', 'deleted', { id });
   }
 }
