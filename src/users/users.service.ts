@@ -14,7 +14,7 @@ import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { MailService } from '../mail/mail.service';
 import { Genero } from '../shared/index';
-import { NotificationsGateway } from 'src/notifications/notifications.gateway';
+import { RealtimeService } from '../realtime/realtime.service';
 
 @Injectable()
 export class UsersService {
@@ -26,7 +26,7 @@ export class UsersService {
     @InjectRepository(Role)
     public rolesRepository: Repository<Role>,
     private readonly mailService: MailService,
-    private readonly notificationsGateway: NotificationsGateway,
+    private readonly realtime: RealtimeService,
   ) {
     this.initializeSequence().catch((error) => {
       this.logger.warn(`No se pudo inicializar la secuencia: ${error.message}`);
@@ -146,12 +146,10 @@ export class UsersService {
       throw new ConflictException('El nombre de usuario ya está registrado');
     }
 
-    // Convertir fecha de nacimiento de string a Date si existe
     let fechaNacimientoDate: Date | undefined;
     if (userData.fechaNacimiento) {
       try {
         fechaNacimientoDate = new Date(userData.fechaNacimiento);
-        // Validar que sea una fecha válida
         if (isNaN(fechaNacimientoDate.getTime())) {
           throw new BadRequestException('Fecha de nacimiento inválida');
         }
@@ -160,7 +158,6 @@ export class UsersService {
       }
     }
 
-    // Validar que el género sea válido si se proporciona
     if (
       userData.genero &&
       !Object.values(Genero).includes(userData.genero as Genero)
@@ -188,7 +185,6 @@ export class UsersService {
         : undefined,
       mustChangePassword: true,
 
-      // campos adicionales opcionales
       ubicacionResidencia: (userData as any).ubicacionResidencia ?? null,
       arl: (userData as any).arl ?? null,
       eps: (userData as any).eps ?? null,
@@ -230,8 +226,7 @@ export class UsersService {
       throw new NotFoundException('Usuario no encontrado después de guardar');
     }
 
-    // 🔴 WebSocket: usuario creado
-    this.notificationsGateway.server.emit('users.created', userWithRole);
+    this.realtime.emitEntityUpdate('users', 'created', userWithRole);
 
     return userWithRole;
   }
@@ -299,7 +294,6 @@ export class UsersService {
       }
     }
 
-    // Procesar fecha de nacimiento si se proporciona
     let fechaNacimientoDate: Date | undefined;
     if (updateUserDto.fechaNacimiento !== undefined) {
       if (updateUserDto.fechaNacimiento) {
@@ -312,26 +306,22 @@ export class UsersService {
           throw new BadRequestException('Fecha de nacimiento inválida');
         }
       } else {
-        fechaNacimientoDate = undefined; // Para eliminar la fecha
+        fechaNacimientoDate = undefined;
       }
     }
 
-    // Validar género si se proporciona
     if (updateUserDto.genero !== undefined && updateUserDto.genero) {
       if (!Object.values(Genero).includes(updateUserDto.genero as Genero)) {
         throw new BadRequestException('Género inválido');
       }
     }
 
-    // Preparar datos para actualizar
     const updateData: any = { ...updateUserDto };
 
-    // Convertir fecha de nacimiento
     if (updateUserDto.fechaNacimiento !== undefined) {
       updateData.fechaNacimiento = fechaNacimientoDate;
     }
 
-    // Convertir fecha de expiración del token si existe
     if (updateUserDto.resetTokenExpiry) {
       updateData.resetTokenExpiry = new Date(updateUserDto.resetTokenExpiry);
     }
@@ -342,8 +332,6 @@ export class UsersService {
       delete updateData.password;
     }
 
-    // Procesar campos de perfil: si están explícitamente presentes,
-    // permitir guardar null (para limpiar) o el valor entregado.
     const profileFields = [
       'ubicacionResidencia',
       'arl',
@@ -356,7 +344,6 @@ export class UsersService {
 
     for (const field of profileFields) {
       if ((updateUserDto as any)[field] !== undefined) {
-        // Si viene vacío ('') o null, guardamos null para limpiar el campo
         updateData[field] = (updateUserDto as any)[field] ?? null;
       }
     }
@@ -374,8 +361,7 @@ export class UsersService {
       );
     }
 
-    // 🔴 WebSocket: usuario actualizado
-    this.notificationsGateway.server.emit('users.updated', updatedUser);
+    this.realtime.emitEntityUpdate('users', 'updated', updatedUser);
 
     return updatedUser;
   }
@@ -383,8 +369,8 @@ export class UsersService {
   async remove(id: number): Promise<void> {
     const user = await this.findOne(id);
     await this.usersRepository.remove(user);
-    // 🔴 WebSocket
-    this.notificationsGateway.server.emit('users.deleted', { id });
+
+    this.realtime.emitEntityUpdate('users', 'deleted', { id });
   }
 
   async deactivate(id: number): Promise<User> {
@@ -403,8 +389,7 @@ export class UsersService {
       );
     }
 
-    // 🔴 WebSocket
-    this.notificationsGateway.server.emit('users.updated', deactivatedUser);
+    this.realtime.emitEntityUpdate('users', 'updated', deactivatedUser);
 
     return deactivatedUser;
   }
@@ -425,8 +410,7 @@ export class UsersService {
       );
     }
 
-    // 🔴 WebSocket
-    this.notificationsGateway.server.emit('users.updated', activatedUser);
+    this.realtime.emitEntityUpdate('users', 'updated', activatedUser);
 
     return activatedUser;
   }

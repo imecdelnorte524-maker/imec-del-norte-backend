@@ -1,4 +1,3 @@
-// src/sg-sst/sg-sst.service.ts
 import {
   Injectable,
   NotFoundException,
@@ -33,7 +32,7 @@ import { WorkOrderStatus, FormStatus, FormType } from '../shared/index';
 import { PreoperationalChecklistTemplate } from './entities/preoperational-checklist-template.entity';
 import { PreoperationalChecklistParameter } from './entities/preoperational-checklist-parameter.entity';
 
-import { NotificationsGateway } from '../notifications/notifications.gateway';
+import { RealtimeService } from '../realtime/realtime.service';
 import { ConfigService } from '@nestjs/config';
 import { PdfService } from '../pdf/pdf.service';
 import { MailService } from '../mail/mail.service';
@@ -70,7 +69,7 @@ export class SgSstService {
     private preopTemplateRepo: Repository<PreoperationalChecklistTemplate>,
     @InjectRepository(PreoperationalChecklistParameter)
     private preopParamRepo: Repository<PreoperationalChecklistParameter>,
-    private readonly notificationsGateway: NotificationsGateway,
+    private readonly realtime: RealtimeService,
     private readonly mailService: MailService,
     private readonly pdfService: PdfService,
     private readonly configService: ConfigService,
@@ -155,7 +154,7 @@ export class SgSstService {
 
       await queryRunner.commitTransaction();
 
-      this.notificationsGateway.server.emit('forms.created', {
+      this.realtime.emitEntityUpdate('forms', 'created', {
         formType: FormType.ATS,
         form: savedForm,
       });
@@ -223,7 +222,7 @@ export class SgSstService {
 
     const savedHeightWork = await this.heightWorkRepository.save(heightWork);
 
-    this.notificationsGateway.server.emit('forms.created', {
+    this.realtime.emitEntityUpdate('forms', 'created', {
       formType: FormType.HEIGHT_WORK,
       form: savedForm,
     });
@@ -277,7 +276,7 @@ export class SgSstService {
 
     const savedChecks = await this.preoperationalCheckRepository.save(checks);
 
-    this.notificationsGateway.server.emit('forms.created', {
+    this.realtime.emitEntityUpdate('forms', 'created', {
       formType: FormType.PREOPERATIONAL,
       form: savedForm,
     });
@@ -341,7 +340,7 @@ export class SgSstService {
       ip: clientIp,
       userAgent,
       method: 'OTP_EMAIL',
-      contactSnapshot: user.email ?? '', // string, sin null
+      contactSnapshot: user.email ?? '',
     });
 
     await this.signatureRepository.save(signature);
@@ -357,7 +356,7 @@ export class SgSstService {
 
     await this.formRepository.save(form);
 
-    this.notificationsGateway.server.emit('forms.updated', form);
+    this.realtime.emitEntityUpdate('forms', 'updated', form);
 
     return { message: 'Firma registrada exitosamente', form };
   }
@@ -430,7 +429,7 @@ export class SgSstService {
 
       await queryRunner.commitTransaction();
 
-      this.notificationsGateway.server.emit('forms.updated', form);
+      this.realtime.emitEntityUpdate('forms', 'updated', form);
 
       return {
         form,
@@ -564,7 +563,8 @@ export class SgSstService {
         },
       } as any,
     });
-    this.notificationsGateway.server.emit('preopTemplates.updated', withParams);
+
+    this.realtime.emitEntityUpdate('preopTemplates', 'updated', withParams);
 
     return withParams;
   }
@@ -717,7 +717,7 @@ export class SgSstService {
 
     await this.formRepository.save(form);
 
-    this.notificationsGateway.server.emit('forms.updated', form);
+    this.realtime.emitEntityUpdate('forms', 'updated', form);
 
     return {
       message: 'Formulario rechazado exitosamente',

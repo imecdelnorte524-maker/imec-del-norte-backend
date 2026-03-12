@@ -34,6 +34,7 @@ import { SequencesModule } from './database/sequences.module';
 import { CommonModule } from './common/common.module';
 import { PdfModule } from './pdf/pdf.module';
 import { TechniciansModule } from './technicians/technicians.module';
+import { RealtimeModule } from './realtime/realtime.module';
 @Module({
   imports: [
     ScheduleModule.forRoot(),
@@ -96,6 +97,7 @@ import { TechniciansModule } from './technicians/technicians.module';
     MaintenanceTypesModule,
     CommonModule,
     TechniciansModule,
+    RealtimeModule,
   ],
 })
 export class AppModule {}

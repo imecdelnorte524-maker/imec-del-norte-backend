@@ -7,14 +7,14 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { MaintenanceType } from './entities/maintenance-type.entity';
 import { CreateMaintenanceTypeDto } from './dto/create-maintenance-type.dto';
-import { NotificationsGateway } from 'src/notifications/notifications.gateway';
+import { RealtimeService } from '../realtime/realtime.service';
 
 @Injectable()
 export class MaintenanceTypesService {
   constructor(
     @InjectRepository(MaintenanceType)
     private repository: Repository<MaintenanceType>,
-    private readonly notificationsGateway: NotificationsGateway,
+    private readonly realtime: RealtimeService,
   ) {}
 
   async create(dto: CreateMaintenanceTypeDto): Promise<MaintenanceType> {
@@ -29,8 +29,8 @@ export class MaintenanceTypesService {
     const type = this.repository.create(dto);
     const saved = await this.repository.save(type);
 
-    // 🔴 Evento WebSocket
-    this.notificationsGateway.server.emit('maintenanceTypes.created', saved);
+    // Evento WebSocket
+    this.realtime.emitEntityUpdate('maintenanceTypes', 'created', saved);
 
     return saved;
   }
@@ -55,9 +55,6 @@ export class MaintenanceTypesService {
     type.activo = false;
     const saved = await this.repository.save(type);
 
-    // 🔴 Podemos tratarlo como “eliminado” hacia el frontend
-    this.notificationsGateway.server.emit('maintenanceTypes.deleted', { id });
-    // o, si prefieres manejarlo como actualización:
-    // this.notificationsGateway.server.emit('maintenanceTypes.updated', saved);
+    this.realtime.emitEntityUpdate('maintenanceTypes', 'deleted', { id });
   }
 }

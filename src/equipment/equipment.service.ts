@@ -28,7 +28,7 @@ import { SequenceHelperService } from '../common/services/sequence-helper.servic
 import { PlanMantenimientoDto } from './dto/plan-mantenimiento.dto';
 import { UnidadFrecuencia } from '../shared/index';
 import { EquipmentDocumentsService } from './equipment-documents.service';
-import { NotificationsGateway } from 'src/notifications/notifications.gateway';
+import { RealtimeService } from '../realtime/realtime.service';
 import { buildEquipmentInventoryExcel } from '../../templates/excel/equipment-inventory.template';
 import { buildAnnualMaintenancePlanExcel } from '../../templates/excel/equipment-annual-maintenance.template';
 import { buildEquipmentHistoryParams } from '../../templates/report/equipment-history-html.helper';
@@ -67,7 +67,6 @@ export class EquipmentService
   extends BaseSequenceService
   implements OnModuleInit
 {
-  // Usar protected para que sea accesible desde la clase base
   protected readonly logger = new Logger(EquipmentService.name);
 
   constructor(
@@ -96,7 +95,7 @@ export class EquipmentService
     private readonly userRepository: Repository<User>,
     private readonly imagesService: ImagesService,
     private readonly dataSource: DataSource,
-    private readonly notificationsGateway: NotificationsGateway,
+    private readonly realtime: RealtimeService,
     private readonly equipmentDocumentsServices: EquipmentDocumentsService,
     private readonly pdfService: PdfService,
     private readonly configService: ConfigService,
@@ -104,25 +103,18 @@ export class EquipmentService
   ) {
     super(sequenceHelper);
 
-    // Configurar secuencia principal para equipos
     this.tableName = 'equipos';
     this.idColumn = 'equipo_id';
   }
 
   async onModuleInit() {
-    // Inicializar secuencia al cargar el módulo
     await this.initializeAllSequences();
   }
 
-  /**
-   * Inicializa todas las secuencias relacionadas con equipos
-   */
   private async initializeAllSequences(): Promise<void> {
     try {
-      // Inicializar secuencia principal de equipos
       await this.initializeSequence();
 
-      // Inicializar secuencias de tablas relacionadas
       const relatedSequences = [
         {
           table: 'equipment_evaporators',
@@ -175,12 +167,8 @@ export class EquipmentService
     }
   }
 
-  /**
-   * Obtiene diagnóstico completo del sistema de equipos
-   */
   async getFullDiagnosis(): Promise<FullDiagnosis> {
     try {
-      // Diagnóstico de tablas principales
       const equipmentDiagnosis = await this.diagnoseTable(['code']);
       const evaporatorsDiagnosis = await this.sequenceHelper.diagnoseTable(
         'equipment_evaporators',
@@ -211,7 +199,6 @@ export class EquipmentService
         'plan_mantenimiento_id_seq',
       );
 
-      // Verificar integridad de relaciones
       const orphanedRecords = await this.checkOrphanedRecords();
 
       return {
@@ -231,14 +218,10 @@ export class EquipmentService
     }
   }
 
-  /**
-   * Verifica registros huérfanos en las relaciones
-   */
   private async checkOrphanedRecords(): Promise<OrphanedRecordIssue[]> {
     const issues: OrphanedRecordIssue[] = [];
 
     try {
-      // Motores sin evaporador ni condensador
       const orphanedMotors = await this.motorRepository
         .createQueryBuilder('motor')
         .where('motor.evaporatorId IS NULL AND motor.condenserId IS NULL')
@@ -253,7 +236,6 @@ export class EquipmentService
         });
       }
 
-      // Compresores sin condensador
       const orphanedCompressors = await this.compressorRepository
         .createQueryBuilder('comp')
         .leftJoin('comp.condenser', 'condenser')
@@ -269,7 +251,6 @@ export class EquipmentService
         });
       }
 
-      // Planes sin equipo
       const orphanedPlans = await this.planMantenimientoRepository
         .createQueryBuilder('plan')
         .leftJoin('plan.equipment', 'equipment')
@@ -291,13 +272,9 @@ export class EquipmentService
     return issues;
   }
 
-  /**
-   * Genera recomendaciones basadas en el diagnóstico
-   */
   private async generateRecommendations(): Promise<string[]> {
     const recommendations: string[] = [];
 
-    // Verificar si hay equipos duplicados por código
     const duplicateCodes = await this.equipmentRepository
       .createQueryBuilder('eq')
       .select('eq.code, COUNT(*) as count')
@@ -311,7 +288,6 @@ export class EquipmentService
       );
     }
 
-    // Verificar equipos sin ubicación
     const equipmentWithoutLocation = await this.equipmentRepository
       .createQueryBuilder('eq')
       .where('eq.areaId IS NULL AND eq.subAreaId IS NULL')
@@ -325,10 +301,6 @@ export class EquipmentService
 
     return recommendations;
   }
-
-  // ────────────────────────────────────────────────────────────────
-  // Helpers para generación de código (mantener los existentes)
-  // ────────────────────────────────────────────────────────────────
 
   private getClientInitials(clientName: string): string {
     if (!clientName?.trim()) return 'XX';
@@ -459,7 +431,6 @@ export class EquipmentService
   }): Promise<void> {
     const { category, airConditionerTypeId, evaporators, condensers } = params;
 
-    // Solo aplica para AIRES_ACONDICIONADOS
     if (category !== ServiceCategory.AIRES_ACONDICIONADOS) {
       return;
     }
@@ -482,14 +453,12 @@ export class EquipmentService
 
     const typeName = (acType.name || '').toLowerCase();
 
-    // Solo estos tipos pueden tener MÁS de una evap/cond
     const isMultiSplitOrVariable =
       typeName.includes('multi') ||
       typeName.includes('variable') ||
       typeName.includes('vrf') ||
       typeName.includes('vrv');
 
-    // 1) Respetar hasEvaporator / hasCondenser
     if (
       acType.hasEvaporator === false &&
       evaporators &&
@@ -506,7 +475,6 @@ export class EquipmentService
       );
     }
 
-    // 2) Regla de negocio: solo multisplit/variable más de uno
     if (!isMultiSplitOrVariable) {
       if (evaporators && evaporators.length > 1) {
         throw new BadRequestException(
@@ -522,10 +490,6 @@ export class EquipmentService
     }
   }
 
-  // ────────────────────────────────────────────────────────────────
-  // CREATE - Con transacción completa y manejo de secuencia
-  // ────────────────────────────────────────────────────────────────
-
   async create(
     dto: CreateEquipmentDto,
     createdBy?: string,
@@ -535,10 +499,8 @@ export class EquipmentService
     await queryRunner.startTransaction();
 
     try {
-      // Verificar secuencia antes de crear
       await this.ensureSequenceIsReady();
 
-      // Validar cliente
       const client = await this.clientRepository.findOne({
         where: { idCliente: dto.clientId },
       });
@@ -547,7 +509,6 @@ export class EquipmentService
         throw new NotFoundException(`Cliente ${dto.clientId} no encontrado`);
       }
 
-      // Validar ubicación
       if (!dto.areaId && !dto.subAreaId) {
         throw new BadRequestException('Debe especificar área o subárea');
       }
@@ -581,10 +542,8 @@ export class EquipmentService
         }
       }
 
-      // Validar categoría y tipo de aire
       await this.validateCategoryAndAirConditionerType(dto);
 
-      // Generar código
       if (!finalAreaId) {
         throw new BadRequestException('Área requerida para generar código');
       }
@@ -596,7 +555,6 @@ export class EquipmentService
         dto.category,
       );
 
-      // Verificar que el código no exista
       const existingWithCode = await this.equipmentRepository.findOne({
         where: { code },
       });
@@ -610,7 +568,6 @@ export class EquipmentService
       const { evaporators, condensers, planMantenimiento, ...equipmentBase } =
         dto;
 
-      // Crear equipo base
       const equipmentData = {
         ...equipmentBase,
         areaId: finalAreaId,
@@ -623,7 +580,6 @@ export class EquipmentService
       const equipment = this.equipmentRepository.create(equipmentData);
       const savedEquipment = await queryRunner.manager.save(equipment);
 
-      // Crear componentes
       await this.createComponentsWithQueryRunner(
         queryRunner,
         savedEquipment.equipmentId,
@@ -634,15 +590,13 @@ export class EquipmentService
 
       const fullEquipment = await this.findOne(savedEquipment.equipmentId);
 
-      // 🔴 Evento WebSocket: equipo creado
-      this.notificationsGateway.server.emit('equipment.created', fullEquipment);
+      this.realtime.emitEntityUpdate('equipment', 'created', fullEquipment);
 
       return fullEquipment;
     } catch (error) {
       await queryRunner.rollbackTransaction();
       this.logger.error(`Error creando equipo: ${error.message}`, error.stack);
 
-      // Manejar errores de constraint UNIQUE
       const constraintResult =
         await this.sequenceHelper.handleUniqueConstraintError(error);
       if (!constraintResult.handled && constraintResult.suggestion) {
@@ -666,9 +620,6 @@ export class EquipmentService
     }
   }
 
-  /**
-   * Asegura que la secuencia esté lista para insertar
-   */
   private async ensureSequenceIsReady(): Promise<void> {
     try {
       await this.fixSequenceIfNeeded();
@@ -680,7 +631,7 @@ export class EquipmentService
   private async validateCategoryAndAirConditionerType(
     dto: CreateEquipmentDto | UpdateEquipmentDto,
     currentCategory?: ServiceCategory,
-    currentAirTypeId?: number | null, // 👈 NUEVO PARÁMETRO
+    currentAirTypeId?: number | null,
   ): Promise<void> {
     const finalCategory =
       dto.category !== undefined ? dto.category : currentCategory;
@@ -690,7 +641,6 @@ export class EquipmentService
     }
 
     if (finalCategory === ServiceCategory.AIRES_ACONDICIONADOS) {
-      // 👈 USAR EL ACTUAL SI EL DTO NO LO TRAE
       const acTypeId =
         dto.airConditionerTypeId !== undefined
           ? dto.airConditionerTypeId
@@ -725,7 +675,6 @@ export class EquipmentService
     equipmentId: number,
     dto: CreateEquipmentDto,
   ): Promise<void> {
-    // Validar cantidad según tipo de aire (solo si es aire acondicionado)
     await this.validateEvapCondComponentsForAirType({
       category: dto.category,
       airConditionerTypeId: dto.airConditionerTypeId,
@@ -733,17 +682,14 @@ export class EquipmentService
       condensers: dto.condensers,
     });
 
-    // Crear evaporadores y sus motores
     if (dto.evaporators?.length) {
       await this.createEvaporators(queryRunner, equipmentId, dto.evaporators);
     }
 
-    // Crear condensadoras, sus motores y compresores
     if (dto.condensers?.length) {
       await this.createCondensers(queryRunner, equipmentId, dto.condensers);
     }
 
-    // Crear plan de mantenimiento si existe
     if (dto.planMantenimiento) {
       await this.createMaintenancePlan(
         queryRunner,
@@ -851,7 +797,6 @@ export class EquipmentService
 
     return {
       ...rest,
-      // 🔧 Asegurar que diaDelMes se pase correctamente
       diaDelMes: diaDelMes !== undefined ? diaDelMes : undefined,
       fechaProgramada:
         typeof fechaProgramada === 'string'
@@ -883,7 +828,6 @@ export class EquipmentService
       }
     };
 
-    // Validar el intervalo según la unidad de frecuencias
     if (planData.unidadFrecuencia && planData.diaDelMes) {
       const isValid = validateInterval(
         planData.unidadFrecuencia,
@@ -958,7 +902,6 @@ export class EquipmentService
     const day = d.getDate();
     d.setMonth(d.getMonth() + months);
 
-    // Ajuste por meses cortos
     if (d.getDate() < day) {
       d.setDate(0);
     }
@@ -971,7 +914,7 @@ export class EquipmentService
     step: number,
   ): Date {
     if (!step || step <= 0) {
-      step = 1; // Valor por defecto
+      step = 1;
     }
 
     switch (unidad) {
@@ -1013,22 +956,16 @@ export class EquipmentService
   }
 
   private adjustToWorkingDay(date: Date): Date {
-    // Normalizamos a inicio de día
     const d = this.startOfDay(date);
-    // 0 = Domingo
     if (d.getDay() === 0) {
-      return this.addDays(d, 1); // Pasar al lunes
+      return this.addDays(d, 1);
     }
     return d;
   }
 
-  // ────────────────────────────────────────────────────────────────
-  // FIND (mantener los métodos existentes)
-  // ────────────────────────────────────────────────────────────────
-
   async findAll(params?: {
     clientId?: number;
-    clientIds?: number[]; // 👈 NUEVO
+    clientIds?: number[];
     areaId?: number;
     subAreaId?: number;
     search?: string;
@@ -1098,6 +1035,7 @@ export class EquipmentService
         'airConditionerType',
         'evaporators',
         'evaporators.motors',
+        'evaporators.airConditionerTypeEvap',
         'condensers',
         'condensers.motors',
         'condensers.compressors',
@@ -1123,10 +1061,6 @@ export class EquipmentService
     });
   }
 
-  // ────────────────────────────────────────────────────────────────
-  // UPDATE - Con transacción
-  // ────────────────────────────────────────────────────────────────
-
   async update(
     id: number,
     dto: UpdateEquipmentDto,
@@ -1137,29 +1071,22 @@ export class EquipmentService
     await queryRunner.startTransaction();
 
     try {
-      // Obtener equipo existente (con relaciones necesarias)
       let equipment = await this.findOne(id);
 
-      // Validar y actualizar cliente si cambia
       if (dto.clientId !== undefined && dto.clientId !== equipment.clientId) {
         await this.validateAndUpdateClient(equipment, dto.clientId);
       }
 
-      // Manejar cambio de ubicación (área/subárea) y posible recálculo de código
       const locationChanged = await this.handleLocationUpdate(
         equipment,
         dto,
         queryRunner,
       );
 
-      // ────────────────────────────────────────────────
-      // Actualizar campos simples primero (incluye airConditionerTypeId)
-      // ────────────────────────────────────────────────
       const { evaporators, condensers, planMantenimiento, ...rest } = dto;
 
       Object.entries(rest).forEach(([key, value]) => {
         if (value !== undefined) {
-          // Asignación segura
           if (key in equipment) {
             (equipment as any)[key] = value;
           }
@@ -1170,9 +1097,6 @@ export class EquipmentService
         equipment.updatedBy = updatedBy;
       }
 
-      // ────────────────────────────────────────────────
-      // Ahora manejar categoría y tipo de aire (después de los campos básicos)
-      // ────────────────────────────────────────────────
       await this.validateCategoryAndAirConditionerType(
         dto,
         equipment.category,
@@ -1180,7 +1104,6 @@ export class EquipmentService
       );
       await this.handleCategoryUpdate(equipment, dto);
 
-      // Si se cambió el tipo de aire, cargar la entidad para la respuesta
       if (
         dto.airConditionerTypeId !== undefined &&
         equipment.airConditionerTypeId
@@ -1193,10 +1116,8 @@ export class EquipmentService
         }
       }
 
-      // Guardar cambios del equipo base
       await queryRunner.manager.save(Equipment, equipment);
 
-      // Actualizar componentes si fueron enviados
       if (
         evaporators !== undefined ||
         condensers !== undefined ||
@@ -1214,8 +1135,7 @@ export class EquipmentService
 
       const fullEquipment = await this.findOne(id);
 
-      // Evento WebSocket
-      this.notificationsGateway.server.emit('equipment.updated', fullEquipment);
+      this.realtime.emitEntityUpdate('equipment', 'updated', fullEquipment);
 
       return fullEquipment;
     } catch (error) {
@@ -1254,6 +1174,7 @@ export class EquipmentService
     equipment.clientId = clientId;
     equipment.client = client;
   }
+
   private async handleLocationUpdate(
     equipment: Equipment,
     dto: UpdateEquipmentDto,
@@ -1262,7 +1183,6 @@ export class EquipmentService
     const incomingArea = dto.areaId;
     const incomingSub = dto.subAreaId;
 
-    // Si no viene nada de ubicación, no tocamos nada
     if (incomingArea === undefined && incomingSub === undefined) {
       return false;
     }
@@ -1270,7 +1190,6 @@ export class EquipmentService
     let finalArea = incomingArea ?? equipment.areaId ?? null;
     let finalSub = incomingSub ?? equipment.subAreaId ?? null;
 
-    // Validar subárea si se proporciona
     if (finalSub != null) {
       const sub = await this.subAreaRepository.findOne({
         where: { idSubArea: finalSub },
@@ -1284,7 +1203,6 @@ export class EquipmentService
         throw new BadRequestException('Área no coincide con subárea');
       }
 
-      // Aseguramos coherencia: el área es la del registro de subárea
       finalArea = sub.areaId;
     } else if (finalArea != null) {
       const area = await this.areaRepository.findOne({
@@ -1300,11 +1218,9 @@ export class EquipmentService
       finalArea !== equipment.areaId || finalSub !== equipment.subAreaId;
 
     if (changed) {
-      // Actualizamos IDs
       equipment.areaId = finalArea ?? undefined;
       equipment.subAreaId = finalSub ?? undefined;
 
-      // 🔹 Actualizar también las RELACIONES, cuidando los tipos (Area | undefined)
       if (finalArea != null) {
         const newArea = await this.areaRepository.findOne({
           where: { idArea: finalArea },
@@ -1312,7 +1228,7 @@ export class EquipmentService
         if (!newArea) {
           throw new NotFoundException('Área no encontrada');
         }
-        equipment.area = newArea; // Tipo estrechado a Area, sin null
+        equipment.area = newArea;
       } else {
         equipment.area = undefined;
       }
@@ -1324,12 +1240,11 @@ export class EquipmentService
         if (!newSubArea) {
           throw new NotFoundException('Subárea no encontrada');
         }
-        equipment.subArea = newSubArea; // Tipo estrechado a SubArea, sin null
+        equipment.subArea = newSubArea;
       } else {
         equipment.subArea = undefined;
       }
 
-      // Recalcular código según nueva ubicación
       if (finalArea != null) {
         const newCode = await this.generateEquipmentCode(
           equipment.client,
@@ -1359,27 +1274,21 @@ export class EquipmentService
     equipment: Equipment,
     dto: UpdateEquipmentDto,
   ): Promise<void> {
-    // Actualizar categoría si viene
     if (dto.category !== undefined) {
       equipment.category = dto.category;
     }
 
-    const finalCategory = equipment.category; // ya actualizada
+    const finalCategory = equipment.category;
 
-    // Manejo del tipo de aire
     if (dto.airConditionerTypeId !== undefined) {
-      // Validación de categoría
       if (finalCategory !== ServiceCategory.AIRES_ACONDICIONADOS) {
         throw new BadRequestException(
           'Solo equipos de aires acondicionados pueden tener tipo de aire',
         );
       }
 
-      // Asignar el nuevo ID
       equipment.airConditionerTypeId = dto.airConditionerTypeId;
 
-      // Opcional: precargar la relación para la respuesta inmediata
-      // (aunque findOne lo hará de nuevo, esto ayuda en consistencia)
       if (dto.airConditionerTypeId !== null) {
         const acType = await this.acTypeRepository.findOne({
           where: { id: dto.airConditionerTypeId },
@@ -1393,9 +1302,7 @@ export class EquipmentService
       } else {
         equipment.airConditionerType = undefined;
       }
-    }
-    // Si la categoría ya no es de aires y no se envió tipo → limpiar
-    else if (finalCategory !== ServiceCategory.AIRES_ACONDICIONADOS) {
+    } else if (finalCategory !== ServiceCategory.AIRES_ACONDICIONADOS) {
       equipment.airConditionerTypeId = undefined;
       equipment.airConditionerType = undefined;
     }
@@ -1409,7 +1316,6 @@ export class EquipmentService
   ): Promise<void> {
     const { evaporators, condensers, planMantenimiento } = dto;
 
-    // Validar tipo de aire y cantidades
     const finalCategory = equipment?.category ?? dto.category;
     const finalAirTypeId =
       dto.airConditionerTypeId ?? equipment?.airConditionerTypeId;
@@ -1426,9 +1332,7 @@ export class EquipmentService
       });
     }
 
-    // 1) Actualizar componentes SOLO si vienen en el DTO
     if (evaporators !== undefined || condensers !== undefined) {
-      // Obtener IDs existentes
       const existingEvaporators = await this.evaporatorRepository.find({
         where: { equipmentId },
         select: ['id'],
@@ -1439,7 +1343,6 @@ export class EquipmentService
         select: ['id'],
       });
 
-      // Borrar motores/compresores de esos componentes
       if (existingEvaporators.length > 0) {
         const evaporatorIds = existingEvaporators.map((ev) => ev.id);
         await queryRunner.manager.delete(EquipmentMotor, {
@@ -1457,11 +1360,9 @@ export class EquipmentService
         });
       }
 
-      // Borrar evaporadores/condensadores existentes
       await queryRunner.manager.delete(EquipmentEvaporator, { equipmentId });
       await queryRunner.manager.delete(EquipmentCondenser, { equipmentId });
 
-      // Crear nuevos (con el campo airConditionerTypeEvapId incluido)
       if (evaporators?.length) {
         await this.createEvaporators(queryRunner, equipmentId, evaporators);
       }
@@ -1471,13 +1372,10 @@ export class EquipmentService
       }
     }
 
-    // 2) Plan de mantenimiento SOLO si el DTO lo trae
     if (planMantenimiento !== undefined) {
       if (!planMantenimiento) {
-        // Si viene null o falsy explícito, borramos el plan
         await queryRunner.manager.delete(PlanMantenimiento, { equipmentId });
       } else {
-        // Si viene objeto, hacemos upsert con createMaintenancePlan
         await this.createMaintenancePlan(
           queryRunner,
           equipmentId,
@@ -1487,30 +1385,22 @@ export class EquipmentService
     }
   }
 
-  // ────────────────────────────────────────────────────────────────
-  // DELETE
-  // ────────────────────────────────────────────────────────────────
-
   async remove(id: number): Promise<void> {
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
     await queryRunner.startTransaction();
 
     try {
-      // Verificar que el equipo existe
       const eq = await this.findOne(id);
 
-      // Eliminar imágenes asociadas
       await this.imagesService.deleteByEquipment(id);
 
-      // Eliminar documentos PDF asociados (físico + BD)
       await this.equipmentDocumentsServices.deleteDocument(id);
 
-      // Eliminar equipo (las relaciones cascade deberían eliminar el resto)
       await queryRunner.manager.remove(Equipment, eq);
 
       await queryRunner.commitTransaction();
-      this.notificationsGateway.server.emit('equipment.deleted', { id });
+      this.realtime.emitEntityUpdate('equipment', 'deleted', { id });
     } catch (error) {
       await queryRunner.rollbackTransaction();
       this.logger.error(
@@ -1523,10 +1413,6 @@ export class EquipmentService
     }
   }
 
-  // ────────────────────────────────────────────────────────────────
-  // MÉTODOS PARA RELACIÓN CON ÓRDENES
-  // ────────────────────────────────────────────────────────────────
-
   async getEquipmentWorkOrders(equipmentId: number): Promise<any[]> {
     const equipment = await this.equipmentRepository.findOne({
       where: { equipmentId },
@@ -1535,8 +1421,8 @@ export class EquipmentService
         'equipmentWorkOrders.workOrder',
         'equipmentWorkOrders.workOrder.service',
         'equipmentWorkOrders.workOrder.cliente',
-        'equipmentWorkOrders.workOrder.technicians', // Cambiar 'tecnico' por 'technicians'
-        'equipmentWorkOrders.workOrder.technicians.technician', // Añadir esta relación
+        'equipmentWorkOrders.workOrder.technicians',
+        'equipmentWorkOrders.workOrder.technicians.technician',
       ],
     });
 
@@ -1566,10 +1452,6 @@ export class EquipmentService
       },
     }));
   }
-
-  // ────────────────────────────────────────────────────────────────
-  // MÉTODOS UTILITARIOS Y DE DIAGNÓSTICO
-  // ────────────────────────────────────────────────────────────────
 
   async countByClient(clientId: number): Promise<number> {
     return await this.equipmentRepository.count({
@@ -1619,10 +1501,7 @@ export class EquipmentService
 
     const updated = await this.equipmentRepository.save(equipment);
 
-    // 🔴 Evento WebSocket: solo cambio de estado
-    this.notificationsGateway.server.emit('equipment.statusUpdated', updated);
-    // Opcionalmente también:
-    this.notificationsGateway.server.emit('equipment.updated', updated);
+    this.realtime.emitEntityUpdate('equipment', 'updated', updated);
 
     return updated;
   }
@@ -1661,9 +1540,6 @@ export class EquipmentService
     };
   }
 
-  /**
-   * Método público para corregir secuencias manualmente
-   */
   async fixSequences(): Promise<{
     corrected: boolean;
     details: SequenceCorrection[];
@@ -1671,7 +1547,6 @@ export class EquipmentService
     const corrections: SequenceCorrection[] = [];
 
     try {
-      // Corregir secuencia principal
       const mainSequence = await this.fixSequenceIfNeeded();
       corrections.push({
         table: this.tableName,
@@ -1679,7 +1554,6 @@ export class EquipmentService
         message: mainSequence.message,
       });
 
-      // Corregir secuencias relacionadas
       const relatedSequences = [
         {
           table: 'equipment_evaporators',
@@ -1748,7 +1622,6 @@ export class EquipmentService
     year: number,
     clientId: number,
   ): Promise<Buffer> {
-    // 1. Equipos del cliente CON plan y categoría Aires Acondicionados
     const qb = this.equipmentRepository
       .createQueryBuilder('e')
       .leftJoinAndSelect('e.client', 'client')
@@ -1764,7 +1637,6 @@ export class EquipmentService
 
     const equipments = await qb.getMany();
 
-    // 2. Delegar al template
     return buildAnnualMaintenancePlanExcel({ year, equipments });
   }
 
@@ -1784,10 +1656,8 @@ export class EquipmentService
       ? this.startOfDay(new Date(plan.fechaProgramada))
       : this.startOfDay(new Date());
 
-    // Siguiente fecha según la unidad/step
     let next = this.nextPlanDate(current, unidad, step);
 
-    // Ajustar domingo → lunes
     next = this.adjustToWorkingDay(next);
 
     plan.fechaProgramada = next;
@@ -1797,7 +1667,6 @@ export class EquipmentService
   async advanceMaintenancePlanForEquipment(
     equipmentId: number,
   ): Promise<Equipment> {
-    // 1. Buscar el plan por equipo
     const plan = await this.planMantenimientoRepository.findOne({
       where: { equipmentId },
     });
@@ -1812,11 +1681,7 @@ export class EquipmentService
 
     const updatedEquipment = await this.findOne(equipmentId);
 
-    // 🔴 Evento WebSocket: plan de mantenimiento actualizado
-    this.notificationsGateway.server.emit(
-      'equipment.maintenancePlanUpdated',
-      updatedEquipment,
-    );
+    this.realtime.emitEntityUpdate('equipment', 'updated', updatedEquipment);
 
     return updatedEquipment;
   }
@@ -1832,7 +1697,6 @@ export class EquipmentService
   }
 
   async generateEquipmentInventoryExcel(clientId?: number): Promise<Buffer> {
-    // 1. Traer equipos con relaciones necesarias
     const qb = this.equipmentRepository
       .createQueryBuilder('e')
       .leftJoinAndSelect('e.area', 'area')
@@ -1851,13 +1715,11 @@ export class EquipmentService
 
     const equipments = await qb.getMany();
 
-    // 2. Delegar al template
     return buildEquipmentInventoryExcel({ equipments });
   }
 
   async generateEquipmentHistoryPdf(equipmentId: number): Promise<Buffer> {
     try {
-      // 1. Obtener el equipo con todas sus relaciones
       const equipment = await this.equipmentRepository.findOne({
         where: { equipmentId },
         relations: [
@@ -1879,22 +1741,18 @@ export class EquipmentService
         throw new NotFoundException(`Equipo ${equipmentId} no encontrado`);
       }
 
-      // 2. Obtener el historial de órdenes del equipo
       const workOrders =
         await this.workOrdersService.getWorkOrdersByEquipment(equipmentId);
 
-      // 3. Configurar la imagen del header
       const headerImageUrl = this.configService.get<string>(
         'PDF_HEADER_IMAGE_URL',
         'https://res.cloudinary.com/dxne98os1/image/upload/v1771949437/pdf-templates/headers/production/rtrfsak5syqfclqfpq81.png',
       );
 
-      // 4. Construir los parámetros para el template
       const params = buildEquipmentHistoryParams(equipment, workOrders, {
         headerImageUrl,
       });
 
-      // 5. Generar el PDF
       return this.pdfService.generatePdf({
         templateName: 'equipment_history',
         params,
@@ -1927,7 +1785,6 @@ export class EquipmentService
 
       const ids = empresaIds.map((r) => r.id);
 
-      // Verificar que hay equipos para esas empresas
       const equiposCount = await this.equipmentRepository
         .createQueryBuilder('eq')
         .where('eq.clientId IN (:...ids)', { ids })
@@ -1937,7 +1794,6 @@ export class EquipmentService
         return [];
       }
 
-      // Traer los equipos con todas las relaciones
       const equipment = await this.equipmentRepository
         .createQueryBuilder('eq')
         .leftJoinAndSelect('eq.client', 'client')

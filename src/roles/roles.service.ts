@@ -11,7 +11,7 @@ import { Role } from './entities/role.entity';
 import { Module as ModuleEntity } from '../modules/entities/module.entity';
 import { CreateRoleDto } from './dto/create-role.dto';
 import { UpdateRoleDto } from './dto/update-role.dto';
-import { NotificationsGateway } from 'src/notifications/notifications.gateway';
+import { RealtimeService } from '../realtime/realtime.service';
 
 @Injectable()
 export class RolesService {
@@ -21,12 +21,10 @@ export class RolesService {
     @InjectRepository(Role)
     private rolesRepository: Repository<Role>,
 
-    // Repositorio de módulos para manejar las asociaciones sin necesidad de usar ModulesService
     @InjectRepository(ModuleEntity)
     private modulesRepository: Repository<ModuleEntity>,
-    private readonly notificationsGateway: NotificationsGateway,
+    private readonly realtime: RealtimeService,
   ) {
-    // Verificar y corregir la secuencia al inicializar el servicio
     this.initializeSequence().catch((error) => {
       this.logger.warn(
         `No se pudo inicializar la secuencia de roles: ${error.message}`,
@@ -34,9 +32,6 @@ export class RolesService {
     });
   }
 
-  /**
-   * Inicializa y corrige la secuencia de rol_id si es necesario
-   */
   private async initializeSequence(): Promise<void> {
     try {
       const result = await this.rolesRepository.query(`
@@ -56,21 +51,16 @@ export class RolesService {
     }
   }
 
-  /**
-   * Corrige la secuencia si está desincronizada
-   */
   async fixSequenceIfNeeded(): Promise<{
     corrected: boolean;
     message: string;
   }> {
     try {
-      // Obtener el máximo ID actual en la tabla
       const maxIdResult = await this.rolesRepository.query(`
         SELECT MAX(rol_id) as max_id FROM roles
       `);
       const maxId = maxIdResult[0]?.max_id || 0;
 
-      // Obtener el último valor de la secuencia
       const sequenceResult = await this.rolesRepository.query(`
         SELECT last_value FROM roles_rol_id_seq
       `);
@@ -80,7 +70,6 @@ export class RolesService {
         `🔍 Verificando secuencia de roles: Max ID=${maxId}, Secuencia=${lastSequenceValue}`,
       );
 
-      // Si la secuencia está detrás del máximo ID, corregirla
       if (lastSequenceValue <= maxId) {
         await this.rolesRepository.query(
           `
@@ -105,14 +94,9 @@ export class RolesService {
     }
   }
 
-  /**
-   * Crea un nuevo rol
-   */
   async create(createRoleDto: CreateRoleDto): Promise<Role> {
-    // Verificar secuencia antes de crear
     await this.fixSequenceIfNeeded();
 
-    // Verificar si el nombre del rol ya existe
     const existingRole = await this.rolesRepository.findOne({
       where: { nombreRol: createRoleDto.nombreRol },
     });
@@ -127,19 +111,17 @@ export class RolesService {
 
     try {
       savedRole = await this.rolesRepository.save(role);
-      // 🔴 WebSocket
-      this.notificationsGateway.server.emit('roles.created', savedRole);
+      // WebSocket
+      this.realtime.emitEntityUpdate('roles', 'created', savedRole);
 
       return savedRole;
     } catch (error) {
-      // Si hay error de duplicado, verificar y corregir secuencia
       if (error.code === '23505' && error.constraint === 'roles_pkey') {
         this.logger.warn(
           '⚠️ Error de duplicado en PK de roles, corrigiendo secuencia...',
         );
         await this.fixSequenceIfNeeded();
 
-        // Reintentar la inserción
         savedRole = await this.rolesRepository.save(role);
       } else {
         throw error;
@@ -149,18 +131,12 @@ export class RolesService {
     return savedRole;
   }
 
-  /**
-   * Obtiene todos los roles
-   */
   async findAll(): Promise<Role[]> {
     return await this.rolesRepository.find({
       order: { rolId: 'ASC' },
     });
   }
 
-  /**
-   * Obtiene un rol por ID
-   */
   async findOne(id: number): Promise<Role> {
     const role = await this.rolesRepository.findOne({
       where: { rolId: id },
@@ -173,22 +149,15 @@ export class RolesService {
     return role;
   }
 
-  /**
-   * Busca rol por nombre
-   */
   async findByName(nombreRol: string): Promise<Role | null> {
     return await this.rolesRepository.findOne({
       where: { nombreRol },
     });
   }
 
-  /**
-   * Actualiza un rol existente
-   */
   async update(id: number, updateRoleDto: UpdateRoleDto): Promise<Role> {
     const role = await this.findOne(id);
 
-    // Verificar si se está actualizando el nombre y si ya existe
     if (updateRoleDto.nombreRol && updateRoleDto.nombreRol !== role.nombreRol) {
       const existingRole = await this.findByName(updateRoleDto.nombreRol);
       if (existingRole) {
@@ -199,15 +168,12 @@ export class RolesService {
     await this.rolesRepository.update(id, updateRoleDto);
     const updatedRole = await this.findOne(id);
 
-    // 🔴 WebSocket
-    this.notificationsGateway.server.emit('roles.updated', updatedRole);
+    // WebSocket
+    this.realtime.emitEntityUpdate('roles', 'updated', updatedRole);
 
     return updatedRole;
   }
 
-  /**
-   * Elimina un rol
-   */
   async remove(id: number): Promise<void> {
     const role = await this.rolesRepository.findOne({
       where: { rolId: id },
@@ -218,7 +184,6 @@ export class RolesService {
       throw new NotFoundException(`Rol con ID ${id} no encontrado`);
     }
 
-    // Verificar si el rol tiene usuarios asignados
     if (role.users && role.users.length > 0) {
       throw new BadRequestException(
         'No se puede eliminar un rol que tiene usuarios asignados',
@@ -226,13 +191,11 @@ export class RolesService {
     }
 
     await this.rolesRepository.remove(role);
-    // 🔴 WebSocket
-    this.notificationsGateway.server.emit('roles.deleted', { id });
+
+    // WebSocket
+    this.realtime.emitEntityUpdate('roles', 'deleted', { id });
   }
 
-  /**
-   * Obtiene roles por nombre (búsqueda)
-   */
   async searchRoles(nombre?: string): Promise<Role[]> {
     const queryBuilder = this.rolesRepository.createQueryBuilder('role');
 
@@ -245,9 +208,6 @@ export class RolesService {
     return await queryBuilder.orderBy('role.rolId', 'ASC').getMany();
   }
 
-  /**
-   * Método de diagnóstico - Verifica estado de la secuencia de roles
-   */
   async diagnoseSequence(): Promise<any> {
     try {
       const [maxIdResult, sequenceResult] = await Promise.all([
@@ -272,9 +232,6 @@ export class RolesService {
     }
   }
 
-  /**
-   * Obtiene estadísticas de roles
-   */
   async getRoleStats(): Promise<any> {
     try {
       const stats = await this.rolesRepository
@@ -299,9 +256,6 @@ export class RolesService {
     }
   }
 
-  /**
-   * Busca roles por una lista de IDs
-   */
   async findManyByIds(ids: number[]): Promise<Role[]> {
     if (!ids || ids.length === 0) {
       return [];
@@ -309,9 +263,6 @@ export class RolesService {
     return await this.rolesRepository.findBy({ rolId: In(ids) });
   }
 
-  /**
-   * Obtiene módulos asociados a un rol
-   */
   async findModulesByRole(id: number): Promise<ModuleEntity[]> {
     const role = await this.rolesRepository.findOne({
       where: { rolId: id },
@@ -325,9 +276,6 @@ export class RolesService {
     return role.modules || [];
   }
 
-  /**
-   * Reemplaza los módulos asociados a un rol (bulk)
-   */
   async setModulesForRole(id: number, moduloIds: number[]): Promise<Role> {
     const role = await this.findOne(id);
 
@@ -346,15 +294,13 @@ export class RolesService {
 
     role.modules = modules;
     const saved = await this.rolesRepository.save(role);
-    // 🔴 WebSocket
-    this.notificationsGateway.server.emit('roles.updated', saved);
+
+    // WebSocket
+    this.realtime.emitEntityUpdate('roles', 'updated', saved);
 
     return saved;
   }
 
-  /**
-   * Añade un módulo a un rol (idempotente)
-   */
   async addModuleToRole(rolId: number, moduloId: number): Promise<Role> {
     const role = await this.rolesRepository.findOne({
       where: { rolId },
@@ -381,9 +327,6 @@ export class RolesService {
     return saved;
   }
 
-  /**
-   * Remueve la asociación de un módulo a un rol
-   */
   async removeModuleFromRole(rolId: number, moduloId: number): Promise<Role> {
     const role = await this.rolesRepository.findOne({
       where: { rolId },
@@ -393,8 +336,9 @@ export class RolesService {
 
     role.modules = (role.modules || []).filter((m) => m.moduloId !== moduloId);
     const saved = await this.rolesRepository.save(role);
-    // 🔴 WebSocket
-    this.notificationsGateway.server.emit('roles.updated', saved);
+
+    // WebSocket
+    this.realtime.emitEntityUpdate('roles', 'updated', saved);
 
     return saved;
   }

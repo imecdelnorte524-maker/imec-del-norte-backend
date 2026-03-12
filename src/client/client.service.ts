@@ -11,8 +11,7 @@ import { Client } from './entities/client.entity';
 import { User } from '../users/entities/user.entity';
 import { CreateClientDto } from './dto/create-client.dto';
 import { UpdateClientDto } from './dto/update-client.dto';
-import { NotificationsGateway } from 'src/notifications/notifications.gateway';
- 
+import { RealtimeService } from '../realtime/realtime.service';
 
 @Injectable()
 export class ClientService {
@@ -23,7 +22,7 @@ export class ClientService {
     private clientRepository: Repository<Client>,
     @InjectRepository(User)
     private userRepository: Repository<User>,
-    private readonly notificationsGateway: NotificationsGateway,
+    private readonly realtime: RealtimeService,
   ) {}
 
   private getRoleName(currentUser: any): string {
@@ -81,7 +80,8 @@ export class ClientService {
 
       // Opcionalmente forzamos algunos campos si vienen vacíos
       if (!createClientDto.contacto) {
-        createClientDto.contacto = `${user.nombre} ${user.apellido || ''}`.trim();
+        createClientDto.contacto =
+          `${user.nombre} ${user.apellido || ''}`.trim();
       }
       if (!createClientDto.email) {
         createClientDto.email = user.email;
@@ -91,20 +91,29 @@ export class ClientService {
       }
     } else {
       // Para Administrador/Secretaria, usar los IDs proporcionados
-      if (createClientDto.usuariosContactoIds && createClientDto.usuariosContactoIds.length > 0) {
+      if (
+        createClientDto.usuariosContactoIds &&
+        createClientDto.usuariosContactoIds.length > 0
+      ) {
         usuariosContacto = await this.userRepository.find({
           where: { usuarioId: In(createClientDto.usuariosContactoIds) },
         });
 
-        if (usuariosContacto.length !== createClientDto.usuariosContactoIds.length) {
-          const foundIds = usuariosContacto.map(u => u.usuarioId);
-          const missingIds = createClientDto.usuariosContactoIds.filter(id => !foundIds.includes(id));
+        if (
+          usuariosContacto.length !== createClientDto.usuariosContactoIds.length
+        ) {
+          const foundIds = usuariosContacto.map((u) => u.usuarioId);
+          const missingIds = createClientDto.usuariosContactoIds.filter(
+            (id) => !foundIds.includes(id),
+          );
           throw new NotFoundException(
             `Los siguientes usuarios contacto no existen: ${missingIds.join(', ')}`,
           );
         }
       } else {
-        throw new BadRequestException('Debe proporcionar al menos un usuario contacto');
+        throw new BadRequestException(
+          'Debe proporcionar al menos un usuario contacto',
+        );
       }
     }
 
@@ -118,8 +127,9 @@ export class ClientService {
     client.direccionCompleta = this._generateFullAddress(client);
 
     const savedClient = await this.clientRepository.save(client);
-    // 🔴 Evento WebSocket: cliente creado
-    this.notificationsGateway.server.emit('clients.created', savedClient);
+
+    // Evento WebSocket: cliente creado
+    this.realtime.emitEntityUpdate('clients', 'created', savedClient);
 
     return savedClient;
   }
@@ -134,7 +144,13 @@ export class ClientService {
   async findOne(id: number): Promise<Client> {
     const client = await this.clientRepository.findOne({
       where: { idCliente: id },
-      relations: ['usuariosContacto', 'areas', 'areas.subAreas', 'images', 'bodegas'],
+      relations: [
+        'usuariosContacto',
+        'areas',
+        'areas.subAreas',
+        'images',
+        'bodegas',
+      ],
     });
 
     if (!client) {
@@ -147,7 +163,13 @@ export class ClientService {
   async findByNit(nit: string): Promise<Client | null> {
     return await this.clientRepository.findOne({
       where: { nit },
-      relations: ['usuariosContacto', 'areas', 'areas.subAreas', 'images', 'bodegas'],
+      relations: [
+        'usuariosContacto',
+        'areas',
+        'areas.subAreas',
+        'images',
+        'bodegas',
+      ],
     });
   }
 
@@ -173,16 +195,22 @@ export class ClientService {
     // Actualizar usuarios contacto si vienen IDs nuevos
     if (updateClientDto.usuariosContactoIds !== undefined) {
       if (updateClientDto.usuariosContactoIds.length === 0) {
-        throw new BadRequestException('Debe haber al menos un usuario contacto');
+        throw new BadRequestException(
+          'Debe haber al menos un usuario contacto',
+        );
       }
 
       const usuariosContacto = await this.userRepository.find({
         where: { usuarioId: In(updateClientDto.usuariosContactoIds) },
       });
 
-      if (usuariosContacto.length !== updateClientDto.usuariosContactoIds.length) {
-        const foundIds = usuariosContacto.map(u => u.usuarioId);
-        const missingIds = updateClientDto.usuariosContactoIds.filter(id => !foundIds.includes(id));
+      if (
+        usuariosContacto.length !== updateClientDto.usuariosContactoIds.length
+      ) {
+        const foundIds = usuariosContacto.map((u) => u.usuarioId);
+        const missingIds = updateClientDto.usuariosContactoIds.filter(
+          (id) => !foundIds.includes(id),
+        );
         throw new NotFoundException(
           `Los siguientes usuarios contacto no existen: ${missingIds.join(', ')}`,
         );
@@ -207,8 +235,8 @@ export class ClientService {
 
     const updatedClient = await this.clientRepository.save(client);
 
-    // 🔴 Evento WebSocket: cliente actualizado
-    this.notificationsGateway.server.emit('clients.updated', updatedClient);
+    // Evento WebSocket: cliente actualizado
+    this.realtime.emitEntityUpdate('clients', 'updated', updatedClient);
 
     return updatedClient;
   }
@@ -216,8 +244,9 @@ export class ClientService {
   async remove(id: number): Promise<void> {
     const client = await this.findOne(id);
     await this.clientRepository.remove(client);
-    // 🔴 Evento WebSocket: cliente eliminado
-    this.notificationsGateway.server.emit('clients.deleted', { id });
+
+    // Evento WebSocket: cliente eliminado
+    this.realtime.emitEntityUpdate('clients', 'deleted', { id });
   }
 
   async findByUsuarioContacto(usuarioId: number): Promise<Client[]> {
@@ -232,7 +261,10 @@ export class ClientService {
       .getMany();
   }
 
-  async addUsuarioContacto(idCliente: number, usuarioId: number): Promise<Client> {
+  async addUsuarioContacto(
+    idCliente: number,
+    usuarioId: number,
+  ): Promise<Client> {
     const client = await this.clientRepository.findOne({
       where: { idCliente },
       relations: ['usuariosContacto'],
@@ -251,15 +283,15 @@ export class ClientService {
     }
 
     // Verificar si el usuario ya es contacto
-    if (client.usuariosContacto.some(u => u.usuarioId === usuarioId)) {
+    if (client.usuariosContacto.some((u) => u.usuarioId === usuarioId)) {
       throw new ConflictException('El usuario ya es contacto de este cliente');
     }
 
     client.usuariosContacto.push(user);
     const updatedClient = await this.clientRepository.save(client);
 
-    // 🔴 Evento WebSocket: contacto agregado
-    this.notificationsGateway.server.emit('clients.contactAdded', {
+    // Evento WebSocket: contacto agregado
+    this.realtime.emitGlobal('clients.contactAdded', {
       clientId: idCliente,
       userId: usuarioId,
       client: updatedClient,
@@ -268,7 +300,10 @@ export class ClientService {
     return updatedClient;
   }
 
-  async removeUsuarioContacto(idCliente: number, usuarioId: number): Promise<Client> {
+  async removeUsuarioContacto(
+    idCliente: number,
+    usuarioId: number,
+  ): Promise<Client> {
     const client = await this.clientRepository.findOne({
       where: { idCliente },
       relations: ['usuariosContacto'],
@@ -280,13 +315,15 @@ export class ClientService {
 
     // Verificar que haya al menos un usuario contacto
     if (client.usuariosContacto.length <= 1) {
-      throw new BadRequestException('El cliente debe tener al menos un usuario contacto');
+      throw new BadRequestException(
+        'El cliente debe tener al menos un usuario contacto',
+      );
     }
 
     // Filtrar el usuario a remover
     const initialCount = client.usuariosContacto.length;
     client.usuariosContacto = client.usuariosContacto.filter(
-      u => u.usuarioId !== usuarioId,
+      (u) => u.usuarioId !== usuarioId,
     );
 
     if (client.usuariosContacto.length === initialCount) {
@@ -295,8 +332,8 @@ export class ClientService {
 
     const updatedClient = await this.clientRepository.save(client);
 
-    // 🔴 Evento WebSocket: contacto removido
-    this.notificationsGateway.server.emit('clients.contactRemoved', {
+    // Evento WebSocket: contacto removido
+    this.realtime.emitGlobal('clients.contactRemoved', {
       clientId: idCliente,
       userId: usuarioId,
       client: updatedClient,

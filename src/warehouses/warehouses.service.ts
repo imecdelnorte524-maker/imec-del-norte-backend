@@ -1,4 +1,3 @@
-// src/warehouses/warehouses.service.ts
 import {
   Injectable,
   NotFoundException,
@@ -11,7 +10,7 @@ import { Warehouse } from './entities/warehouse.entity';
 import { CreateWarehouseDto } from './dto/create-warehouse.dto';
 import { UpdateWarehouseDto } from './dto/update-warehouse.dto';
 import { Client } from '../client/entities/client.entity';
-import { NotificationsGateway } from 'src/notifications/notifications.gateway';
+import { RealtimeService } from '../realtime/realtime.service';
 
 @Injectable()
 export class WarehousesService {
@@ -21,11 +20,10 @@ export class WarehousesService {
     @InjectRepository(Client)
     private clientRepo: Repository<Client>,
     private dataSource: DataSource,
-    private readonly notificationsGateway: NotificationsGateway,
+    private readonly realtime: RealtimeService,
   ) {}
 
   async create(createWarehouseDto: CreateWarehouseDto): Promise<Warehouse> {
-    // Verificar si ya existe una bodega con el mismo nombre
     const existingWarehouse = await this.warehouseRepo.findOne({
       where: { nombre: createWarehouseDto.nombre },
     });
@@ -36,7 +34,6 @@ export class WarehousesService {
       );
     }
 
-    // Crear la bodega sin cliente inicialmente
     const warehouseData: Partial<Warehouse> = {
       nombre: createWarehouseDto.nombre,
       descripcion: createWarehouseDto.descripcion,
@@ -44,7 +41,6 @@ export class WarehousesService {
       activa: true,
     };
 
-    // Si se especificó un cliente, verificar que exista
     if (createWarehouseDto.clienteId) {
       const cliente = await this.clientRepo.findOne({
         where: { idCliente: createWarehouseDto.clienteId },
@@ -66,11 +62,9 @@ export class WarehousesService {
     const warehouse = this.warehouseRepo.create(warehouseData);
     const saved = await this.warehouseRepo.save(warehouse);
 
-    // Cargar con relaciones para el evento
     const full = await this.findOne(saved.bodegaId);
 
-    // 🔴 WebSocket
-    this.notificationsGateway.server.emit('warehouses.created', full);
+    this.realtime.emitEntityUpdate('warehouses', 'created', full);
 
     return saved;
   }
@@ -103,7 +97,6 @@ export class WarehousesService {
   ): Promise<Warehouse> {
     const warehouse = await this.findOne(id);
 
-    // Si se intenta cambiar el nombre, verificar que no exista otro con ese nombre
     if (
       updateWarehouseDto.nombre &&
       updateWarehouseDto.nombre !== warehouse.nombre
@@ -119,10 +112,8 @@ export class WarehousesService {
       }
     }
 
-    // Si se intenta cambiar el cliente
     if (updateWarehouseDto.clienteId !== undefined) {
       if (updateWarehouseDto.clienteId === null) {
-        // Desasignar cliente
         warehouse.cliente = null;
         warehouse.clienteId = null;
       } else if (updateWarehouseDto.clienteId !== warehouse.clienteId) {
@@ -141,7 +132,6 @@ export class WarehousesService {
       }
     }
 
-    // Actualizar otros campos
     if (updateWarehouseDto.nombre !== undefined) {
       warehouse.nombre = updateWarehouseDto.nombre;
     }
@@ -157,9 +147,8 @@ export class WarehousesService {
 
     const updated = await this.warehouseRepo.save(warehouse);
 
-    // 🔴 WebSocket (con relaciones actualizadas)
     const full = await this.findOne(updated.bodegaId);
-    this.notificationsGateway.server.emit('warehouses.updated', full);
+    this.realtime.emitEntityUpdate('warehouses', 'updated', full);
 
     return updated;
   }
@@ -196,7 +185,6 @@ export class WarehousesService {
   async remove(id: number): Promise<{ message: string }> {
     const warehouse = await this.findOne(id);
 
-    // Verificar si la bodega tiene inventario asociado
     if (warehouse.inventarios && warehouse.inventarios.length > 0) {
       throw new BadRequestException(
         'No se puede eliminar la bodega porque tiene items en inventario asociados. ' +
@@ -206,8 +194,7 @@ export class WarehousesService {
 
     await this.warehouseRepo.softDelete(id);
 
-    // 🔴 WebSocket
-    this.notificationsGateway.server.emit('warehouses.deleted', { id });
+    this.realtime.emitEntityUpdate('warehouses', 'deleted', { id });
 
     return { message: 'Bodega eliminada exitosamente' };
   }

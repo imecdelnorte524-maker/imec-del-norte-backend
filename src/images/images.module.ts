@@ -1,16 +1,17 @@
+// src/images/images.module.ts
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { Image } from './entities/image.entity';
 import { ImagesService } from './images.service';
 import { ImagesController } from './images.controller';
-import { CloudinaryService } from './cloudinary.service';
+import { Image } from './entities/image.entity';
 import { Tool } from '../tools/entities/tool.entity';
 import { Supply } from '../supplies/entities/supply.entity';
 import { User } from '../users/entities/user.entity';
 import { Equipment } from '../equipment/entities/equipment.entity';
 import { Client } from '../client/entities/client.entity';
 import { WorkOrder } from '../work-orders/entities/work-order.entity';
-import { NotificationsModule } from '../notifications/notifications.module';
+import { CloudinaryService } from './cloudinary.service';
+import { RealtimeModule } from '../realtime/realtime.module';
 
 @Module({
   imports: [
@@ -23,7 +24,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
       Client,
       WorkOrder,
     ]),
-    NotificationsModule,
+    RealtimeModule,
   ],
   controllers: [ImagesController],
   providers: [ImagesService, CloudinaryService],

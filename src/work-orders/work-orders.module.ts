@@ -1,5 +1,5 @@
 // src/work-orders/work-orders.module.ts
-import { Module, forwardRef } from '@nestjs/common';
+import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { WorkOrdersService } from './work-orders.service';
 import { WorkOrdersController } from './work-orders.controller';
@@ -22,10 +22,10 @@ import { Image } from '../images/entities/image.entity';
 import { PdfModule } from '../pdf/pdf.module';
 import { ImagesModule } from 'src/images/images.module';
 import { MailModule } from 'src/mail/mail.module';
-import { NotificationsModule } from 'src/notifications/notifications.module';
 import { MaintenanceSchedulerService } from './maintenance-scheduler.service';
 import { PlanMantenimiento } from '../equipment/entities/plan-mantenimiento.entity';
 import { WorkOrderMaintenancePlan } from './entities/work-order-maintenance-plan.entity';
+import { RealtimeModule } from '../realtime/realtime.module';
 
 @Module({
   imports: [
@@ -52,7 +52,7 @@ import { WorkOrderMaintenancePlan } from './entities/work-order-maintenance-plan
     PdfModule,
     ImagesModule,
     MailModule,
-    NotificationsModule,
+    RealtimeModule,
   ],
   controllers: [WorkOrdersController],
   providers: [WorkOrdersService, MaintenanceSchedulerService],

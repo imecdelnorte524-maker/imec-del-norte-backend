@@ -1,4 +1,3 @@
-// src/tools/tool.service.ts
 import {
   Injectable,
   NotFoundException,
@@ -17,7 +16,7 @@ import { DeleteToolDto } from './dto/delete-tool.dto';
 import { ToolStatus, ToolType } from '../shared/index';
 import { ImagesService } from '../images/images.service';
 import { SequenceHelperService } from '../common/services/sequence-helper.service';
-import { NotificationsGateway } from 'src/notifications/notifications.gateway';
+import { RealtimeService } from '../realtime/realtime.service';
 
 @Injectable()
 export class ToolService {
@@ -35,9 +34,8 @@ export class ToolService {
     private dataSource: DataSource,
     private readonly imagesService: ImagesService,
     private readonly sequenceHelper: SequenceHelperService,
-    private readonly notificationsGateway: NotificationsGateway,
+    private readonly realtime: RealtimeService,
   ) {
-    // Verificar secuencia al inicializar
     this.initializeSequence().catch((error) => {
       this.logger.warn(
         `No se pudo inicializar secuencia de herramientas: ${error.message}`,
@@ -45,9 +43,6 @@ export class ToolService {
     });
   }
 
-  /**
-   * Inicializa y corrige la secuencia de herramienta_id
-   */
   private async initializeSequence(): Promise<void> {
     try {
       const sequenceInfo = await this.sequenceHelper.checkAndFixSequence(
@@ -71,9 +66,6 @@ export class ToolService {
     }
   }
 
-  /**
-   * Corrige la secuencia si está desincronizada
-   */
   async fixSequenceIfNeeded(): Promise<{
     corrected: boolean;
     message: string;
@@ -102,19 +94,15 @@ export class ToolService {
     }
   }
 
-  /**
-   * Diagnóstico completo de la tabla de herramientas
-   */
   async diagnoseTable(): Promise<any> {
     try {
       const diagnosis = await this.sequenceHelper.diagnoseTable(
         this.tableName,
         this.idColumn,
         undefined,
-        ['serial'], // columnas que deberían ser únicas
+        ['serial'],
       );
 
-      // Información adicional específica de herramientas
       const stats = await this.getEquipmentStats();
 
       return {
@@ -139,10 +127,8 @@ export class ToolService {
     await queryRunner.startTransaction();
 
     try {
-      // Verificar secuencia antes de crear
       await this.fixSequenceIfNeeded();
 
-      // Validar serial único (si se proporciona)
       if (createToolDto.serial) {
         const existing = await queryRunner.manager.findOne(Tool, {
           where: { serial: createToolDto.serial },
@@ -152,7 +138,6 @@ export class ToolService {
         }
       }
 
-      // Buscar bodega si se proporciona
       let bodega: Warehouse | null = null;
       if (createToolDto.bodegaId) {
         bodega = await queryRunner.manager.findOne(Warehouse, {
@@ -163,7 +148,6 @@ export class ToolService {
         }
       }
 
-      // ===== 1. CREAR LA HERRAMIENTA =====
       const toolData: Partial<Tool> = {
         nombre: createToolDto.nombre,
         marca: createToolDto.marca ?? null,
@@ -179,7 +163,6 @@ export class ToolService {
       const tool = queryRunner.manager.create(Tool, toolData);
       const savedTool = await queryRunner.manager.save(tool);
 
-      // ===== 2. MANEJO DEL INVENTARIO =====
       const existingInventory = await queryRunner.manager.findOne(Inventory, {
         where: { herramientaId: savedTool.herramientaId },
       });
@@ -191,17 +174,16 @@ export class ToolService {
           `⚠️ Inventario ya existente para herramienta ${savedTool.herramientaId}, actualizando...`,
         );
 
-        existingInventory.cantidadActual = 1; // Siempre 1 para herramientas
+        existingInventory.cantidadActual = 1;
         existingInventory.fechaUltimaActualizacion = new Date();
         existingInventory.bodega = bodega;
         existingInventory.tool = savedTool;
 
         inventory = await queryRunner.manager.save(existingInventory);
       } else {
-        // Crear nuevo inventario
         const inventoryData: Partial<Inventory> = {
           herramientaId: savedTool.herramientaId,
-          cantidadActual: 1, // Siempre 1 para herramientas
+          cantidadActual: 1,
           bodega: bodega,
           ubicacion: createToolDto.ubicacion ?? null,
           fechaUltimaActualizacion: new Date(),
@@ -246,18 +228,14 @@ export class ToolService {
         }
       }
 
-      // ===== 3. ASOCIAR INVENTARIO A LA HERRAMIENTA =====
       savedTool.inventory = inventory;
       await queryRunner.manager.save(savedTool);
 
-      // ===== 4. COMMIT DE LA TRANSACCIÓN =====
       await queryRunner.commitTransaction();
 
-      // ===== 5. OBTENER LA HERRAMIENTA COMPLETA CON RELACIONES =====
       const full = await this.findOne(savedTool.herramientaId);
 
-      // ===== 6. EMITIR EVENTO WEBSOCKET =====
-      this.notificationsGateway.server.emit('tools.created', full);
+      this.realtime.emitEntityUpdate('tools', 'created', full);
 
       return full;
     } catch (error: any) {
@@ -330,7 +308,6 @@ export class ToolService {
     try {
       const tool = await this.findOne(id);
 
-      // Validar serial único si se cambia
       if (updateToolDto.serial && updateToolDto.serial !== tool.serial) {
         const existing = await queryRunner.manager.findOne(Tool, {
           where: { serial: updateToolDto.serial ?? '' },
@@ -340,7 +317,6 @@ export class ToolService {
         }
       }
 
-      // Actualizar datos básicos de la herramienta
       const updateData: Partial<Tool> = {};
 
       if (updateToolDto.nombre !== undefined)
@@ -367,7 +343,6 @@ export class ToolService {
         await queryRunner.manager.update(Tool, id, updateData);
       }
 
-      // Actualizar bodega en el inventario
       if (updateToolDto.bodegaId !== undefined && tool.inventory) {
         const inventoryUpdate: Partial<Inventory> = {
           fechaUltimaActualizacion: new Date(),
@@ -392,13 +367,11 @@ export class ToolService {
         );
       }
 
-      // Commit de la transacción antes de recargar la herramienta
       await queryRunner.commitTransaction();
 
       const updated = await this.findOne(id);
 
-      // WebSocket
-      this.notificationsGateway.server.emit('tools.updated', updated);
+      this.realtime.emitEntityUpdate('tools', 'updated', updated);
 
       return updated;
     } catch (error: any) {
@@ -424,14 +397,11 @@ export class ToolService {
   async remove(id: number): Promise<void> {
     const tool = await this.findOne(id);
 
-    // Eliminar imágenes asociadas
     await this.imagesService.deleteByTool(tool);
 
-    // Eliminación física (solo administrador)
     await this.toolRepository.delete(id);
 
-    // WebSocket
-    this.notificationsGateway.server.emit('tools.deleted', { id, soft: false });
+    this.realtime.emitEntityUpdate('tools', 'deleted', { id, soft: false });
   }
 
   async softDeleteWithReason(id: number, dto: DeleteToolDto): Promise<void> {
@@ -442,7 +412,6 @@ export class ToolService {
     try {
       const tool = await this.findOne(id);
 
-      // Verificar si está en uso en órdenes de trabajo
       const hasWorkOrders = await queryRunner.manager
         .createQueryBuilder(Tool, 'tool')
         .innerJoin('tool.toolDetails', 'toolDetail')
@@ -455,7 +424,6 @@ export class ToolService {
         );
       }
 
-      // Actualizar estado y motivo
       const toolUpdate: Partial<Tool> = {
         estado: ToolStatus.RETIRADO,
         motivoEliminacion: dto.motivo,
@@ -464,10 +432,8 @@ export class ToolService {
 
       await queryRunner.manager.update(Tool, id, toolUpdate);
 
-      // Soft delete de la herramienta
       await queryRunner.manager.softDelete(Tool, id);
 
-      // Soft delete del inventario asociado
       const inventory = await queryRunner.manager.findOne(Inventory, {
         where: { herramientaId: id },
       });
@@ -478,8 +444,7 @@ export class ToolService {
 
       await queryRunner.commitTransaction();
 
-      // WebSocket
-      this.notificationsGateway.server.emit('tools.softDeleted', {
+      this.realtime.emitGlobal('tools.softDeleted', {
         id,
         motivo: dto.motivo,
       });
@@ -501,10 +466,8 @@ export class ToolService {
       throw new NotFoundException(`Herramienta con ID ${id} no encontrada`);
     }
 
-    // Restaurar herramienta
     await this.toolRepository.restore(id);
 
-    // Restaurar inventario si existe
     const inventory = await this.inventoryRepository.findOne({
       where: { herramientaId: id },
       withDeleted: true,
@@ -514,7 +477,6 @@ export class ToolService {
       await this.inventoryRepository.restore(inventory.inventarioId);
     }
 
-    // Limpiar campos de eliminación
     const toolUpdate: Partial<Tool> = {
       motivoEliminacion: null,
       observacionEliminacion: null,
@@ -525,9 +487,7 @@ export class ToolService {
 
     const restored = await this.findOne(id);
 
-    // WebSocket
-    this.notificationsGateway.server.emit('tools.restored', restored);
-    this.notificationsGateway.server.emit('tools.updated', restored);
+    this.realtime.emitEntityUpdate('tools', 'updated', restored);
 
     return restored;
   }
@@ -541,7 +501,7 @@ export class ToolService {
       );
     }
 
-    await this.findOne(id); // Verifica existencia
+    await this.findOne(id);
 
     await this.toolRepository.update(id, {
       estado: estado as ToolStatus,
@@ -549,9 +509,7 @@ export class ToolService {
 
     const updated = await this.findOne(id);
 
-    // WebSocket
-    this.notificationsGateway.server.emit('tools.statusUpdated', updated);
-    this.notificationsGateway.server.emit('tools.updated', updated);
+    this.realtime.emitEntityUpdate('tools', 'updated', updated);
 
     return updated;
   }

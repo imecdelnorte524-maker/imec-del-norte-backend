@@ -1,4 +1,9 @@
-import { Injectable, NotFoundException, ConflictException, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ConflictException,
+  Logger,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Area } from './entities/area.entity';
@@ -6,8 +11,7 @@ import { Client } from '../client/entities/client.entity';
 import { SubArea } from '../sub-area/entities/sub-area.entity';
 import { CreateAreaDto } from './dto/create-area.dto';
 import { UpdateAreaDto } from './dto/update-area.dto';
-import { NotificationsGateway } from 'src/notifications/notifications.gateway';
- 
+import { RealtimeService } from '../realtime/realtime.service';
 
 @Injectable()
 export class AreaService {
@@ -20,16 +24,18 @@ export class AreaService {
     private clientRepository: Repository<Client>,
     @InjectRepository(SubArea)
     private subAreaRepository: Repository<SubArea>,
-    private readonly notificationsGateway: NotificationsGateway,
+    private readonly realtime: RealtimeService,
   ) {}
 
   async create(createAreaDto: CreateAreaDto): Promise<Area> {
     const client = await this.clientRepository.findOne({
       where: { idCliente: createAreaDto.clienteId },
     });
-    
+
     if (!client) {
-      throw new NotFoundException(`Cliente con ID ${createAreaDto.clienteId} no encontrado`);
+      throw new NotFoundException(
+        `Cliente con ID ${createAreaDto.clienteId} no encontrado`,
+      );
     }
 
     const existingArea = await this.areaRepository.findOne({
@@ -38,9 +44,11 @@ export class AreaService {
         clienteId: createAreaDto.clienteId,
       },
     });
-    
+
     if (existingArea) {
-      throw new ConflictException('Ya existe un área con este nombre para este cliente');
+      throw new ConflictException(
+        'Ya existe un área con este nombre para este cliente',
+      );
     }
 
     const area = this.areaRepository.create({
@@ -51,7 +59,7 @@ export class AreaService {
     const savedArea = await this.areaRepository.save(area);
 
     // Emitir evento de creación
-    this.notificationsGateway.server.emit('areas.created', savedArea);
+    this.realtime.emitEntityUpdate('areas', 'created', savedArea);
 
     return savedArea;
   }
@@ -68,11 +76,11 @@ export class AreaService {
       where: { idArea: id },
       relations: ['cliente', 'subAreas'],
     });
-    
+
     if (!area) {
       throw new NotFoundException(`Área con ID ${id} no encontrada`);
     }
-    
+
     return area;
   }
 
@@ -86,19 +94,24 @@ export class AreaService {
 
   async update(id: number, updateAreaDto: UpdateAreaDto): Promise<Area> {
     const area = await this.findOne(id);
-    
+
     if (updateAreaDto.clienteId && updateAreaDto.clienteId !== area.clienteId) {
       const client = await this.clientRepository.findOne({
         where: { idCliente: updateAreaDto.clienteId },
       });
-      
+
       if (!client) {
-        throw new NotFoundException(`Cliente con ID ${updateAreaDto.clienteId} no encontrado`);
+        throw new NotFoundException(
+          `Cliente con ID ${updateAreaDto.clienteId} no encontrado`,
+        );
       }
       area.cliente = client;
     }
-    
-    if (updateAreaDto.nombreArea && updateAreaDto.nombreArea !== area.nombreArea) {
+
+    if (
+      updateAreaDto.nombreArea &&
+      updateAreaDto.nombreArea !== area.nombreArea
+    ) {
       const clientId = updateAreaDto.clienteId || area.clienteId;
       const existingArea = await this.areaRepository.findOne({
         where: {
@@ -106,17 +119,19 @@ export class AreaService {
           clienteId: clientId,
         },
       });
-      
+
       if (existingArea && existingArea.idArea !== id) {
-        throw new ConflictException('Ya existe un área con este nombre para este cliente');
+        throw new ConflictException(
+          'Ya existe un área con este nombre para este cliente',
+        );
       }
     }
-    
+
     Object.assign(area, updateAreaDto);
     const updatedArea = await this.areaRepository.save(area);
 
     // Emitir evento de actualización
-    this.notificationsGateway.server.emit('areas.updated', updatedArea);
+    this.realtime.emitEntityUpdate('areas', 'updated', updatedArea);
 
     return updatedArea;
   }
@@ -124,8 +139,9 @@ export class AreaService {
   async remove(id: number): Promise<void> {
     const area = await this.findOne(id);
     await this.areaRepository.remove(area);
-    // Emitir evento de eliminación (enviamos solo el id)
-    this.notificationsGateway.server.emit('areas.deleted', { id });
+
+    // Emitir evento de eliminación
+    this.realtime.emitEntityUpdate('areas', 'deleted', { id });
   }
 
   async getAreaWithSubAreas(id: number): Promise<Area> {
@@ -133,11 +149,11 @@ export class AreaService {
       where: { idArea: id },
       relations: ['cliente', 'subAreas'],
     });
-    
+
     if (!area) {
       throw new NotFoundException(`Área con ID ${id} no encontrada`);
     }
-    
+
     return area;
   }
 

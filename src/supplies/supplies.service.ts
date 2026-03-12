@@ -1,4 +1,3 @@
-// src/supplies/supplies.service.ts
 import {
   Injectable,
   NotFoundException,
@@ -17,7 +16,7 @@ import { UpdateSupplyDto } from './dto/update-supply.dto';
 import { SupplyStatus, SupplyCategory } from '../shared/index';
 import { ImagesService } from '../images/images.service';
 import { SequenceHelperService } from '../common/services/sequence-helper.service';
-import { NotificationsGateway } from 'src/notifications/notifications.gateway';
+import { RealtimeService } from '../realtime/realtime.service';
 
 @Injectable()
 export class SuppliesService {
@@ -36,7 +35,7 @@ export class SuppliesService {
     private warehouseRepository: Repository<Warehouse>,
     private dataSource: DataSource,
     private readonly imagesService: ImagesService,
-    private readonly notificationsGateway: NotificationsGateway,
+    private readonly realtime: RealtimeService,
     private readonly sequenceHelper: SequenceHelperService,
   ) {
     this.initializeSequence().catch((error) => {
@@ -71,7 +70,6 @@ export class SuppliesService {
     try {
       await this.fixSequenceIfNeeded();
 
-      // Validar nombre único
       const exists = await queryRunner.manager.findOne(Supply, {
         where: { nombre: dto.nombre },
       });
@@ -79,13 +77,11 @@ export class SuppliesService {
         throw new ConflictException('Ya existe un insumo con este nombre');
       }
 
-      // Buscar o crear unidad de medida
       const unitMeasure = await this.findOrCreateUnitMeasure(
         dto.unidadMedida,
         queryRunner.manager,
       );
 
-      // Buscar bodega si se proporciona
       let bodega: Warehouse | null = null;
       if (dto.bodegaId) {
         bodega = await queryRunner.manager.findOne(Warehouse, {
@@ -96,7 +92,6 @@ export class SuppliesService {
         }
       }
 
-      // Crear insumo
       const supply = queryRunner.manager.create(Supply, {
         nombre: dto.nombre,
         categoria: dto.categoria as SupplyCategory,
@@ -110,7 +105,6 @@ export class SuppliesService {
 
       let inventory: Inventory;
 
-      // Buscar inventario existente para este insumo en la misma bodega
       const existingInventory = await queryRunner.manager.findOne(Inventory, {
         where: {
           insumoId: savedSupply.insumoId,
@@ -133,7 +127,6 @@ export class SuppliesService {
         existingInventory.fechaUltimaActualizacion = new Date();
         inventory = await queryRunner.manager.save(existingInventory);
       } else {
-        // Si no existe, crear nuevo inventario
         inventory = queryRunner.manager.create(Inventory, {
           insumoId: savedSupply.insumoId,
           cantidadActual: dto.cantidadInicial ?? 0,
@@ -145,7 +138,6 @@ export class SuppliesService {
         inventory = await queryRunner.manager.save(inventory);
       }
 
-      // Calcular y actualizar estado del insumo según stock
       savedSupply.estado = this.calculateSupplyStatus(
         inventory.cantidadActual,
         savedSupply.stockMin,
@@ -156,8 +148,7 @@ export class SuppliesService {
 
       const full = await this.findOne(savedSupply.insumoId);
 
-      // WebSocket
-      this.notificationsGateway.server.emit('supplies.created', full);
+      this.realtime.emitEntityUpdate('supplies', 'created', full);
 
       return full;
     } catch (error: any) {
@@ -231,7 +222,6 @@ export class SuppliesService {
     try {
       const supply = await this.findOne(id);
 
-      // Validar nombre único si se cambia
       if (dto.nombre && dto.nombre !== supply.nombre) {
         const exists = await queryRunner.manager.findOne(Supply, {
           where: { nombre: dto.nombre },
@@ -242,12 +232,10 @@ export class SuppliesService {
         supply.nombre = dto.nombre;
       }
 
-      // Actualizar categoría si se proporciona
       if (dto.categoria) {
         supply.categoria = dto.categoria as SupplyCategory;
       }
 
-      // Actualizar unidad de medida si se proporciona
       if (dto.unidadMedida) {
         const unitMeasure = await this.findOrCreateUnitMeasure(
           dto.unidadMedida,
@@ -256,20 +244,16 @@ export class SuppliesService {
         supply.unidadMedida = unitMeasure;
       }
 
-      // Actualizar stock mínimo
       if (dto.stockMin !== undefined) {
         supply.stockMin = dto.stockMin;
       }
 
-      // Actualizar valor unitario
       if (dto.valorUnitario !== undefined) {
         supply.valorUnitario = dto.valorUnitario;
       }
 
-      // Guardar cambios del insumo
       await queryRunner.manager.save(supply);
 
-      // Actualizar inventario "principal" si se proporciona cantidad o bodega
       const inventory = await queryRunner.manager.findOne(Inventory, {
         where: { insumoId: id },
         relations: ['bodega'],
@@ -278,7 +262,6 @@ export class SuppliesService {
       if (inventory) {
         let inventoryUpdated = false;
 
-        // Actualizar bodega en el inventario
         if (dto.bodegaId !== undefined) {
           if (dto.bodegaId === null) {
             inventory.bodega = null;
@@ -295,7 +278,6 @@ export class SuppliesService {
           }
         }
 
-        // Actualizar stock si se proporciona
         if (dto.cantidadActual !== undefined) {
           inventory.cantidadActual = dto.cantidadActual;
           inventory.fechaUltimaActualizacion = new Date();
@@ -305,7 +287,6 @@ export class SuppliesService {
         if (inventoryUpdated) {
           await queryRunner.manager.save(inventory);
 
-          // Recalcular estado del insumo si cambió el stock
           if (dto.cantidadActual !== undefined) {
             supply.estado = this.calculateSupplyStatus(
               inventory.cantidadActual,
@@ -320,8 +301,7 @@ export class SuppliesService {
 
       const updated = await this.findOne(id);
 
-      // WebSocket
-      this.notificationsGateway.server.emit('supplies.updated', updated);
+      this.realtime.emitEntityUpdate('supplies', 'updated', updated);
 
       return updated;
     } catch (error: any) {
@@ -335,19 +315,15 @@ export class SuppliesService {
   async remove(id: number): Promise<void> {
     const supply = await this.findOne(id);
 
-    // Eliminar imágenes asociadas
     if (supply.images && supply.images.length > 0) {
       await this.imagesService.deleteBySupply(supply);
     }
 
-    // Soft delete del inventario asociado al insumo
     await this.inventoryRepository.softDelete({ insumoId: id });
 
-    // Soft delete del insumo
     await this.suppliesRepository.softDelete(id);
 
-    // WebSocket
-    this.notificationsGateway.server.emit('supplies.deleted', {
+    this.realtime.emitEntityUpdate('supplies', 'deleted', {
       id,
       soft: true,
     });
@@ -370,14 +346,12 @@ export class SuppliesService {
     });
 
     if (!inventory) {
-      // Crear inventario si no existe
       inventory = manager.create(Inventory, {
         insumoId: id,
         cantidadActual: cantidad,
         supply: supply,
       });
     } else {
-      // Actualizar inventario existente
       inventory.cantidadActual = cantidad;
     }
 
@@ -389,9 +363,7 @@ export class SuppliesService {
 
     const full = await this.findOne(id);
 
-    // WebSocket
-    this.notificationsGateway.server.emit('supplies.stockUpdated', full);
-    this.notificationsGateway.server.emit('supplies.updated', full);
+    this.realtime.emitEntityUpdate('supplies', 'updated', full);
 
     return full;
   }
@@ -531,17 +503,13 @@ export class SuppliesService {
       throw new NotFoundException(`Insumo con ID ${id} no encontrado`);
     }
 
-    // Restaurar insumo
     await this.suppliesRepository.restore(id);
 
-    // Restaurar inventarios asociados
     await this.inventoryRepository.restore({ insumoId: id });
 
     const restored = await this.findOne(id);
 
-    // WebSocket
-    this.notificationsGateway.server.emit('supplies.restored', restored);
-    this.notificationsGateway.server.emit('supplies.updated', restored);
+    this.realtime.emitEntityUpdate('supplies', 'updated', restored);
 
     return restored;
   }
@@ -587,11 +555,7 @@ export class SuppliesService {
 
       await queryRunner.commitTransaction();
 
-      // WebSocket para actualización masiva
-      this.notificationsGateway.server.emit(
-        'supplies.bulkStockUpdated',
-        updatedSupplies,
-      );
+      this.realtime.emitGlobal('supplies.bulkStockUpdated', updatedSupplies);
 
       return updatedSupplies;
     } catch (error) {

@@ -8,7 +8,6 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Between, DataSource, In, IsNull } from 'typeorm';
-// ❌ REMOVIDO: 'Not' no se usa en ningún método del servicio
 import { WorkOrder } from './entities/work-order.entity';
 import { SupplyDetail } from './entities/supply-detail.entity';
 import { ToolDetail } from './entities/tool-detail.entity';
@@ -52,8 +51,8 @@ import {
 import { MailService } from 'src/mail/mail.service';
 import { SendWorkOrderReportsToClientsDto } from './dto/send-work-order-reports-to-clients.dto';
 import JSZip from 'jszip';
-import { NotificationsGateway } from 'src/notifications/notifications.gateway';
 import { WorkOrderMaintenancePlan } from './entities/work-order-maintenance-plan.entity';
+import { RealtimeService } from '../realtime/realtime.service';
 
 @Injectable()
 export class WorkOrdersService {
@@ -90,25 +89,19 @@ export class WorkOrdersService {
     private acInspectionRepository: Repository<AcInspection>,
     @InjectRepository(Image)
     private imageRepository: Repository<Image>,
-    // ✅ NUEVO: repo de trazabilidad OT ↔ planes (tabla puente)
     @InjectRepository(WorkOrderMaintenancePlan)
     private readonly woPlanRepo: Repository<WorkOrderMaintenancePlan>,
-    // ✅ NUEVO: inyección directa del repo de planes (reemplaza dataSource.getRepository)
     @InjectRepository(PlanMantenimiento)
     private readonly planRepo: Repository<PlanMantenimiento>,
     private dataSource: DataSource,
     private eventEmitter: EventEmitter2,
-    private readonly notificationsGateway: NotificationsGateway,
     private readonly pdfService: PdfService,
     private readonly configService: ConfigService,
     private readonly mailService: MailService,
+    private readonly realtime: RealtimeService,
   ) {}
 
   private readonly MAX_EMAIL_ATTACHMENT_BYTES = 30 * 1024 * 1024;
-
-  // ─────────────────────────────────────────────────────────────
-  // HELPERS GENERALES
-  // ─────────────────────────────────────────────────────────────
 
   private getRoleName(currentUser: any): string {
     return currentUser?.role?.nombreRol || currentUser?.role || '';
@@ -150,80 +143,6 @@ export class WorkOrdersService {
     return SupplyStatus.DISPONIBLE;
   }
 
-  // ─────────────────────────────────────────────────────────────
-  // HELPERS WEBSOCKET
-  // ─────────────────────────────────────────────────────────────
-
-  private async emitWorkOrderToUser(
-    ordenId: number,
-    userId: number,
-    event: string = 'workOrders.updated',
-  ): Promise<void> {
-    try {
-      const workOrder = await this.findOne(ordenId);
-      const socketId = this.notificationsGateway.getSocketIdForUser(userId);
-      if (socketId) {
-        this.notificationsGateway.server.to(socketId).emit(event, workOrder);
-      }
-    } catch (error) {
-      console.error(`Error emitiendo a usuario ${userId}:`, error);
-    }
-  }
-
-  private async emitWorkOrderUpdated(
-    ordenId: number,
-    options?: {
-      previousStatus?: WorkOrderStatus;
-      emitAssigned?: boolean;
-      extraEvent?: string;
-      extraPayload?: any;
-      clientId?: string;
-      userId?: number;
-    },
-  ): Promise<void> {
-    const workOrder = await this.findOne(ordenId);
-
-    this.notificationsGateway.server.emit('workOrders.updated', workOrder);
-
-    if (
-      options?.previousStatus &&
-      options.previousStatus !== workOrder.estado
-    ) {
-      this.notificationsGateway.server.emit(
-        'workOrders.statusUpdated',
-        workOrder,
-      );
-    }
-
-    if (options?.emitAssigned) {
-      const assignedData = {
-        workOrder,
-        technicianIds: workOrder.technicians?.map((t) => t.tecnicoId) ?? [],
-      };
-      this.notificationsGateway.server.emit(
-        'workOrders.assigned',
-        assignedData,
-      );
-    }
-
-    if (options?.extraEvent) {
-      const extraData = options.extraPayload ?? workOrder;
-      this.notificationsGateway.server.emit(options.extraEvent, extraData);
-    }
-
-    if (options?.userId) {
-      await this.emitWorkOrderToUser(
-        ordenId,
-        options.userId,
-        'workOrders.updated',
-      );
-    }
-  }
-
-  // ─────────────────────────────────────────────────────────────
-  // HELPERS CLIENTES / CONTACTOS
-  // ─────────────────────────────────────────────────────────────
-
   private async isUserContactoOfCliente(
     userId: number,
     clienteId: number,
@@ -240,14 +159,6 @@ export class WorkOrdersService {
     return cliente.usuariosContacto?.[0] || null;
   }
 
-  /**
-   * Resuelve el usuario contacto "preferido" de una empresa:
-   * 1. Busca por nombre (campo cliente.contacto).
-   * 2. Si no coincide, usa el primero de la lista.
-   *
-   * ✅ NUEVO: extraído como helper reutilizable para el automático semanal
-   * y para createFromMaintenancePlan (legacy).
-   */
   private async resolveUsuarioContactoParaEmpresa(
     clienteEmpresaId: number,
   ): Promise<User> {
@@ -291,14 +202,6 @@ export class WorkOrdersService {
     return usuarioSeleccionado || clienteConContactos.usuariosContacto[0];
   }
 
-  // ─────────────────────────────────────────────────────────────
-  // HELPERS AUTOMÁTICO SEMANAL
-  // ─────────────────────────────────────────────────────────────
-
-  /**
-   * Calcula lunes y sábado de la semana siguiente asumiendo que "base" es viernes.
-   * Viernes + 3 = lunes siguiente, viernes + 8 = sábado siguiente.
-   */
   private getNextWeekRangeFromFriday(base: Date): {
     weekStart: Date;
     weekEnd: Date;
@@ -314,13 +217,6 @@ export class WorkOrdersService {
     };
   }
 
-  /**
-   * Construye la clave única para evitar duplicar OTs automáticas semanales.
-   * Formato: WEEKLY:{clienteEmpresaId}:{servicioId}:{weekStart}
-   *
-   * ✅ NUEVO: reemplaza la deduplicación antigua basada en planMantenimientoId
-   * (existeOrdenParaPlanEnFecha), que era 1 check por plan y no por grupo semanal.
-   */
   private buildAutoBatchKey(params: {
     clienteEmpresaId: number;
     servicioId: number;
@@ -329,13 +225,6 @@ export class WorkOrdersService {
     return `WEEKLY:${params.clienteEmpresaId}:${params.servicioId}:${this.dateOnlyStr(params.weekStart)}`;
   }
 
-  /**
-   * Retorna el set de equipmentIds que ya están en órdenes ACTIVAS
-   * (ni COMPLETED ni CANCELED).
-   *
-   * ✅ NUEVO: usado en el semanal para NO tumbar toda la OT si un equipo
-   * está ocupado, sino simplemente omitirlo y seguir con los demás.
-   */
   private async getBusyEquipmentIds(
     equipmentIds: number[],
   ): Promise<Set<number>> {
@@ -353,10 +242,6 @@ export class WorkOrdersService {
 
     return new Set(rows.map((r) => Number(r.equipmentId)));
   }
-
-  // ─────────────────────────────────────────────────────────────
-  // CRUD PRINCIPAL
-  // ─────────────────────────────────────────────────────────────
 
   async create(dto: CreateWorkOrderDto, currentUser: any): Promise<WorkOrder> {
     const roleName = this.getRoleName(currentUser);
@@ -502,24 +387,17 @@ export class WorkOrdersService {
     });
 
     const full = await this.findOne(savedWorkOrder.ordenId);
-    this.notificationsGateway.server.emit('workOrders.created', full);
+
+    // Emitir usando RealtimeService
+    this.realtime.emitWorkOrderUpdate(full, 'created');
 
     if (currentUser?.userId) {
-      await this.emitWorkOrderToUser(
-        full.ordenId,
-        currentUser.userId,
-        'workOrders.created',
-      );
+      this.realtime.emitToUser(currentUser.userId, 'workOrders.created', full);
     }
 
     return full;
   }
 
-  /**
-   * ✅ CORREGIDO: se cambió innerJoin por innerJoinAndSelect para que
-   * equipmentWorkOrders esté cargado al mapear los IDs en conflicto.
-   * Antes, el array siempre era undefined y el error salía sin IDs correctos.
-   */
   private async validateEquipmentAssignment(
     equipmentIds: number[],
     clienteEmpresaId: number,
@@ -541,7 +419,6 @@ export class WorkOrdersService {
       }
     }
 
-    // ✅ CORREGIDO: innerJoinAndSelect para que ewo esté disponible al mapear
     const activeOrders = await this.workOrdersRepository
       .createQueryBuilder('wo')
       .innerJoinAndSelect('wo.equipmentWorkOrders', 'ewo')
@@ -671,14 +548,12 @@ export class WorkOrdersService {
     }
 
     if (isAC && updateWorkOrderDto.estado === WorkOrderStatus.COMPLETED) {
-      // Firma obligatoria
       if (!workOrder.receivedByName || !workOrder.receivedBySignatureData) {
         throw new BadRequestException(
           'Debe registrar la firma de recibido antes de completar la orden',
         );
       }
 
-      // ✅ Datos (parámetros) obligatorios: BEFORE y AFTER para cada equipo
       for (const ph of [AcInspectionPhase.BEFORE, AcInspectionPhase.AFTER]) {
         const ok = await this.areAllAcInspectionsDoneForAllEquipments(id, ph);
         if (!ok) {
@@ -688,7 +563,6 @@ export class WorkOrdersService {
         }
       }
 
-      // ✅ Fotos obligatorias: BEFORE, DURING, AFTER para cada equipo
       for (const ph of [
         WorkOrderEvidencePhase.BEFORE,
         WorkOrderEvidencePhase.DURING,
@@ -904,11 +778,27 @@ export class WorkOrdersService {
       });
     }
 
-    await this.emitWorkOrderUpdated(id, {
-      previousStatus,
-      clientId,
-      userId: currentUser?.userId,
-    });
+    // Emitir usando RealtimeService
+    this.realtime.emitWorkOrderUpdate(updatedWorkOrder, 'updated');
+
+    if (previousStatus !== updatedWorkOrder.estado) {
+      this.realtime.emitWorkOrderStatusUpdate(updatedWorkOrder, previousStatus);
+    }
+
+    if (updatedWorkOrder.technicians?.length) {
+      const technicianIds = updatedWorkOrder.technicians.map(
+        (t) => t.tecnicoId,
+      );
+      this.realtime.emitWorkOrderAssigned(updatedWorkOrder, technicianIds);
+    }
+
+    if (currentUser?.userId) {
+      this.realtime.emitToUser(
+        currentUser.userId,
+        'workOrders.updated',
+        updatedWorkOrder,
+      );
+    }
 
     return updatedWorkOrder;
   }
@@ -992,13 +882,20 @@ export class WorkOrdersService {
       action: 'cancel',
     });
 
-    await this.emitWorkOrderUpdated(id, {
-      previousStatus,
-      clientId: currentUser.clientId,
-      userId: currentUser?.userId,
-    });
+    const updated = await this.findOne(id);
 
-    return this.findOne(id);
+    this.realtime.emitWorkOrderUpdate(updated, 'updated');
+    this.realtime.emitWorkOrderStatusUpdate(updated, previousStatus);
+
+    if (currentUser?.userId) {
+      this.realtime.emitToUser(
+        currentUser.userId,
+        'workOrders.updated',
+        updated,
+      );
+    }
+
+    return updated;
   }
 
   async remove(id: number, currentUser?: any): Promise<void> {
@@ -1059,7 +956,6 @@ export class WorkOrdersService {
       await queryRunner.manager.delete(WorkOrderTechnician, { ordenId: id });
       await queryRunner.manager.delete(WorkOrderTimer, { ordenId: id });
       await queryRunner.manager.delete(WorkOrderPause, { ordenId: id });
-      // ✅ también eliminar links de planes si era OT semanal
       await queryRunner.manager.delete(WorkOrderMaintenancePlan, {
         ordenId: id,
       });
@@ -1068,14 +964,14 @@ export class WorkOrdersService {
       await queryRunner.commitTransaction();
 
       this.eventEmitter.emit('work-order.deleted', { ordenId: id });
-      this.notificationsGateway.server.emit('workOrders.deleted', { id });
+
+      // Emitir usando RealtimeService
+      this.realtime.emitWorkOrderUpdate({ ordenId: id } as any, 'deleted');
 
       if (currentUser?.userId) {
-        await this.emitWorkOrderToUser(
-          id,
-          currentUser.userId,
-          'workOrders.deleted',
-        );
+        this.realtime.emitToUser(currentUser.userId, 'workOrders.deleted', {
+          ordenId: id,
+        });
       }
     } catch (error) {
       await queryRunner.rollbackTransaction();
@@ -1084,10 +980,6 @@ export class WorkOrdersService {
       await queryRunner.release();
     }
   }
-
-  // ─────────────────────────────────────────────────────────────
-  // TÉCNICOS
-  // ─────────────────────────────────────────────────────────────
 
   async assignTechnician(
     ordenId: number,
@@ -1184,11 +1076,24 @@ export class WorkOrdersService {
       action: 'assignTechnicians',
     });
 
-    await this.emitWorkOrderUpdated(ordenId, {
-      previousStatus: workOrder.estado,
-      emitAssigned: true,
-      userId: currentUser?.userId,
-    });
+    // Emitir usando RealtimeService
+    this.realtime.emitWorkOrderAssigned(
+      updated,
+      dto.technicianIds,
+      dto.leaderTechnicianId,
+    );
+
+    if (workOrder.estado !== nuevoEstado) {
+      this.realtime.emitWorkOrderStatusUpdate(updated, workOrder.estado);
+    }
+
+    if (currentUser?.userId) {
+      this.realtime.emitToUser(
+        currentUser.userId,
+        'workOrders.updated',
+        updated,
+      );
+    }
 
     return updated;
   }
@@ -1248,6 +1153,7 @@ export class WorkOrdersService {
       );
     }
 
+    const previousStatus = workOrder.estado;
     const nuevoEstado =
       workOrder.estado === WorkOrderStatus.REQUESTED_ASSIGNED
         ? WorkOrderStatus.REQUESTED_UNASSIGNED
@@ -1263,11 +1169,19 @@ export class WorkOrdersService {
       action: 'unassignTechnician',
     });
 
-    await this.emitWorkOrderUpdated(ordenId, {
-      previousStatus: workOrder.estado,
-      emitAssigned: true,
-      userId: currentUser?.userId,
-    });
+    this.realtime.emitWorkOrderUpdate(updated, 'updated');
+
+    if (previousStatus !== nuevoEstado) {
+      this.realtime.emitWorkOrderStatusUpdate(updated, previousStatus);
+    }
+
+    if (currentUser?.userId) {
+      this.realtime.emitToUser(
+        currentUser.userId,
+        'workOrders.updated',
+        updated,
+      );
+    }
 
     return updated;
   }
@@ -1292,6 +1206,7 @@ export class WorkOrdersService {
       );
     }
 
+    const previousStatus = workOrder.estado;
     await this.workOrderTechnicianRepository.delete({ ordenId });
 
     const nuevoEstado =
@@ -1308,18 +1223,22 @@ export class WorkOrdersService {
       action: 'unassignAllTechnicians',
     });
 
-    await this.emitWorkOrderUpdated(ordenId, {
-      previousStatus: workOrder.estado,
-      emitAssigned: true,
-      userId: currentUser?.userId,
-    });
+    this.realtime.emitWorkOrderUpdate(updated, 'updated');
+
+    if (previousStatus !== nuevoEstado) {
+      this.realtime.emitWorkOrderStatusUpdate(updated, previousStatus);
+    }
+
+    if (currentUser?.userId) {
+      this.realtime.emitToUser(
+        currentUser.userId,
+        'workOrders.updated',
+        updated,
+      );
+    }
 
     return updated;
   }
-
-  // ─────────────────────────────────────────────────────────────
-  // EQUIPOS EN ORDEN
-  // ─────────────────────────────────────────────────────────────
 
   async addEquipmentToOrder(
     ordenId: number,
@@ -1381,7 +1300,16 @@ export class WorkOrdersService {
       equipmentId,
     });
 
-    await this.emitWorkOrderUpdated(ordenId, { userId: currentUser?.userId });
+    const updated = await this.findOne(ordenId);
+    this.realtime.emitWorkOrderUpdate(updated, 'updated');
+
+    if (currentUser?.userId) {
+      this.realtime.emitToUser(
+        currentUser.userId,
+        'workOrders.updated',
+        updated,
+      );
+    }
 
     return saved;
   }
@@ -1405,7 +1333,16 @@ export class WorkOrdersService {
       equipmentId,
     });
 
-    await this.emitWorkOrderUpdated(ordenId, { userId: currentUser?.userId });
+    const updated = await this.findOne(ordenId);
+    this.realtime.emitWorkOrderUpdate(updated, 'updated');
+
+    if (currentUser?.userId) {
+      this.realtime.emitToUser(
+        currentUser.userId,
+        'workOrders.updated',
+        updated,
+      );
+    }
   }
 
   async getWorkOrdersByEquipment(equipmentId: number): Promise<WorkOrder[]> {
@@ -1429,10 +1366,6 @@ export class WorkOrdersService {
 
     return equipmentWorkOrders.map((ewo) => ewo.workOrder);
   }
-
-  // ─────────────────────────────────────────────────────────────
-  // TIMER Y PAUSA
-  // ─────────────────────────────────────────────────────────────
 
   async startTimer(ordenId: number, userId: number): Promise<WorkOrderTimer> {
     const workOrder = await this.findOne(ordenId);
@@ -1534,10 +1467,6 @@ export class WorkOrdersService {
 
     return await this.startTimer(ordenId, userId);
   }
-
-  // ─────────────────────────────────────────────────────────────
-  // EMERGENCIAS
-  // ─────────────────────────────────────────────────────────────
 
   async createEmergencyOrder(
     ordenId: number,
@@ -1670,23 +1599,25 @@ export class WorkOrdersService {
       createdBy: currentUser?.userId,
     });
 
-    await this.emitWorkOrderUpdated(ordenId, {
-      previousStatus: originalOrder.estado,
-      emitAssigned: true,
-      userId: currentUser?.userId,
-    });
+    // Emitir usando RealtimeService
+    const updatedOriginal = await this.findOne(ordenId);
+    this.realtime.emitWorkOrderUpdate(updatedOriginal, 'updated');
+    this.realtime.emitWorkOrderStatusUpdate(
+      updatedOriginal,
+      originalOrder.estado,
+    );
+    this.realtime.emitEmergencyCreated(ordenId, emergencyOrder);
 
-    this.notificationsGateway.server.emit('workOrders.emergencyCreated', {
-      originalOrderId: ordenId,
-      emergencyOrder,
-    });
+    if (currentUser?.userId) {
+      this.realtime.emitToUser(
+        currentUser.userId,
+        'workOrders.updated',
+        updatedOriginal,
+      );
+    }
 
     return emergencyOrder;
   }
-
-  // ─────────────────────────────────────────────────────────────
-  // INSUMOS Y HERRAMIENTAS
-  // ─────────────────────────────────────────────────────────────
 
   async addSupplyDetail(
     ordenId: number,
@@ -1787,7 +1718,16 @@ export class WorkOrdersService {
         action: 'addSupply',
       });
 
-      await this.emitWorkOrderUpdated(ordenId, { userId: currentUser?.userId });
+      const updated = await this.findOne(ordenId);
+      this.realtime.emitWorkOrderUpdate(updated, 'updated');
+
+      if (currentUser?.userId) {
+        this.realtime.emitToUser(
+          currentUser.userId,
+          'workOrders.updated',
+          updated,
+        );
+      }
 
       return savedDetail;
     } catch (error) {
@@ -1846,7 +1786,16 @@ export class WorkOrdersService {
         action: 'addTool',
       });
 
-      await this.emitWorkOrderUpdated(ordenId, { userId: currentUser?.userId });
+      const updated = await this.findOne(ordenId);
+      this.realtime.emitWorkOrderUpdate(updated, 'updated');
+
+      if (currentUser?.userId) {
+        this.realtime.emitToUser(
+          currentUser.userId,
+          'workOrders.updated',
+          updated,
+        );
+      }
 
       return savedDetail;
     } catch (error) {
@@ -1903,7 +1852,16 @@ export class WorkOrdersService {
         action: 'removeSupply',
       });
 
-      await this.emitWorkOrderUpdated(ordenId, { userId: currentUser?.userId });
+      const updated = await this.findOne(ordenId);
+      this.realtime.emitWorkOrderUpdate(updated, 'updated');
+
+      if (currentUser?.userId) {
+        this.realtime.emitToUser(
+          currentUser.userId,
+          'workOrders.updated',
+          updated,
+        );
+      }
     } catch (error) {
       await queryRunner.rollbackTransaction();
       throw error;
@@ -1947,7 +1905,16 @@ export class WorkOrdersService {
         action: 'removeTool',
       });
 
-      await this.emitWorkOrderUpdated(ordenId, { userId: currentUser?.userId });
+      const updated = await this.findOne(ordenId);
+      this.realtime.emitWorkOrderUpdate(updated, 'updated');
+
+      if (currentUser?.userId) {
+        this.realtime.emitToUser(
+          currentUser.userId,
+          'workOrders.updated',
+          updated,
+        );
+      }
     } catch (error) {
       await queryRunner.rollbackTransaction();
       throw error;
@@ -1955,10 +1922,6 @@ export class WorkOrdersService {
       await queryRunner.release();
     }
   }
-
-  // ─────────────────────────────────────────────────────────────
-  // CONSULTAS
-  // ─────────────────────────────────────────────────────────────
 
   async getWorkOrdersByStatus(estado: string): Promise<WorkOrder[]> {
     return this.workOrdersRepository
@@ -2247,10 +2210,6 @@ export class WorkOrdersService {
     return empresaIds.includes(empresaId);
   }
 
-  // ─────────────────────────────────────────────────────────────
-  // VALIDACIONES / TRANSICIONES
-  // ─────────────────────────────────────────────────────────────
-
   public validateEstadoTransition(
     currentEstado: WorkOrderStatus,
     newEstado: WorkOrderStatus,
@@ -2324,10 +2283,6 @@ export class WorkOrdersService {
     return { costoTotalInsumos, tiempoTotal };
   }
 
-  // ─────────────────────────────────────────────────────────────
-  // FACTURACIÓN
-  // ─────────────────────────────────────────────────────────────
-
   async removeInvoice(ordenId: number, currentUser?: any): Promise<WorkOrder> {
     const workOrder = await this.findOne(ordenId);
 
@@ -2338,19 +2293,19 @@ export class WorkOrdersService {
     await this.workOrdersRepository.save(workOrder);
     const updated = await this.findOne(ordenId);
 
-    this.notificationsGateway.server.emit('workOrders.updated', updated);
-    this.notificationsGateway.server.emit('workOrders.invoiceRemoved', updated);
+    this.realtime.emitWorkOrderUpdate(updated, 'updated');
+    this.realtime.emitInvoiceRemoved(ordenId);
 
     if (currentUser?.userId) {
-      await this.emitWorkOrderToUser(
-        ordenId,
+      this.realtime.emitToUser(
         currentUser.userId,
         'workOrders.updated',
+        updated,
       );
-      await this.emitWorkOrderToUser(
-        ordenId,
+      this.realtime.emitToUser(
         currentUser.userId,
         'workOrders.invoiceRemoved',
+        { ordenId },
       );
     }
 
@@ -2402,28 +2357,27 @@ export class WorkOrdersService {
       invoicedBy: currentUser?.userId,
     });
 
-    this.notificationsGateway.server.emit('workOrders.updated', updated);
-    this.notificationsGateway.server.emit('workOrders.invoiceUpdated', updated);
+    this.realtime.emitWorkOrderUpdate(updated, 'updated');
+    this.realtime.emitInvoiceUpdate(ordenId, {
+      facturaPdfUrl: invoiceUrl,
+      estadoPago,
+    });
 
     if (currentUser?.userId) {
-      await this.emitWorkOrderToUser(
-        ordenId,
+      this.realtime.emitToUser(
         currentUser.userId,
         'workOrders.updated',
+        updated,
       );
-      await this.emitWorkOrderToUser(
-        ordenId,
+      this.realtime.emitToUser(
         currentUser.userId,
         'workOrders.invoiceUpdated',
+        updated,
       );
     }
 
     return updated;
   }
-
-  // ─────────────────────────────────────────────────────────────
-  // CALIFICACIÓN Y FIRMA
-  // ─────────────────────────────────────────────────────────────
 
   async rateTechnicians(
     ordenId: number,
@@ -2508,14 +2462,24 @@ export class WorkOrdersService {
       ratedBy: currentUser.userId,
     });
 
-    await this.emitWorkOrderUpdated(ordenId, {
-      extraEvent: 'workOrders.techniciansRated',
-      extraPayload: { ordenId },
-      clientId: currentUser.clientId,
-      userId: currentUser?.userId,
-    });
+    const updated = await this.findOne(ordenId);
+    this.realtime.emitWorkOrderUpdate(updated, 'updated');
+    this.realtime.emitTechniciansRated(ordenId);
 
-    return this.findOne(ordenId);
+    if (currentUser?.userId) {
+      this.realtime.emitToUser(
+        currentUser.userId,
+        'workOrders.updated',
+        updated,
+      );
+      this.realtime.emitToUser(
+        currentUser.userId,
+        'workOrders.techniciansRated',
+        { ordenId },
+      );
+    }
+
+    return updated;
   }
 
   async signReceipt(
@@ -2554,19 +2518,23 @@ export class WorkOrdersService {
 
     await this.workOrdersRepository.save(workOrder);
 
-    await this.emitWorkOrderUpdated(ordenId, {
-      extraEvent: 'workOrders.receiptSigned',
-      extraPayload: { ordenId },
-      clientId: currentUser.clientId,
-      userId: currentUser?.userId,
-    });
+    const updated = await this.findOne(ordenId);
+    this.realtime.emitWorkOrderUpdate(updated, 'updated');
+    this.realtime.emitReceiptSigned(ordenId, updated);
 
-    return this.findOne(ordenId);
+    if (currentUser?.userId) {
+      this.realtime.emitToUser(
+        currentUser.userId,
+        'workOrders.updated',
+        updated,
+      );
+      this.realtime.emitToUser(currentUser.userId, 'workOrders.receiptSigned', {
+        ordenId,
+      });
+    }
+
+    return updated;
   }
-
-  // ─────────────────────────────────────────────────────────────
-  // AC (AIRES ACONDICIONADOS)
-  // ─────────────────────────────────────────────────────────────
 
   private isAirConditioningService(workOrder: WorkOrder): boolean {
     return (
@@ -2621,26 +2589,12 @@ export class WorkOrdersService {
       });
     }
 
-    return this.acInspectionRepository.save(inspection);
-  }
+    const saved = await this.acInspectionRepository.save(inspection);
 
-  private async areAllAcInspectionsDone(
-    ordenId: number,
-    phase: AcInspectionPhase,
-  ): Promise<boolean> {
-    const order = await this.workOrdersRepository.findOne({
-      where: { ordenId },
-      relations: ['equipmentWorkOrders'],
-    });
+    const updated = await this.findOne(ordenId);
+    this.realtime.emitWorkOrderUpdate(updated, 'updated');
 
-    if (!order) return false;
-
-    const totalEquipments = order.equipmentWorkOrders.length;
-    const totalInspections = await this.acInspectionRepository.count({
-      where: { workOrderId: ordenId, phase },
-    });
-
-    return totalInspections >= totalEquipments;
+    return saved;
   }
 
   private async isAtLeastOneAcInspectionDone(
@@ -2649,16 +2603,6 @@ export class WorkOrdersService {
   ): Promise<boolean> {
     const count = await this.acInspectionRepository.count({
       where: { workOrderId: ordenId, phase },
-    });
-    return count > 0;
-  }
-
-  private async hasAcEvidence(
-    ordenId: number,
-    phase: WorkOrderEvidencePhase,
-  ): Promise<boolean> {
-    const count = await this.imageRepository.count({
-      where: { workOrder: { ordenId }, evidencePhase: phase },
     });
     return count > 0;
   }
@@ -2710,10 +2654,6 @@ export class WorkOrdersService {
     const has = new Set(rows.map((r) => Number(r.equipmentId)));
     return equipmentIds.every((id) => has.has(id));
   }
-
-  // ─────────────────────────────────────────────────────────────
-  // PDFs / REPORTES / EMAIL
-  // ─────────────────────────────────────────────────────────────
 
   async generarInformeOrden(ordenId: number): Promise<Buffer> {
     const orden = await this.findOne(ordenId);
@@ -3129,10 +3069,6 @@ export class WorkOrdersService {
     ];
   }
 
-  // ─────────────────────────────────────────────────────────────
-  // HERRAMIENTAS (release)
-  // ─────────────────────────────────────────────────────────────
-
   private async releaseToolsForOrder(ordenId: number): Promise<void> {
     const toolDetails = await this.toolDetailsRepository.find({
       where: { ordenId },
@@ -3147,130 +3083,6 @@ export class WorkOrdersService {
     );
   }
 
-  // ─────────────────────────────────────────────────────────────
-  // ⚠️ LEGACY - ESTRATEGIA ANTERIOR (1 OT POR PLAN)
-  //
-  // Estos métodos corresponden a la implementación original donde
-  // el cron procesaba cada PlanMantenimiento individualmente y
-  // creaba 1 WorkOrder por plan.
-  //
-  // RAZÓN POR LA QUE SON LEGACY:
-  // La nueva estrategia crea 1 OT por (clienteEmpresa + ServiceCategory)
-  // agrupando TODOS los planes de la semana siguiente en una sola OT.
-  // La deduplicación ya no depende de planMantenimientoId sino de
-  // autoBatchKey (WEEKLY:{clienteId}:{servicioId}:{weekStart}).
-  // La trazabilidad ya no va por WO.planMantenimientoId sino por la
-  // tabla puente ordenes_trabajo_planes (WorkOrderMaintenancePlan).
-  //
-  // Se mantienen comentados por si se necesita recuperar alguna lógica
-  // o como referencia. NO DEBEN SER LLAMADOS POR NINGÚN CRON.
-  // ─────────────────────────────────────────────────────────────
-
-  /**
-   * @deprecated LEGACY
-   * Verificaba si ya existía una OT para un plan específico en una fecha.
-   * Era usado por el cron EVERY_5_MINUTES para evitar duplicar 1 OT por plan.
-   *
-   * Ya no aplica porque:
-   * 1) El cron ya no corre cada 5 minutos.
-   * 2) La deduplicación ahora es por autoBatchKey (grupo semanal),
-   *    no por planMantenimientoId individual.
-   */
-  // async existeOrdenParaPlanEnFecha(
-  //   planMantenimientoId: number,
-  //   fechaProgramada: Date,
-  // ): Promise<boolean> {
-  //   if (!planMantenimientoId || !fechaProgramada) return false;
-  //   const fechaStr = fechaProgramada.toISOString().slice(0, 10);
-  //   const count = await this.workOrdersRepository
-  //     .createQueryBuilder('wo')
-  //     .where('wo.planMantenimientoId = :planMantenimientoId', { planMantenimientoId })
-  //     .andWhere('wo.fechaProgramada = :fechaProgramada', { fechaProgramada: fechaStr })
-  //     .getCount();
-  //   return count > 0;
-  // }
-
-  /**
-   * @deprecated LEGACY
-   * Creaba 1 WorkOrder individual por PlanMantenimiento.
-   * Era llamado por procesarMantenimientosPeriodicos() (cron EVERY_5_MINUTES).
-   *
-   * Ya no aplica porque:
-   * 1) La nueva estrategia es 1 OT por (clienteEmpresaId + category) semanal
-   *    con todos los equipos de esa categoría en una sola OT.
-   * 2) Usaba planMantenimientoId en WorkOrder (1 a 1), lo que no soporta
-   *    la relación N a N que tiene la OT semanal con múltiples planes.
-   * 3) La lógica de resolución de contacto fue extraída al helper
-   *    resolveUsuarioContactoParaEmpresa() y reutilizada en el nuevo flujo.
-   */
-  // async createFromMaintenancePlan(params: {
-  //   plan: PlanMantenimiento;
-  //   fechaProgramada: Date;
-  // }): Promise<WorkOrder> {
-  //   const { plan, fechaProgramada } = params;
-  //   if (!plan?.equipmentId) {
-  //     throw new BadRequestException(`El plan ${plan?.id} no tiene equipmentId`);
-  //   }
-  //   const equipment = await this.equipmentRepository.findOne({
-  //     where: { equipmentId: plan.equipmentId },
-  //     relations: ['client'],
-  //   });
-  //   if (!equipment) throw new NotFoundException(`Equipo ${plan.equipmentId} no encontrado`);
-  //   const usuarioSeleccionado = await this.resolveUsuarioContactoParaEmpresa(equipment.clientId);
-  //   const servicio = await this.servicesRepository.findOne({
-  //     where: { categoriaServicio: equipment.category as ServiceCategory },
-  //     order: { servicioId: 'ASC' },
-  //   });
-  //   if (!servicio) throw new NotFoundException(`No hay servicio para ${equipment.category}`);
-  //   const queryRunner = this.dataSource.createQueryRunner();
-  //   await queryRunner.connect();
-  //   await queryRunner.startTransaction();
-  //   try {
-  //     const workOrder = this.workOrdersRepository.create({
-  //       servicioId: servicio.servicioId,
-  //       clienteId: usuarioSeleccionado.usuarioId,
-  //       clienteEmpresaId: equipment.clientId,
-  //       fechaProgramada,
-  //       comentarios: plan.notas ?? `Mantenimiento equipo ${equipment.code || equipment.equipmentId}`,
-  //       estado: WorkOrderStatus.REQUESTED_UNASSIGNED,
-  //       estadoFacturacion: null,
-  //       planMantenimientoId: plan.id,
-  //       isEmergency: false,
-  //     });
-  //     const savedWorkOrder = await queryRunner.manager.save(workOrder);
-  //     await queryRunner.manager.save(EquipmentWorkOrder,
-  //       this.equipmentWorkOrderRepository.create({
-  //         workOrderId: savedWorkOrder.ordenId,
-  //         equipmentId: equipment.equipmentId,
-  //         description: 'Mantenimiento automático desde plan',
-  //       })
-  //     );
-  //     await queryRunner.commitTransaction();
-  //     const full = await this.findOne(savedWorkOrder.ordenId);
-  //     this.notificationsGateway.server.emit('workOrders.created', full);
-  //     return full;
-  //   } catch (error) {
-  //     await queryRunner.rollbackTransaction();
-  //     throw error;
-  //   } finally {
-  //     await queryRunner.release();
-  //   }
-  // }
-
-  // ─────────────────────────────────────────────────────────────
-  // ✅ NUEVO - AUTOMÁTICO SEMANAL (viernes)
-  // ─────────────────────────────────────────────────────────────
-
-  /**
-   * Crea órdenes automáticas para la semana siguiente (lunes a sábado).
-   * Se llama SOLO los viernes desde MaintenanceSchedulerService.
-   *
-   * Por cada grupo (clienteEmpresaId + ServiceCategory):
-   * - Respeta cliente.planMantenimientoAutomatico
-   * - Evita duplicados por autoBatchKey
-   * - Filtra equipos ocupados (no tumba la OT entera)
-   * - Guarda trazabilidad en ordenes_trabajo_planes
-   */
   async crearOrdenesAutomaticasSemanalesViernes(): Promise<{
     created: number;
     skipped: number;
@@ -3416,7 +3228,7 @@ export class WorkOrdersService {
         await queryRunner.commitTransaction();
 
         const full = await this.findOne(savedWO.ordenId);
-        this.notificationsGateway.server.emit('workOrders.created', full);
+        this.realtime.emitWorkOrderUpdate(full, 'created');
         this.eventEmitter.emit('work-order.created', {
           workOrderId: full.ordenId,
           clienteId: full.clienteId,

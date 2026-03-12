@@ -15,7 +15,7 @@ import { Equipment } from '../equipment/entities/equipment.entity';
 import { Client } from '../client/entities/client.entity';
 import { WorkOrder } from 'src/work-orders/entities/work-order.entity';
 import { WorkOrderEvidencePhase, WorkOrderStatus } from 'src/shared/index';
-import { NotificationsGateway } from 'src/notifications/notifications.gateway';
+import { RealtimeService } from '../realtime/realtime.service';
 
 @Injectable()
 export class ImagesService {
@@ -40,12 +40,12 @@ export class ImagesService {
     @InjectRepository(Client)
     private readonly clientRepo: Repository<Client>,
 
-    private readonly cloudinary: CloudinaryService,
-
-    private readonly notificationsGateway: NotificationsGateway,
-
     @InjectRepository(WorkOrder)
     private readonly workOrderRepo: Repository<WorkOrder>,
+
+    private readonly cloudinary: CloudinaryService,
+
+    private readonly realtime: RealtimeService,
   ) {}
 
   // =======================
@@ -60,12 +60,11 @@ export class ImagesService {
       throw new NotFoundException('Herramienta no encontrada');
     }
 
-    // Verificar si hay archivos
     if (!files || files.length === 0) {
       throw new NotFoundException('No se han subido archivos');
     }
 
-    // BORRAR IMÁGENES ANTERIORES (usando FK tool_id)
+    // BORRAR IMÁGENES ANTERIORES
     const existingImages = await this.imageRepo
       .createQueryBuilder('image')
       .where('image.tool_id = :id', { id: toolId })
@@ -97,9 +96,8 @@ export class ImagesService {
 
     const savedImages = await this.imageRepo.save(imageEntities);
 
-    // 🔴 Evento WebSocket
-    this.notificationsGateway.server.emit('tools.imagesUpdated', {
-      toolId,
+    // Evento WebSocket
+    this.realtime.emitEntityDetail('tool', toolId, 'updated', {
       images: savedImages,
     });
 
@@ -110,7 +108,6 @@ export class ImagesService {
   }
 
   async getToolImages(toolId: number) {
-    // Verificar que la herramienta exista
     const tool = await this.toolRepo.findOne({
       where: { herramientaId: toolId },
     });
@@ -119,7 +116,6 @@ export class ImagesService {
       throw new NotFoundException('Herramienta no encontrada');
     }
 
-    // Buscar imágenes por la columna FK tool_id
     const images = await this.imageRepo
       .createQueryBuilder('image')
       .where('image.tool_id = :id', { id: toolId })
@@ -142,8 +138,7 @@ export class ImagesService {
     );
     await this.imageRepo.remove(images);
 
-    this.notificationsGateway.server.emit('tools.imagesUpdated', {
-      toolId: tool.herramientaId,
+    this.realtime.emitEntityDetail('tool', tool.herramientaId, 'updated', {
       images: [],
     });
   }
@@ -160,12 +155,11 @@ export class ImagesService {
       throw new NotFoundException('Insumo no encontrado');
     }
 
-    // Verificar si hay archivos
     if (!files || files.length === 0) {
       throw new NotFoundException('No se han subido archivos');
     }
 
-    // BORRAR IMÁGENES ANTERIORES (FK supply_id)
+    // BORRAR IMÁGENES ANTERIORES
     const existingImages = await this.imageRepo
       .createQueryBuilder('image')
       .where('image.supply_id = :id', { id: supplyId })
@@ -198,11 +192,9 @@ export class ImagesService {
       }),
     );
 
-    // Guardar todas las imágenes en la base de datos
     const savedImages = await this.imageRepo.save(imageEntities);
 
-    this.notificationsGateway.server.emit('supplies.imagesUpdated', {
-      supplyId,
+    this.realtime.emitEntityDetail('supply', supplyId, 'updated', {
       images: savedImages,
     });
 
@@ -248,9 +240,7 @@ export class ImagesService {
     );
     await this.imageRepo.remove(images);
 
-    // 🔴 Evento WebSocket
-    this.notificationsGateway.server.emit('supplies.imagesUpdated', {
-      supplyId: supply.insumoId,
+    this.realtime.emitEntityDetail('supply', supply.insumoId, 'updated', {
       images: [],
     });
   }
@@ -290,8 +280,8 @@ export class ImagesService {
 
     const saved = await this.imageRepo.save(image);
 
-    // 🔴 Evento WebSocket
-    this.notificationsGateway.server.emit('users.profilePhotoUpdated', {
+    // Evento WebSocket
+    this.realtime.emitToUser(userId, 'users.profilePhotoUpdated', {
       userId,
       image: saved,
     });
@@ -326,8 +316,8 @@ export class ImagesService {
     const ids = images.map((img) => img.id);
     await this.imageRepo.delete(ids);
 
-    // 🔴 Evento WebSocket
-    this.notificationsGateway.server.emit('users.profilePhotoUpdated', {
+    // Evento WebSocket
+    this.realtime.emitToUser(userId, 'users.profilePhotoUpdated', {
       userId,
       image: null,
     });
@@ -380,9 +370,8 @@ export class ImagesService {
     const saved = await this.imageRepo.save(image);
     const images = await this.getEquipmentImages(equipmentId);
 
-    // 🔴 Evento WebSocket
-    this.notificationsGateway.server.emit('equipment.imagesUpdated', {
-      equipmentId,
+    // Evento WebSocket
+    this.realtime.emitEntityDetail('equipment', equipmentId, 'updated', {
       images,
     });
 
@@ -398,7 +387,6 @@ export class ImagesService {
       throw new NotFoundException('Equipo no encontrado');
     }
 
-    // ✅ Solo imágenes de hoja de vida (no evidencias OT)
     const images = await this.imageRepo
       .createQueryBuilder('image')
       .where('image.equipment_id = :id', { id: equipmentId })
@@ -411,7 +399,6 @@ export class ImagesService {
   }
 
   async deleteByEquipment(equipmentId: number) {
-    // ✅ Solo imágenes de hoja de vida (no evidencias OT)
     const images = await this.imageRepo
       .createQueryBuilder('image')
       .where('image.equipment_id = :id', { id: equipmentId })
@@ -426,8 +413,7 @@ export class ImagesService {
     );
     await this.imageRepo.remove(images);
 
-    this.notificationsGateway.server.emit('equipment.imagesUpdated', {
-      equipmentId,
+    this.realtime.emitEntityDetail('equipment', equipmentId, 'updated', {
       images: [],
     });
   }
@@ -473,9 +459,8 @@ export class ImagesService {
 
     const saved = await this.imageRepo.save(image);
 
-    // 🔴 Evento WebSocket
-    this.notificationsGateway.server.emit('clients.logoUpdated', {
-      clientId,
+    // Evento WebSocket
+    this.realtime.emitEntityDetail('client', clientId, 'updated', {
       logo: saved,
     });
 
@@ -491,7 +476,6 @@ export class ImagesService {
       throw new NotFoundException('Cliente no encontrado');
     }
 
-    // Verificar si hay archivos
     if (!files || files.length === 0) {
       throw new NotFoundException('No se han subido archivos');
     }
@@ -519,10 +503,9 @@ export class ImagesService {
 
     const savedImages = await this.imageRepo.save(imageEntities);
 
-    // 🔴 Evento WebSocket
-    this.notificationsGateway.server.emit('clients.galleryUpdated', {
-      clientId,
-      images: savedImages,
+    // Evento WebSocket
+    this.realtime.emitEntityDetail('client', clientId, 'updated', {
+      gallery: savedImages,
     });
 
     return {
@@ -584,13 +567,9 @@ export class ImagesService {
     );
     await this.imageRepo.remove(images);
 
-    // 🔴 Evento WebSocket (se vacía galería y logos)
-    this.notificationsGateway.server.emit('clients.galleryUpdated', {
-      clientId,
-      images: [],
-    });
-    this.notificationsGateway.server.emit('clients.logoUpdated', {
-      clientId,
+    // Evento WebSocket
+    this.realtime.emitEntityDetail('client', clientId, 'updated', {
+      gallery: [],
       logo: null,
     });
   }
@@ -608,8 +587,8 @@ export class ImagesService {
     await this.cloudinary.delete(image.public_id);
     await this.imageRepo.remove(image);
 
-    // 🔴 Evento WebSocket genérico
-    this.notificationsGateway.server.emit('images.deleted', imageCopy);
+    // Evento WebSocket genérico
+    this.realtime.emitGlobal('images.deleted', imageCopy);
 
     return { message: 'Imagen eliminada correctamente' };
   }
@@ -630,7 +609,6 @@ export class ImagesService {
       throw new NotFoundException('Orden de trabajo no encontrada');
     }
 
-    // ✅ bloquear si está completada o cancelada
     if (
       workOrder.estado === WorkOrderStatus.COMPLETED ||
       workOrder.estado === WorkOrderStatus.CANCELED
@@ -655,7 +633,6 @@ export class ImagesService {
       (x) => x.equipmentId,
     );
 
-    // ✅ Para AC (haya 1 o varios equipos): equipmentId SIEMPRE obligatorio
     if (isAC && !equipmentId) {
       throw new BadRequestException(
         'Debe enviar equipmentId para evidencias de órdenes de Aires Acondicionados',
@@ -691,7 +668,6 @@ export class ImagesService {
       ),
     );
 
-    // ✅ Guardar relación con equipment (no equipmentId suelto)
     const imageEntities = uploadResults.map((upload) =>
       this.imageRepo.create({
         url: upload.secure_url,
@@ -706,8 +682,7 @@ export class ImagesService {
 
     const savedImages = await this.imageRepo.save(imageEntities);
 
-    this.notificationsGateway.server.emit('workOrders.imagesUpdated', {
-      ordenId,
+    this.realtime.emitEntityDetail('workOrder', ordenId, 'updated', {
       images: await this.getWorkOrderImages(ordenId),
     });
 
@@ -756,8 +731,7 @@ export class ImagesService {
     );
     await this.imageRepo.remove(images);
 
-    this.notificationsGateway.server.emit('workOrders.imagesUpdated', {
-      ordenId,
+    this.realtime.emitEntityDetail('workOrder', ordenId, 'updated', {
       images: [],
     });
   }

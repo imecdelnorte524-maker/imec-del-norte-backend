@@ -6,12 +6,13 @@ import { AreaService } from './area.service';
 import { Area } from './entities/area.entity';
 import { Client } from '../client/entities/client.entity';
 import { SubArea } from '../sub-area/entities/sub-area.entity';
-import { NotificationsModule } from '../notifications/notifications.module';
+import { RealtimeModule } from '../realtime/realtime.module';
+ 
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([Area, Client, SubArea]),
-    NotificationsModule,
+    RealtimeModule,
   ],
   controllers: [AreaController],
   providers: [AreaService],

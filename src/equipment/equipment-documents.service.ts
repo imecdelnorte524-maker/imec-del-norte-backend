@@ -9,7 +9,7 @@ import { Repository } from 'typeorm';
 import { CloudinaryService } from '../images/cloudinary.service';
 import { Equipment } from './entities/equipment.entity';
 import { EquipmentDocument } from './entities/equipment-document.entity';
-import { NotificationsGateway } from 'src/notifications/notifications.gateway';
+import { RealtimeService } from '../realtime/realtime.service';
 
 @Injectable()
 export class EquipmentDocumentsService {
@@ -19,7 +19,7 @@ export class EquipmentDocumentsService {
     @InjectRepository(Equipment)
     private readonly equipmentRepo: Repository<Equipment>,
     private readonly cloudinary: CloudinaryService,
-    private readonly notificationsGateway: NotificationsGateway,
+    private readonly realtime: RealtimeService,
   ) {}
 
   private ensurePdf(file: Express.Multer.File) {
@@ -43,7 +43,9 @@ export class EquipmentDocumentsService {
   }
 
   async listByEquipment(equipmentId: number) {
-    const equipment = await this.equipmentRepo.findOne({ where: { equipmentId } });
+    const equipment = await this.equipmentRepo.findOne({
+      where: { equipmentId },
+    });
     if (!equipment) throw new NotFoundException('Equipo no encontrado');
 
     const docs = await this.docRepo
@@ -67,7 +69,9 @@ export class EquipmentDocumentsService {
   }
 
   async upload(equipmentId: number, file: Express.Multer.File) {
-    const equipment = await this.equipmentRepo.findOne({ where: { equipmentId } });
+    const equipment = await this.equipmentRepo.findOne({
+      where: { equipmentId },
+    });
     if (!equipment) throw new NotFoundException('Equipo no encontrado');
     if (!file) throw new BadRequestException('No se ha subido archivo');
 
@@ -76,11 +80,13 @@ export class EquipmentDocumentsService {
     const upload = await this.cloudinary.upload(
       file,
       `equipment/${equipmentId}/documents`,
-      'raw', // ✅ PDF en Cloudinary = RAW
+      'raw',
     );
 
     if (!upload?.secure_url || !upload?.public_id) {
-      throw new InternalServerErrorException('Cloudinary no devolvió secure_url/public_id');
+      throw new InternalServerErrorException(
+        'Cloudinary no devolvió secure_url/public_id',
+      );
     }
 
     const doc = this.docRepo.create({
@@ -97,8 +103,7 @@ export class EquipmentDocumentsService {
 
     // websocket
     const docs = await this.listByEquipment(equipmentId);
-    this.notificationsGateway.server.emit('equipment.documentsUpdated', {
-      equipmentId,
+    this.realtime.emitEntityDetail('equipment', equipmentId, 'updated', {
       documents: docs,
     });
 
@@ -129,8 +134,7 @@ export class EquipmentDocumentsService {
 
     if (equipmentId) {
       const docs = await this.listByEquipment(equipmentId);
-      this.notificationsGateway.server.emit('equipment.documentsUpdated', {
-        equipmentId,
+      this.realtime.emitEntityDetail('equipment', equipmentId, 'updated', {
         documents: docs,
       });
     }
@@ -147,11 +151,12 @@ export class EquipmentDocumentsService {
 
     if (!docs.length) return;
 
-    await Promise.all(docs.map((d) => this.cloudinary.delete(d.public_id, 'raw')));
+    await Promise.all(
+      docs.map((d) => this.cloudinary.delete(d.public_id, 'raw')),
+    );
     await this.docRepo.remove(docs);
 
-    this.notificationsGateway.server.emit('equipment.documentsUpdated', {
-      equipmentId,
+    this.realtime.emitEntityDetail('equipment', equipmentId, 'updated', {
       documents: [],
     });
   }
