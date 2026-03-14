@@ -1,4 +1,3 @@
-// src/work-orders/dto/create-work-order.dto.ts
 import {
   IsNotEmpty,
   IsNumber,
@@ -41,7 +40,7 @@ export class CreateWorkOrderDto {
   @ApiProperty({ required: false })
   @IsOptional()
   @IsDateString()
-  fechaInicio?: Date;
+  fechaInicio?: string;
 
   @ApiProperty({ required: false })
   @IsOptional()

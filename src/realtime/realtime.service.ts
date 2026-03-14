@@ -1,4 +1,3 @@
-// src/realtime/realtime.service.ts
 import { Injectable, Logger } from '@nestjs/common';
 import { Server } from 'socket.io';
 import { WorkOrderLightDto } from '../work-orders/dto/work-order-light.dto';
@@ -56,10 +55,8 @@ export class RealtimeService {
       return;
     }
 
-    // Estimar tamaño del payload
     const size = JSON.stringify(payload).length;
     if (size > 500 * 1024) {
-      // 500KB
       this.logger.warn(
         `⚠️ Payload muy grande: ${Math.round(size / 1024)}KB para evento ${event}`,
       );
@@ -118,7 +115,6 @@ export class RealtimeService {
   emitEntityUpdate(entity: string, action: EntityAction, data?: any) {
     if (!this.server) return;
 
-    // Para workOrders, usar versión ligera
     if (entity === 'workOrders' && data) {
       data = WorkOrderLightDto.forBroadcast(data);
     }
@@ -175,23 +171,22 @@ export class RealtimeService {
   }
 
   /**
-   * Emitir evento de workOrders actualizado (versión ligera)
+   * 🔥 CORREGIDO: Emitir evento de workOrders actualizado con soporte para quien hizo la acción
    */
   emitWorkOrderUpdate(
     workOrder: any,
     action: 'created' | 'updated' | 'deleted' = 'updated',
+    userId?: number, // 👈 NUEVO: Usuario que realizó la acción
   ) {
     if (!workOrder) return;
 
-    // Versión ultra ligera para broadcasts
     const lightWorkOrder = WorkOrderLightDto.forBroadcast(workOrder);
 
-    // Evitar duplicados
     if (!this.shouldEmit(`workOrders.${action}`, lightWorkOrder)) {
       return;
     }
 
-    // Emitir globalmente (versión ligera)
+    // Emitir a TODOS (global)
     this.emitEntityUpdate('workOrders', action, lightWorkOrder);
     this.emitGlobal(`workOrders.${action}`, lightWorkOrder);
 
@@ -200,8 +195,13 @@ export class RealtimeService {
       this.emitEntityDetail('workOrder', workOrder.ordenId, action, workOrder);
     }
 
-    // Si hay cliente, emitirle versión ligera
-    if (workOrder.clienteId) {
+    // ✅ NUEVO: Emitir al usuario que hizo la acción
+    if (userId) {
+      this.emitToUser(userId, `workOrders.${action}`, lightWorkOrder);
+    }
+
+    // Si hay cliente, emitirle (si no es el mismo que hizo la acción)
+    if (workOrder.clienteId && workOrder.clienteId !== userId) {
       this.emitToUser(
         workOrder.clienteId,
         'workOrders.client.updated',
@@ -211,9 +211,13 @@ export class RealtimeService {
   }
 
   /**
-   * Emitir evento de cambio de estado de workOrder
+   * 🔥 CORREGIDO: Emitir cambio de estado con soporte para quien hizo la acción
    */
-  emitWorkOrderStatusUpdate(workOrder: any, previousStatus: string) {
+  emitWorkOrderStatusUpdate(
+    workOrder: any,
+    previousStatus: string,
+    userId?: number, // 👈 NUEVO
+  ) {
     if (!this.server || !workOrder) return;
 
     const payload = {
@@ -223,12 +227,16 @@ export class RealtimeService {
       timestamp: Date.now(),
     };
 
-    // Evitar duplicados
     if (!this.shouldEmit('workOrders.statusUpdated', payload)) {
       return;
     }
 
     this.emitGlobal('workOrders.statusUpdated', payload);
+
+    // ✅ NUEVO: Emitir al usuario que hizo el cambio
+    if (userId) {
+      this.emitToUser(userId, 'workOrders.statusUpdated', payload);
+    }
 
     if (workOrder.ordenId) {
       this.emitEntityDetail(
@@ -245,12 +253,13 @@ export class RealtimeService {
   }
 
   /**
-   * Emitir evento de workOrder asignada (versión ligera)
+   * 🔥 CORREGIDO: Emitir evento de workOrder asignada con soporte para quien hizo la acción
    */
   emitWorkOrderAssigned(
     workOrder: any,
     technicianIds: number[],
     leaderTechnicianId?: number,
+    userId?: number, // 👈 NUEVO
   ) {
     if (!workOrder) return;
 
@@ -261,18 +270,19 @@ export class RealtimeService {
       timestamp: Date.now(),
     };
 
-    // Evitar duplicados
     if (!this.shouldEmit('workOrders.assigned', payload)) {
       return;
     }
 
-    // Emitir a TODOS (versión ligera)
+    // Emitir a TODOS
     this.emitGlobal('workOrders.assigned', payload);
-
-    // También emitir a los técnicos específicos
     this.emitToUsers(technicianIds, 'workOrders.assigned', payload);
 
-    // Emitir actualización de entidad ligera
+    // ✅ NUEVO: Emitir al usuario que hizo la asignación
+    if (userId) {
+      this.emitToUser(userId, 'workOrders.assigned', payload);
+    }
+
     this.emitEntityUpdate(
       'workOrders',
       'updated',

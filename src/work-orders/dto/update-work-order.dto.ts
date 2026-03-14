@@ -1,5 +1,4 @@
-// src/work-orders/dto/update-work-order.dto.ts
-import { PartialType } from '@nestjs/swagger';
+// src/work-orders/dto/create-work-order.dto.tsimport { PartialType } from '@nestjs/swagger';
 import { CreateWorkOrderDto } from './create-work-order.dto';
 import {
   IsOptional,
@@ -12,7 +11,7 @@ import {
   ArrayMaxSize,
   IsBoolean,
 } from 'class-validator';
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, PartialType } from '@nestjs/swagger';
 import { WorkOrderStatus } from '../../shared/index';
 import { BillingStatus } from '../../shared/index';
 import { CostStatus } from '../../shared/index';
@@ -31,12 +30,12 @@ export class UpdateWorkOrderDto extends PartialType(CreateWorkOrderDto) {
   @ApiProperty({ required: false })
   @IsOptional()
   @IsDateString()
-  fechaInicio?: Date;
+  fechaInicio?: string;
 
   @ApiProperty({ required: false })
   @IsOptional()
   @IsDateString()
-  fechaFinalizacion?: Date;
+  fechaFinalizacion?: string;
 
   @ApiProperty({ required: false })
   @IsOptional()
@@ -60,7 +59,7 @@ export class UpdateWorkOrderDto extends PartialType(CreateWorkOrderDto) {
 
   @ApiProperty({
     description: 'Estado de Pago facturación (solo Admin/Secretaria)',
-    enum: BillingStatus,
+    enum: CostStatus,
     required: false,
     nullable: true,
   })
