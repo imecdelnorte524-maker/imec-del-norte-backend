@@ -57,6 +57,7 @@ import { Public } from 'src/common/decorators/public.decorator';
 import { SendWorkOrderReportsDto } from './dto/send-work-order-reports.dto';
 import { SendWorkOrderReportsToClientsDto } from './dto/send-work-order-reports-to-clients.dto';
 import { DownloadWorkOrderReportsDto } from './dto/download-work-order-reports.dto';
+import { LightSerializerInterceptor } from '../common/interceptors/light-serializer.interceptor';
 
 @ApiTags('work-orders')
 @Controller('work-orders')
@@ -879,6 +880,50 @@ export class WorkOrdersController {
     res.setHeader('Content-Length', buffer.length);
 
     return res.status(HttpStatus.OK).send(buffer);
+  }
+
+  @Get('light')
+  @ApiOperation({
+    summary: 'Obtener versiones ligeras de órdenes (para tiempo real)',
+  })
+  @UseInterceptors(
+    new LightSerializerInterceptor([
+      'ordenId',
+      'estado',
+      'fechaCreacion',
+      'clienteId',
+    ]),
+  )
+  async findAllLight(@Req() req: any) {
+    const roleName = this.getRoleName(req.user);
+    let data: WorkOrder[];
+
+    if (roleName === 'Técnico') {
+      data = await this.workOrdersService.getWorkOrdersByTechnician(
+        req.user.userId,
+      );
+    } else if (roleName === 'Cliente') {
+      data = await this.workOrdersService.getWorkOrdersForClientUser(
+        req.user.userId,
+      );
+    } else {
+      data = await this.workOrdersService.findAll();
+    }
+
+    // Limitar a 100 registros máximo
+    if (data.length > 100) {
+      data = data.slice(0, 100);
+    }
+
+    return {
+      message: 'Órdenes ligeras obtenidas',
+      data: data.map((wo) => ({
+        ordenId: wo.ordenId,
+        estado: wo.estado,
+        fechaCreacion: wo.fechaSolicitud,
+        clienteId: wo.clienteId,
+      })),
+    };
   }
 
   private mapToResponseDto(workOrder: WorkOrder): WorkOrderResponseDto {

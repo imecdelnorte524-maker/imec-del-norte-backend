@@ -1,6 +1,8 @@
 // src/realtime/realtime.service.ts
 import { Injectable, Logger } from '@nestjs/common';
 import { Server } from 'socket.io';
+import { WorkOrderLightDto } from '../work-orders/dto/work-order-light.dto';
+import { NotificationLightDto } from '../notifications/dto/notification-light.dto';
 
 export type EntityAction = 'created' | 'updated' | 'deleted';
 
@@ -9,9 +11,40 @@ export class RealtimeService {
   private server: Server;
   private readonly logger = new Logger(RealtimeService.name);
 
+  // Cache para evitar duplicados
+  private lastEmitted = new Map<string, { payload: any; timestamp: number }>();
+  private readonly CACHE_TTL = 5000; // 5 segundos
+
   setServer(server: Server) {
     this.server = server;
     this.logger.log('✅ Servidor WebSocket asignado a RealtimeService');
+  }
+
+  /**
+   * Verificar si un evento ya fue emitido recientemente (para evitar duplicados)
+   */
+  private shouldEmit(event: string, payload: any): boolean {
+    const key = `${event}:${JSON.stringify(payload)}`;
+    const last = this.lastEmitted.get(key);
+    const now = Date.now();
+
+    if (last && now - last.timestamp < this.CACHE_TTL) {
+      return false;
+    }
+
+    this.lastEmitted.set(key, { payload, timestamp: now });
+
+    // Limpiar cache viejo
+    if (this.lastEmitted.size > 100) {
+      const oldest = now - this.CACHE_TTL;
+      for (const [k, v] of this.lastEmitted.entries()) {
+        if (v.timestamp < oldest) {
+          this.lastEmitted.delete(k);
+        }
+      }
+    }
+
+    return true;
   }
 
   /**
@@ -23,29 +56,23 @@ export class RealtimeService {
       return;
     }
 
+    // Estimar tamaño del payload
+    const size = JSON.stringify(payload).length;
+    if (size > 500 * 1024) {
+      // 500KB
+      this.logger.warn(
+        `⚠️ Payload muy grande: ${Math.round(size / 1024)}KB para evento ${event}`,
+      );
+    }
+
     this.server.emit(event, {
       ...payload,
       _timestamp: Date.now(),
     });
 
-    this.logger.debug(`📡 Evento global emitido: ${event}`);
-  }
-
-  /**
-   * Emitir a una sala específica
-   */
-  emitToRoom(room: string, event: string, payload?: any) {
-    if (!this.server) {
-      this.logger.warn('⚠️ Servidor WebSocket no disponible');
-      return;
-    }
-
-    this.server.to(room).emit(event, {
-      ...payload,
-      _timestamp: Date.now(),
-    });
-
-    this.logger.debug(`📡 Evento emitido a sala ${room}: ${event}`);
+    this.logger.debug(
+      `📡 Evento global emitido: ${event} (${Math.round(size / 1024)}KB)`,
+    );
   }
 
   /**
@@ -70,10 +97,7 @@ export class RealtimeService {
    * Emitir a múltiples usuarios
    */
   emitToUsers(userIds: (number | string)[], event: string, payload?: any) {
-    if (!this.server) {
-      this.logger.warn('⚠️ Servidor WebSocket no disponible');
-      return;
-    }
+    if (!this.server || !userIds.length) return;
 
     userIds.forEach((userId) => {
       const room = `user:${userId}`;
@@ -94,13 +118,19 @@ export class RealtimeService {
   emitEntityUpdate(entity: string, action: EntityAction, data?: any) {
     if (!this.server) return;
 
-    this.server.emit('entity.updated', {
+    // Para workOrders, usar versión ligera
+    if (entity === 'workOrders' && data) {
+      data = WorkOrderLightDto.forBroadcast(data);
+    }
+
+    const payload = {
       entity,
       action,
       data,
       timestamp: Date.now(),
-    });
+    };
 
+    this.server.emit('entity.updated', payload);
     this.logger.debug(`📡 Entidad actualizada: ${entity} - ${action}`);
   }
 
@@ -130,10 +160,11 @@ export class RealtimeService {
   }
 
   /**
-   * Emitir notificación a usuario
+   * Emitir notificación a usuario (versión ligera)
    */
   emitNotification(userId: number, notification: any) {
-    this.emitToUser(userId, 'notification', { notification });
+    const lightNotif = NotificationLightDto.fromEntity(notification);
+    this.emitToUser(userId, 'notification', { notification: lightNotif });
   }
 
   /**
@@ -144,29 +175,37 @@ export class RealtimeService {
   }
 
   /**
-   * Emitir evento de workOrders actualizado
+   * Emitir evento de workOrders actualizado (versión ligera)
    */
   emitWorkOrderUpdate(
     workOrder: any,
     action: 'created' | 'updated' | 'deleted' = 'updated',
   ) {
-    // Emitir globalmente
-    this.emitEntityUpdate('workOrders', action, workOrder);
+    if (!workOrder) return;
 
-    // Emitir evento específico
-    this.emitGlobal(`workOrders.${action}`, workOrder);
+    // Versión ultra ligera para broadcasts
+    const lightWorkOrder = WorkOrderLightDto.forBroadcast(workOrder);
 
-    // Emitir a la sala específica de la orden
+    // Evitar duplicados
+    if (!this.shouldEmit(`workOrders.${action}`, lightWorkOrder)) {
+      return;
+    }
+
+    // Emitir globalmente (versión ligera)
+    this.emitEntityUpdate('workOrders', action, lightWorkOrder);
+    this.emitGlobal(`workOrders.${action}`, lightWorkOrder);
+
+    // Emitir a la sala específica de la orden (versión completa)
     if (workOrder.ordenId) {
       this.emitEntityDetail('workOrder', workOrder.ordenId, action, workOrder);
     }
 
-    // Si hay cliente, emitirle
+    // Si hay cliente, emitirle versión ligera
     if (workOrder.clienteId) {
       this.emitToUser(
         workOrder.clienteId,
         'workOrders.client.updated',
-        workOrder,
+        lightWorkOrder,
       );
     }
   }
@@ -175,16 +214,20 @@ export class RealtimeService {
    * Emitir evento de cambio de estado de workOrder
    */
   emitWorkOrderStatusUpdate(workOrder: any, previousStatus: string) {
-    if (!this.server) return;
+    if (!this.server || !workOrder) return;
 
     const payload = {
-      workOrder,
+      ordenId: workOrder.ordenId,
       previousStatus,
       newStatus: workOrder.estado,
       timestamp: Date.now(),
     };
 
-    // Emitir a TODOS
+    // Evitar duplicados
+    if (!this.shouldEmit('workOrders.statusUpdated', payload)) {
+      return;
+    }
+
     this.emitGlobal('workOrders.statusUpdated', payload);
 
     if (workOrder.ordenId) {
@@ -202,27 +245,39 @@ export class RealtimeService {
   }
 
   /**
-   * 🔥 CORREGIDO: Emitir evento de workOrder asignada a TODOS
+   * Emitir evento de workOrder asignada (versión ligera)
    */
   emitWorkOrderAssigned(
     workOrder: any,
     technicianIds: number[],
     leaderTechnicianId?: number,
   ) {
+    if (!workOrder) return;
+
     const payload = {
-      workOrder,
+      ordenId: workOrder.ordenId,
       technicianIds,
       leaderTechnicianId,
+      timestamp: Date.now(),
     };
 
-    // ✅ Emitir a TODOS los usuarios
+    // Evitar duplicados
+    if (!this.shouldEmit('workOrders.assigned', payload)) {
+      return;
+    }
+
+    // Emitir a TODOS (versión ligera)
     this.emitGlobal('workOrders.assigned', payload);
 
-    // ✅ También emitir a los técnicos específicos (por si acaso)
+    // También emitir a los técnicos específicos
     this.emitToUsers(technicianIds, 'workOrders.assigned', payload);
 
-    // ✅ Emitir actualización de entidad
-    this.emitEntityUpdate('workOrders', 'updated', workOrder);
+    // Emitir actualización de entidad ligera
+    this.emitEntityUpdate(
+      'workOrders',
+      'updated',
+      WorkOrderLightDto.forBroadcast(workOrder),
+    );
   }
 
   /**
@@ -232,6 +287,7 @@ export class RealtimeService {
     this.emitGlobal('workOrders.invoiceUpdated', {
       workOrderId,
       ...invoiceData,
+      timestamp: Date.now(),
     });
   }
 
@@ -239,21 +295,31 @@ export class RealtimeService {
    * Emitir evento de factura eliminada
    */
   emitInvoiceRemoved(workOrderId: number) {
-    this.emitGlobal('workOrders.invoiceRemoved', { workOrderId });
+    this.emitGlobal('workOrders.invoiceRemoved', {
+      workOrderId,
+      timestamp: Date.now(),
+    });
   }
 
   /**
    * Emitir evento de técnicos calificados
    */
   emitTechniciansRated(ordenId: number) {
-    this.emitGlobal('workOrders.techniciansRated', { ordenId });
+    this.emitGlobal('workOrders.techniciansRated', {
+      ordenId,
+      timestamp: Date.now(),
+    });
   }
 
   /**
    * Emitir evento de firma de recibido
    */
   emitReceiptSigned(ordenId: number, workOrder: any) {
-    this.emitGlobal('workOrders.receiptSigned', { ordenId, workOrder });
+    this.emitGlobal('workOrders.receiptSigned', {
+      ordenId,
+      workOrder: WorkOrderLightDto.forBroadcast(workOrder),
+      timestamp: Date.now(),
+    });
   }
 
   /**
@@ -262,7 +328,18 @@ export class RealtimeService {
   emitEmergencyCreated(originalOrderId: number, emergencyOrder: any) {
     this.emitGlobal('workOrders.emergencyCreated', {
       originalOrderId,
-      emergencyOrder,
+      emergencyOrder: WorkOrderLightDto.forBroadcast(emergencyOrder),
+      timestamp: Date.now(),
     });
+  }
+
+  /**
+   * Obtener estadísticas de uso
+   */
+  getStats() {
+    return {
+      cacheSize: this.lastEmitted.size,
+      memoryUsage: process.memoryUsage(),
+    };
   }
 }
