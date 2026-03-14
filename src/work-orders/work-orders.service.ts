@@ -1,4 +1,3 @@
-// src/work-orders/work-orders.service.ts
 import {
   Injectable,
   NotFoundException,
@@ -388,8 +387,8 @@ export class WorkOrdersService {
 
     const full = await this.findOne(savedWorkOrder.ordenId);
 
-    // Emitir usando RealtimeService
-    this.realtime.emitWorkOrderUpdate(full, 'created');
+    // ✅ CORREGIDO: Pasar userId
+    this.realtime.emitWorkOrderUpdate(full, 'created', currentUser?.userId);
 
     if (currentUser?.userId) {
       this.realtime.emitToUser(currentUser.userId, 'workOrders.created', full);
@@ -640,7 +639,7 @@ export class WorkOrdersService {
       updateWorkOrderDto.estado === WorkOrderStatus.IN_PROGRESS &&
       !workOrder.fechaInicio
     ) {
-      updateWorkOrderDto.fechaInicio = this.getColombiaTime();
+      updateWorkOrderDto.fechaInicio = this.getColombiaTime().toISOString();
       await this.startTimer(id, currentUser.userId);
       this.eventEmitter.emit('work-order.started', {
         workOrderId: id,
@@ -654,7 +653,8 @@ export class WorkOrdersService {
       updateWorkOrderDto.estado === WorkOrderStatus.COMPLETED &&
       !workOrder.fechaFinalizacion
     ) {
-      updateWorkOrderDto.fechaFinalizacion = this.getColombiaTime();
+      updateWorkOrderDto.fechaFinalizacion =
+        this.getColombiaTime().toISOString();
       await this.stopTimer(id);
     }
 
@@ -778,18 +778,32 @@ export class WorkOrdersService {
       });
     }
 
-    // Emitir usando RealtimeService
-    this.realtime.emitWorkOrderUpdate(updatedWorkOrder, 'updated');
+    // ✅ CORREGIDO: Pasar userId
+    this.realtime.emitWorkOrderUpdate(
+      updatedWorkOrder,
+      'updated',
+      currentUser?.userId,
+    );
 
     if (previousStatus !== updatedWorkOrder.estado) {
-      this.realtime.emitWorkOrderStatusUpdate(updatedWorkOrder, previousStatus);
+      this.realtime.emitWorkOrderStatusUpdate(
+        updatedWorkOrder,
+        previousStatus,
+        currentUser?.userId,
+      );
     }
 
     if (updatedWorkOrder.technicians?.length) {
       const technicianIds = updatedWorkOrder.technicians.map(
         (t) => t.tecnicoId,
       );
-      this.realtime.emitWorkOrderAssigned(updatedWorkOrder, technicianIds);
+      // ✅ CORREGIDO: Pasar userId
+      this.realtime.emitWorkOrderAssigned(
+        updatedWorkOrder,
+        technicianIds,
+        undefined,
+        currentUser?.userId,
+      );
     }
 
     if (currentUser?.userId) {
@@ -884,8 +898,13 @@ export class WorkOrdersService {
 
     const updated = await this.findOne(id);
 
-    this.realtime.emitWorkOrderUpdate(updated, 'updated');
-    this.realtime.emitWorkOrderStatusUpdate(updated, previousStatus);
+    // ✅ CORREGIDO: Pasar userId
+    this.realtime.emitWorkOrderUpdate(updated, 'updated', currentUser?.userId);
+    this.realtime.emitWorkOrderStatusUpdate(
+      updated,
+      previousStatus,
+      currentUser?.userId,
+    );
 
     if (currentUser?.userId) {
       this.realtime.emitToUser(
@@ -965,8 +984,12 @@ export class WorkOrdersService {
 
       this.eventEmitter.emit('work-order.deleted', { ordenId: id });
 
-      // Emitir usando RealtimeService
-      this.realtime.emitWorkOrderUpdate({ ordenId: id } as any, 'deleted');
+      // ✅ CORREGIDO: Pasar userId
+      this.realtime.emitWorkOrderUpdate(
+        { ordenId: id } as any,
+        'deleted',
+        currentUser?.userId,
+      );
 
       if (currentUser?.userId) {
         this.realtime.emitToUser(currentUser.userId, 'workOrders.deleted', {
@@ -1076,15 +1099,20 @@ export class WorkOrdersService {
       action: 'assignTechnicians',
     });
 
-    // Emitir usando RealtimeService
+    // ✅ CORREGIDO: Pasar userId
     this.realtime.emitWorkOrderAssigned(
       updated,
       dto.technicianIds,
       dto.leaderTechnicianId,
+      currentUser?.userId,
     );
 
     if (workOrder.estado !== nuevoEstado) {
-      this.realtime.emitWorkOrderStatusUpdate(updated, workOrder.estado);
+      this.realtime.emitWorkOrderStatusUpdate(
+        updated,
+        workOrder.estado,
+        currentUser?.userId,
+      );
     }
 
     if (currentUser?.userId) {
@@ -1169,10 +1197,15 @@ export class WorkOrdersService {
       action: 'unassignTechnician',
     });
 
-    this.realtime.emitWorkOrderUpdate(updated, 'updated');
+    // ✅ CORREGIDO: Pasar userId
+    this.realtime.emitWorkOrderUpdate(updated, 'updated', currentUser?.userId);
 
     if (previousStatus !== nuevoEstado) {
-      this.realtime.emitWorkOrderStatusUpdate(updated, previousStatus);
+      this.realtime.emitWorkOrderStatusUpdate(
+        updated,
+        previousStatus,
+        currentUser?.userId,
+      );
     }
 
     if (currentUser?.userId) {
@@ -1223,10 +1256,15 @@ export class WorkOrdersService {
       action: 'unassignAllTechnicians',
     });
 
-    this.realtime.emitWorkOrderUpdate(updated, 'updated');
+    // ✅ CORREGIDO: Pasar userId
+    this.realtime.emitWorkOrderUpdate(updated, 'updated', currentUser?.userId);
 
     if (previousStatus !== nuevoEstado) {
-      this.realtime.emitWorkOrderStatusUpdate(updated, previousStatus);
+      this.realtime.emitWorkOrderStatusUpdate(
+        updated,
+        previousStatus,
+        currentUser?.userId,
+      );
     }
 
     if (currentUser?.userId) {
@@ -1301,7 +1339,8 @@ export class WorkOrdersService {
     });
 
     const updated = await this.findOne(ordenId);
-    this.realtime.emitWorkOrderUpdate(updated, 'updated');
+    // ✅ CORREGIDO: Pasar userId
+    this.realtime.emitWorkOrderUpdate(updated, 'updated', currentUser?.userId);
 
     if (currentUser?.userId) {
       this.realtime.emitToUser(
@@ -1334,7 +1373,8 @@ export class WorkOrdersService {
     });
 
     const updated = await this.findOne(ordenId);
-    this.realtime.emitWorkOrderUpdate(updated, 'updated');
+    // ✅ CORREGIDO: Pasar userId
+    this.realtime.emitWorkOrderUpdate(updated, 'updated', currentUser?.userId);
 
     if (currentUser?.userId) {
       this.realtime.emitToUser(
@@ -1599,12 +1639,17 @@ export class WorkOrdersService {
       createdBy: currentUser?.userId,
     });
 
-    // Emitir usando RealtimeService
     const updatedOriginal = await this.findOne(ordenId);
-    this.realtime.emitWorkOrderUpdate(updatedOriginal, 'updated');
+    // ✅ CORREGIDO: Pasar userId
+    this.realtime.emitWorkOrderUpdate(
+      updatedOriginal,
+      'updated',
+      currentUser?.userId,
+    );
     this.realtime.emitWorkOrderStatusUpdate(
       updatedOriginal,
       originalOrder.estado,
+      currentUser?.userId,
     );
     this.realtime.emitEmergencyCreated(ordenId, emergencyOrder);
 
@@ -1719,7 +1764,12 @@ export class WorkOrdersService {
       });
 
       const updated = await this.findOne(ordenId);
-      this.realtime.emitWorkOrderUpdate(updated, 'updated');
+      // ✅ CORREGIDO: Pasar userId
+      this.realtime.emitWorkOrderUpdate(
+        updated,
+        'updated',
+        currentUser?.userId,
+      );
 
       if (currentUser?.userId) {
         this.realtime.emitToUser(
@@ -1787,7 +1837,12 @@ export class WorkOrdersService {
       });
 
       const updated = await this.findOne(ordenId);
-      this.realtime.emitWorkOrderUpdate(updated, 'updated');
+      // ✅ CORREGIDO: Pasar userId
+      this.realtime.emitWorkOrderUpdate(
+        updated,
+        'updated',
+        currentUser?.userId,
+      );
 
       if (currentUser?.userId) {
         this.realtime.emitToUser(
@@ -1853,7 +1908,12 @@ export class WorkOrdersService {
       });
 
       const updated = await this.findOne(ordenId);
-      this.realtime.emitWorkOrderUpdate(updated, 'updated');
+      // ✅ CORREGIDO: Pasar userId
+      this.realtime.emitWorkOrderUpdate(
+        updated,
+        'updated',
+        currentUser?.userId,
+      );
 
       if (currentUser?.userId) {
         this.realtime.emitToUser(
@@ -1906,7 +1966,12 @@ export class WorkOrdersService {
       });
 
       const updated = await this.findOne(ordenId);
-      this.realtime.emitWorkOrderUpdate(updated, 'updated');
+      // ✅ CORREGIDO: Pasar userId
+      this.realtime.emitWorkOrderUpdate(
+        updated,
+        'updated',
+        currentUser?.userId,
+      );
 
       if (currentUser?.userId) {
         this.realtime.emitToUser(
@@ -2293,7 +2358,8 @@ export class WorkOrdersService {
     await this.workOrdersRepository.save(workOrder);
     const updated = await this.findOne(ordenId);
 
-    this.realtime.emitWorkOrderUpdate(updated, 'updated');
+    // ✅ CORREGIDO: Pasar userId
+    this.realtime.emitWorkOrderUpdate(updated, 'updated', currentUser?.userId);
     this.realtime.emitInvoiceRemoved(ordenId);
 
     if (currentUser?.userId) {
@@ -2357,7 +2423,8 @@ export class WorkOrdersService {
       invoicedBy: currentUser?.userId,
     });
 
-    this.realtime.emitWorkOrderUpdate(updated, 'updated');
+    // ✅ CORREGIDO: Pasar userId
+    this.realtime.emitWorkOrderUpdate(updated, 'updated', currentUser?.userId);
     this.realtime.emitInvoiceUpdate(ordenId, {
       facturaPdfUrl: invoiceUrl,
       estadoPago,
@@ -2463,7 +2530,8 @@ export class WorkOrdersService {
     });
 
     const updated = await this.findOne(ordenId);
-    this.realtime.emitWorkOrderUpdate(updated, 'updated');
+    // ✅ CORREGIDO: Pasar userId
+    this.realtime.emitWorkOrderUpdate(updated, 'updated', currentUser?.userId);
     this.realtime.emitTechniciansRated(ordenId);
 
     if (currentUser?.userId) {
@@ -2519,7 +2587,8 @@ export class WorkOrdersService {
     await this.workOrdersRepository.save(workOrder);
 
     const updated = await this.findOne(ordenId);
-    this.realtime.emitWorkOrderUpdate(updated, 'updated');
+    // ✅ CORREGIDO: Pasar userId
+    this.realtime.emitWorkOrderUpdate(updated, 'updated', currentUser?.userId);
     this.realtime.emitReceiptSigned(ordenId, updated);
 
     if (currentUser?.userId) {
@@ -2592,7 +2661,8 @@ export class WorkOrdersService {
     const saved = await this.acInspectionRepository.save(inspection);
 
     const updated = await this.findOne(ordenId);
-    this.realtime.emitWorkOrderUpdate(updated, 'updated');
+    // ✅ CORREGIDO: Pasar userId
+    this.realtime.emitWorkOrderUpdate(updated, 'updated', currentUser?.userId);
 
     return saved;
   }
@@ -3228,7 +3298,8 @@ export class WorkOrdersService {
         await queryRunner.commitTransaction();
 
         const full = await this.findOne(savedWO.ordenId);
-        this.realtime.emitWorkOrderUpdate(full, 'created');
+        // ✅ CORREGIDO: Pasar userId (aunque en este caso no hay currentUser, usamos null)
+        this.realtime.emitWorkOrderUpdate(full, 'created', undefined);
         this.eventEmitter.emit('work-order.created', {
           workOrderId: full.ordenId,
           clienteId: full.clienteId,

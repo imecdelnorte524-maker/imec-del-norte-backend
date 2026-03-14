@@ -22,7 +22,7 @@ import { CreateAtsDto } from './dto/create-ats.dto';
 import { CreateHeightWorkDto } from './dto/create-height-work.dto';
 import { CreatePreoperationalDto } from './dto/create-preoperational.dto';
 import { SignFormDto, SignerType } from './dto/sign-form.dto';
-import { ApiOperation, ApiResponse } from '@nestjs/swagger';
+import { ApiOperation } from '@nestjs/swagger';
 import { AuthorizeHeightWorkDto } from './dto/authorize-height-work.dto';
 import { CreatePreoperationalChecklistTemplateDto } from './dto/create-preoperational-checklist-template.dto';
 import { FormStatus, FormType } from '../shared/index';
@@ -106,7 +106,7 @@ export class SgSstController {
     @Req() req: Request,
   ) {
     try {
-      const currentUser = req.user as any;
+      const currentUser = (req as any).user ?? {};
       await this.sgSstService.requestSignOtp(
         formId,
         body.signerType,
@@ -135,7 +135,7 @@ export class SgSstController {
     @Req() req: Request,
   ) {
     try {
-      const currentUser = req.user as any;
+      const currentUser = (req as any).user ?? {};
 
       const ip =
         (req.headers['x-forwarded-for'] as string) ||
