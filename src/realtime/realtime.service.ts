@@ -1,355 +1,157 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Server } from 'socket.io';
-import { WorkOrderLightDto } from '../work-orders/dto/work-order-light.dto';
-import { NotificationLightDto } from '../notifications/dto/notification-light.dto';
 
-export type EntityAction = 'created' | 'updated' | 'deleted';
+export interface EntityConfig {
+  cache?: boolean;
+  ttl?: number;
+}
 
 @Injectable()
 export class RealtimeService {
   private server: Server;
   private readonly logger = new Logger(RealtimeService.name);
 
-  // Cache para evitar duplicados
+  // Cache configurable por entidad
+  private entityConfig = new Map<string, EntityConfig>();
   private lastEmitted = new Map<string, { payload: any; timestamp: number }>();
-  private readonly CACHE_TTL = 5000; // 5 segundos
+  private readonly DEFAULT_TTL = 5000;
 
   setServer(server: Server) {
     this.server = server;
-    this.logger.log('✅ Servidor WebSocket asignado a RealtimeService');
+    this.logger.log('Servidor WebSocket asignado');
   }
 
-  /**
-   * Verificar si un evento ya fue emitido recientemente (para evitar duplicados)
-   */
-  private shouldEmit(event: string, payload: any): boolean {
-    const key = `${event}:${JSON.stringify(payload)}`;
+  setEntityConfig(config: Record<string, EntityConfig>) {
+    Object.entries(config).forEach(([entity, cfg]) => {
+      this.entityConfig.set(entity, cfg);
+    });
+  }
+
+  private shouldEmit(entity: string, payload: any): boolean {
+    const config = this.entityConfig.get(entity);
+    if (!config?.cache) return true;
+
+    const key = `${entity}:${JSON.stringify(payload)}`;
     const last = this.lastEmitted.get(key);
     const now = Date.now();
+    const ttl = config.ttl || this.DEFAULT_TTL;
 
-    if (last && now - last.timestamp < this.CACHE_TTL) {
+    if (last && now - last.timestamp < ttl) {
       return false;
     }
 
     this.lastEmitted.set(key, { payload, timestamp: now });
-
-    // Limpiar cache viejo
-    if (this.lastEmitted.size > 100) {
-      const oldest = now - this.CACHE_TTL;
-      for (const [k, v] of this.lastEmitted.entries()) {
-        if (v.timestamp < oldest) {
-          this.lastEmitted.delete(k);
-        }
-      }
-    }
-
     return true;
   }
 
   /**
-   * Emitir a TODOS los clientes conectados
+   * 🌍 ÚNICO MÉTODO PARA EMITIR A TODOS
    */
-  emitGlobal(event: string, payload?: any) {
+  emitGlobal(event: string, payload: any): void {
     if (!this.server) {
-      this.logger.warn('⚠️ Servidor WebSocket no disponible');
+      this.logger.warn('Servidor no disponible');
       return;
     }
 
     const size = JSON.stringify(payload).length;
     if (size > 500 * 1024) {
-      this.logger.warn(
-        `⚠️ Payload muy grande: ${Math.round(size / 1024)}KB para evento ${event}`,
-      );
+      this.logger.warn(`Payload grande: ${Math.round(size / 1024)}KB`);
     }
 
-    this.server.emit(event, {
-      ...payload,
-      _timestamp: Date.now(),
-    });
-
-    this.logger.debug(
-      `📡 Evento global emitido: ${event} (${Math.round(size / 1024)}KB)`,
-    );
+    this.server.emit(event, payload);
+    this.logger.debug(`Global: ${event} (${Math.round(size / 1024)}KB)`);
   }
 
   /**
-   * Emitir a un usuario específico (por su ID)
+   * 👤 ÚNICO MÉTODO PARA EMITIR A UN USUARIO
    */
-  emitToUser(userId: number | string, event: string, payload?: any) {
-    if (!this.server) {
-      this.logger.warn('⚠️ Servidor WebSocket no disponible');
-      return;
-    }
-
-    const room = `user:${userId}`;
-    this.server.to(room).emit(event, {
-      ...payload,
-      _timestamp: Date.now(),
-    });
-
-    this.logger.debug(`📡 Evento emitido a usuario ${userId}: ${event}`);
+  emitToUser(userId: number | string, event: string, payload: any): void {
+    if (!this.server) return;
+    this.server.to(`user:${userId}`).emit(event, payload);
+    this.logger.debug(`A usuario ${userId}: ${event}`);
   }
 
   /**
-   * Emitir a múltiples usuarios
+   * 👥 ÚNICO MÉTODO PARA EMITIR A MÚLTIPLES USUARIOS
    */
-  emitToUsers(userIds: (number | string)[], event: string, payload?: any) {
+  emitToUsers(userIds: (number | string)[], event: string, payload: any): void {
     if (!this.server || !userIds.length) return;
 
     userIds.forEach((userId) => {
-      const room = `user:${userId}`;
-      this.server.to(room).emit(event, {
-        ...payload,
-        _timestamp: Date.now(),
-      });
+      this.server.to(`user:${userId}`).emit(event, payload);
     });
 
-    this.logger.debug(
-      `📡 Evento emitido a ${userIds.length} usuarios: ${event}`,
-    );
+    this.logger.debug(`A ${userIds.length} usuarios: ${event}`);
   }
 
-  /**
-   * Emitir actualización de entidad (para listas/tablas)
-   */
-  emitEntityUpdate(entity: string, action: EntityAction, data?: any) {
-    if (!this.server) return;
-
-    if (entity === 'workOrders' && data) {
-      data = WorkOrderLightDto.forBroadcast(data);
+  emitEntityUpdate(
+    entity: string,
+    action: string,
+    data?: any,
+    userId?: number,
+  ): void {
+    if (!this.server) {
+      this.logger.warn('⚠️ Servidor no disponible');
+      return;
     }
 
+    if (!this.shouldEmit(entity, data)) return;
+
+    // ✅ ESTRUCTURA FIJA para que el cliente siempre pueda leer
     const payload = {
       entity,
       action,
-      data,
+      data: data || {}, // Siempre objeto, nunca undefined
       timestamp: Date.now(),
     };
 
-    this.server.emit('entity.updated', payload);
-    this.logger.debug(`📡 Entidad actualizada: ${entity} - ${action}`);
+    this.logger.log(
+      `📡 Emitiendo entity.updated: ${entity}.${action} a global`,
+    );
+
+    // Siempre a todos
+    this.emitGlobal('entity.updated', payload);
+
+    // Al usuario específico si aplica
+    if (userId) {
+      this.logger.log(
+        `📡 Emitiendo entity.updated: ${entity}.${action} a usuario ${userId}`,
+      );
+      this.emitToUser(userId, 'entity.updated', payload);
+    }
   }
 
   /**
-   * Emitir actualización de detalle de entidad (para vistas detalle)
+   * 🔍 ÚNICO MÉTODO PARA DETALLES DE ENTIDADES
    */
   emitEntityDetail(
     entity: string,
     entityId: number | string,
-    action: EntityAction,
+    action: string,
     data?: any,
-  ) {
+  ): void {
     if (!this.server) return;
 
-    const room = `${entity}:${entityId}`;
-    this.server.to(room).emit('entity.detail.updated', {
+    const payload = {
       entity,
       entityId,
       action,
       data,
       timestamp: Date.now(),
-    });
-
-    this.logger.debug(
-      `📡 Detalle de entidad actualizado: ${entity}:${entityId} - ${action}`,
-    );
-  }
-
-  /**
-   * Emitir notificación a usuario (versión ligera)
-   */
-  emitNotification(userId: number, notification: any) {
-    const lightNotif = NotificationLightDto.fromEntity(notification);
-    this.emitToUser(userId, 'notification', { notification: lightNotif });
-  }
-
-  /**
-   * Forzar actualización de contador de notificaciones no leídas
-   */
-  emitUnreadCount(userId: number, total: number) {
-    this.emitToUser(userId, 'unread-count', { total });
-  }
-
-  /**
-   * 🔥 CORREGIDO: Emitir evento de workOrders actualizado con soporte para quien hizo la acción
-   */
-  emitWorkOrderUpdate(
-    workOrder: any,
-    action: 'created' | 'updated' | 'deleted' = 'updated',
-    userId?: number, // 👈 NUEVO: Usuario que realizó la acción
-  ) {
-    if (!workOrder) return;
-
-    const lightWorkOrder = WorkOrderLightDto.forBroadcast(workOrder);
-
-    if (!this.shouldEmit(`workOrders.${action}`, lightWorkOrder)) {
-      return;
-    }
-
-    // Emitir a TODOS (global)
-    this.emitEntityUpdate('workOrders', action, lightWorkOrder);
-    this.emitGlobal(`workOrders.${action}`, lightWorkOrder);
-
-    // Emitir a la sala específica de la orden (versión completa)
-    if (workOrder.ordenId) {
-      this.emitEntityDetail('workOrder', workOrder.ordenId, action, workOrder);
-    }
-
-    // ✅ NUEVO: Emitir al usuario que hizo la acción
-    if (userId) {
-      this.emitToUser(userId, `workOrders.${action}`, lightWorkOrder);
-    }
-
-    // Si hay cliente, emitirle (si no es el mismo que hizo la acción)
-    if (workOrder.clienteId && workOrder.clienteId !== userId) {
-      this.emitToUser(
-        workOrder.clienteId,
-        'workOrders.client.updated',
-        lightWorkOrder,
-      );
-    }
-  }
-
-  /**
-   * 🔥 CORREGIDO: Emitir cambio de estado con soporte para quien hizo la acción
-   */
-  emitWorkOrderStatusUpdate(
-    workOrder: any,
-    previousStatus: string,
-    userId?: number, // 👈 NUEVO
-  ) {
-    if (!this.server || !workOrder) return;
-
-    const payload = {
-      ordenId: workOrder.ordenId,
-      previousStatus,
-      newStatus: workOrder.estado,
-      timestamp: Date.now(),
     };
 
-    if (!this.shouldEmit('workOrders.statusUpdated', payload)) {
-      return;
-    }
-
-    this.emitGlobal('workOrders.statusUpdated', payload);
-
-    // ✅ NUEVO: Emitir al usuario que hizo el cambio
-    if (userId) {
-      this.emitToUser(userId, 'workOrders.statusUpdated', payload);
-    }
-
-    if (workOrder.ordenId) {
-      this.emitEntityDetail(
-        'workOrder',
-        workOrder.ordenId,
-        'updated',
-        workOrder,
-      );
-    }
-
-    this.logger.debug(
-      `📡 Cambio de estado workOrder ${workOrder.ordenId}: ${previousStatus} -> ${workOrder.estado}`,
-    );
+    this.server
+      .to(`${entity}:${entityId}`)
+      .emit('entity.detail.updated', payload);
   }
 
   /**
-   * 🔥 CORREGIDO: Emitir evento de workOrder asignada con soporte para quien hizo la acción
-   */
-  emitWorkOrderAssigned(
-    workOrder: any,
-    technicianIds: number[],
-    leaderTechnicianId?: number,
-    userId?: number, // 👈 NUEVO
-  ) {
-    if (!workOrder) return;
-
-    const payload = {
-      ordenId: workOrder.ordenId,
-      technicianIds,
-      leaderTechnicianId,
-      timestamp: Date.now(),
-    };
-
-    if (!this.shouldEmit('workOrders.assigned', payload)) {
-      return;
-    }
-
-    // Emitir a TODOS
-    this.emitGlobal('workOrders.assigned', payload);
-    this.emitToUsers(technicianIds, 'workOrders.assigned', payload);
-
-    // ✅ NUEVO: Emitir al usuario que hizo la asignación
-    if (userId) {
-      this.emitToUser(userId, 'workOrders.assigned', payload);
-    }
-
-    this.emitEntityUpdate(
-      'workOrders',
-      'updated',
-      WorkOrderLightDto.forBroadcast(workOrder),
-    );
-  }
-
-  /**
-   * Emitir evento de factura actualizada
-   */
-  emitInvoiceUpdate(workOrderId: number, invoiceData: any) {
-    this.emitGlobal('workOrders.invoiceUpdated', {
-      workOrderId,
-      ...invoiceData,
-      timestamp: Date.now(),
-    });
-  }
-
-  /**
-   * Emitir evento de factura eliminada
-   */
-  emitInvoiceRemoved(workOrderId: number) {
-    this.emitGlobal('workOrders.invoiceRemoved', {
-      workOrderId,
-      timestamp: Date.now(),
-    });
-  }
-
-  /**
-   * Emitir evento de técnicos calificados
-   */
-  emitTechniciansRated(ordenId: number) {
-    this.emitGlobal('workOrders.techniciansRated', {
-      ordenId,
-      timestamp: Date.now(),
-    });
-  }
-
-  /**
-   * Emitir evento de firma de recibido
-   */
-  emitReceiptSigned(ordenId: number, workOrder: any) {
-    this.emitGlobal('workOrders.receiptSigned', {
-      ordenId,
-      workOrder: WorkOrderLightDto.forBroadcast(workOrder),
-      timestamp: Date.now(),
-    });
-  }
-
-  /**
-   * Emitir evento de orden de emergencia creada
-   */
-  emitEmergencyCreated(originalOrderId: number, emergencyOrder: any) {
-    this.emitGlobal('workOrders.emergencyCreated', {
-      originalOrderId,
-      emergencyOrder: WorkOrderLightDto.forBroadcast(emergencyOrder),
-      timestamp: Date.now(),
-    });
-  }
-
-  /**
-   * Obtener estadísticas de uso
+   * 📊 Obtener estadísticas
    */
   getStats() {
     return {
       cacheSize: this.lastEmitted.size,
-      memoryUsage: process.memoryUsage(),
+      activeUsers: this.server?.sockets?.adapter?.rooms?.size || 0,
     };
   }
 }

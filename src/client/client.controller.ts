@@ -38,10 +38,7 @@ export class ClientController {
   })
   @ApiResponse({ status: 201, description: 'Cliente creado exitosamente' })
   @ApiResponse({ status: 409, description: 'El NIT o email ya existe' })
-  async create(
-    @Body() createClientDto: CreateClientDto,
-    @Req() req: any,
-  ) {
+  async create(@Body() createClientDto: CreateClientDto, @Req() req: any) {
     const client = await this.clientService.create(createClientDto, req.user);
     return {
       message: 'Cliente creado exitosamente',
@@ -124,8 +121,7 @@ export class ClientController {
   @Get('usuario-contacto/:usuarioId')
   @ApiOperation({
     summary: 'Obtener clientes por usuario contacto',
-    description:
-      'Obtiene la lista de clientes donde el usuario es contacto',
+    description: 'Obtiene la lista de clientes donde el usuario es contacto',
   })
   @ApiResponse({ status: 200, description: 'Clientes obtenidos exitosamente' })
   async findByUsuarioContacto(

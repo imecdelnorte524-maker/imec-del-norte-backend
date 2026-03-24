@@ -1,13 +1,9 @@
-// src/work-orders/dto/work-order-response.dto.ts
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { WorkOrderStatus } from '../../shared/index';
 import { ServiceCategory } from '../../shared/index';
 import { BillingStatus } from '../../shared/index';
 import { ServiceRequestType } from '../../shared/index';
-import {
-  AcInspectionPhase,
-  WorkOrderEvidencePhase,
-} from '../../shared/index';
+import { AcInspectionPhase, WorkOrderEvidencePhase } from '../../shared/index';
 import { CostStatus } from '../../shared/index';
 
 export class ServiceInfo {
@@ -53,8 +49,6 @@ export class UserInfo {
   cedula?: string | null;
 }
 
-// src/work-orders/dto/work-order-response.dto.ts
-
 export class TechnicianInfo {
   @ApiProperty({ example: 1 })
   id: number;
@@ -68,15 +62,12 @@ export class TechnicianInfo {
   @ApiProperty({ type: UserInfo })
   technician: UserInfo;
 
-  // 🔹 NUEVO: calificación (0–5, medias permitidas)
   @ApiProperty({ example: 4.5, required: false, nullable: true })
   rating?: number | null;
 
-  // 🔹 NUEVO: quién calificó
   @ApiProperty({ example: 12, required: false, nullable: true })
   ratedByUserId?: number | null;
 
-  // 🔹 NUEVO: fecha de calificación
   @ApiProperty({
     example: '2024-01-01T12:00:00.000Z',
     required: false,
@@ -92,10 +83,10 @@ export class ClientCompanyInfo {
   @ApiProperty({ example: 'Empresa XYZ' })
   nombre: string;
 
-  @ApiProperty({ example: '900123456-7' })
-  nit: string;
+  @ApiPropertyOptional({ example: '900123456-7' })
+  nit?: string; // Cambiado a opcional
 
-  @ApiProperty({
+  @ApiPropertyOptional({
     example: 'empresa@correo.com',
     required: false,
     nullable: true,
@@ -105,8 +96,15 @@ export class ClientCompanyInfo {
   @ApiProperty({ example: '3001234567', required: false, nullable: true })
   telefono?: string | null;
 
-  @ApiProperty({ example: 'Bogotá, Colombia', required: false, nullable: true })
+  @ApiPropertyOptional({
+    example: 'Bogotá, Colombia',
+    required: false,
+    nullable: true,
+  })
   localizacion?: string | null;
+
+  @ApiPropertyOptional({ example: 'Juan Pérez' })
+  contacto?: string; // Agregado campo contacto
 }
 
 export class AreaInfo {
@@ -211,6 +209,7 @@ export class PauseInfo {
   @ApiProperty({ type: UserInfo })
   user: UserInfo;
 }
+
 export class AcInspectionInfo {
   @ApiProperty()
   id: number;

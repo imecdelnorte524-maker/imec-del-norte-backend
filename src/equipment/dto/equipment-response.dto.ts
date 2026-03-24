@@ -11,8 +11,8 @@ class ClientInfoDto {
   @ApiProperty({ example: 'IMEC DEL NORTE' })
   nombre: string;
 
-  @ApiProperty({ example: '900123456-7' })
-  nit: string;
+  @ApiPropertyOptional({ example: '900123456-7' })
+  nit?: string; // Cambiado a opcional
 }
 
 class AreaInfoDto {
@@ -250,7 +250,6 @@ export class EquipmentResponseDto {
   @ApiPropertyOptional()
   subArea?: SubAreaInfoDto;
 
-  // ⚠️ CAMBIO: De workOrderId a workOrders (array)
   @ApiPropertyOptional({ type: [WorkOrderInfoDto] })
   workOrders?: WorkOrderInfoDto[];
 

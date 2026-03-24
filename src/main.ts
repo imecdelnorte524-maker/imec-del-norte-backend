@@ -46,7 +46,7 @@ async function bootstrap() {
     'https://imec-del-norte-sandbox.onrender.com',
     'https://imec-del-norte-backend.onrender.com',
     'https://m3h6rtnz-3032.use.devtunnels.ms',
-    'http://localhost:5173',
+    'http://localhost:3032',
     'http://localhost:3000',
   ];
 
@@ -74,9 +74,6 @@ async function bootstrap() {
   console.log(`🔧 Entorno: ${process.env.NODE_ENV || 'development'}`);
 
   await app.listen(port);
-
-  // Exponer endpoint de health check
-  console.log(`✅ Health check: http://localhost:${port}/api/health`);
 }
 
 bootstrap();
