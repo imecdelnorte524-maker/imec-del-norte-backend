@@ -10,22 +10,45 @@ import {
   IsArray,
   ArrayMinSize,
   IsBoolean,
+  IsEnum,
 } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
+export enum ClientType {
+  JURIDICA = 'juridica',
+  NATURAL = 'natural',
+}
+
 export class CreateClientDto {
+  @ApiProperty({
+    enum: ClientType,
+    default: ClientType.JURIDICA,
+    description: 'Tipo de cliente: jurídica (empresa) o natural (persona)',
+  })
+  @IsOptional()
+  @IsEnum(ClientType)
+  tipoCliente?: ClientType;
+
   @ApiProperty({ example: 'IMEC del Norte', description: 'Nombre del cliente' })
   @IsNotEmpty({ message: 'El nombre es requerido' })
   @IsString({ message: 'El nombre debe ser una cadena de texto' })
   nombre: string;
 
-  @ApiProperty({ example: '900123456', description: 'NIT del cliente' })
-  @IsNotEmpty({ message: 'El NIT es requerido' })
-  @IsString({ message: 'El NIT debe ser una cadena de texto' })
-  @Length(5, 20, { message: 'El NIT debe tener entre 5 y 20 caracteres' })
-  nit: string;
+  @ApiProperty({
+    example: '900123456',
+    description:
+      'NIT del cliente (requerido para persona jurídica, opcional para natural)',
+    required: false,
+  })
+  @IsOptional()
+  nit?: string;
 
-  @ApiProperty({ example: '7', description: 'Digito de Verificación del NIT' })
+  @ApiProperty({
+    example: '7',
+    description:
+      'Digito de Verificación del NIT (requerido para jurídica, opcional para natural)',
+    required: false,
+  })
   @IsOptional()
   verification_digit?: string;
 
@@ -37,10 +60,14 @@ export class CreateClientDto {
   @IsString({ message: 'La dirección base debe ser una cadena de texto' })
   direccionBase: string;
 
-  @ApiProperty({ example: 'El Poblado', description: 'Barrio del cliente' })
-  @IsNotEmpty({ message: 'El barrio es requerido' })
+  @ApiProperty({
+    example: 'El Poblado',
+    description: 'Barrio del cliente (opcional para persona natural)',
+    required: false,
+  })
+  @IsOptional()
   @IsString({ message: 'El barrio debe ser una cadena de texto' })
-  barrio: string;
+  barrio?: string;
 
   @ApiProperty({ example: 'Medellín', description: 'Ciudad del cliente' })
   @IsNotEmpty({ message: 'La ciudad es requerida' })
@@ -49,16 +76,21 @@ export class CreateClientDto {
 
   @ApiProperty({
     example: 'Antioquia',
-    description: 'Departamento del cliente',
+    description: 'Departamento del cliente (opcional para persona natural)',
+    required: false,
   })
-  @IsNotEmpty({ message: 'El departamento es requerido' })
+  @IsOptional()
   @IsString({ message: 'El departamento debe ser una cadena de texto' })
-  departamento: string;
+  departamento?: string;
 
-  @ApiProperty({ example: 'Colombia', description: 'País del cliente' })
-  @IsNotEmpty({ message: 'El país es requerido' })
+  @ApiProperty({
+    example: 'Colombia',
+    description: 'País del cliente (opcional para persona natural)',
+    required: false,
+  })
+  @IsOptional()
   @IsString({ message: 'El país debe ser una cadena de texto' })
-  pais: string;
+  pais?: string;
 
   @ApiProperty({
     example: 'Calle 123 #45-67, El Poblado, Medellín, Antioquia, Colombia',
@@ -77,11 +109,11 @@ export class CreateClientDto {
 
   @ApiProperty({
     example: 'cliente@imec.com',
-    description: 'Email del cliente',
+    description: 'Email del cliente (opcional para persona natural)',
+    required: false,
   })
-  @IsEmail({}, { message: 'El email debe ser válido' })
-  @IsNotEmpty({ message: 'El email es requerido' })
-  email: string;
+  @IsOptional()
+  email?: string;
 
   @ApiProperty({
     example: '3001234567',
@@ -94,26 +126,21 @@ export class CreateClientDto {
   @ApiProperty({
     example: 'https://www.google.com/maps/place/...',
     description: 'URL de Google Maps con la ubicación del cliente',
+    required: false,
   })
-  @IsNotEmpty({ message: 'La ubicación es requerida' })
+  @IsOptional()
   @IsUrl({}, { message: 'La ubicación debe ser una URL válida' })
-  localizacion: string;
+  localizacion?: string;
 
   @ApiProperty({
     example: '2015-06-01',
-    description: 'Fecha de creación de la empresa (YYYY-MM-DD)',
+    description:
+      'Fecha de creación de la empresa (requerido para jurídica, opcional para natural)',
+    required: false,
+    nullable: true,
   })
-  @IsNotEmpty({
-    message: 'La fecha de creación de la empresa es requerida',
-  })
-  @IsDateString(
-    {},
-    {
-      message:
-        'La fecha de creación de la empresa debe tener un formato de fecha válido (YYYY-MM-DD)',
-    },
-  )
-  fechaCreacionEmpresa: string;
+  @IsOptional()
+  fechaCreacionEmpresa?: string | null;
 
   @ApiProperty({
     example: false,

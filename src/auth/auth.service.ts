@@ -149,7 +149,7 @@ export class AuthService {
       },
     );
 
-    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3032';
+    const frontendUrl = process.env.FRONTEND_URL;
     const resetUrl = `${frontendUrl}/reset-password?token=${resetToken}`;
 
     // Enviar correo usando MailService

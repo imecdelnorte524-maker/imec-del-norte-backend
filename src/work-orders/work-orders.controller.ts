@@ -43,9 +43,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { WorkOrder } from './entities/work-order.entity';
-import { diskStorage } from 'multer';
 import { FileInterceptor } from '@nestjs/platform-express';
-import * as path from 'path';
 import { ServiceCategory } from 'src/shared/index';
 import { RateTechniciansDto } from './dto/rate-technicians.dto';
 import { SignWorkOrderDto } from './dto/sign-work-order.dto';
@@ -53,7 +51,6 @@ import { AcInspectionPhase } from '../shared/index';
 import { CreateAcInspectionDto } from './dto/create-ac-inspection.dto';
 import { CloudinaryService } from 'src/images/cloudinary.service';
 import { Response } from 'express';
-import { Public } from 'src/common/decorators/public.decorator';
 import { SendWorkOrderReportsDto } from './dto/send-work-order-reports.dto';
 import { SendWorkOrderReportsToClientsDto } from './dto/send-work-order-reports-to-clients.dto';
 import { DownloadWorkOrderReportsDto } from './dto/download-work-order-reports.dto';
@@ -174,15 +171,6 @@ export class WorkOrdersController {
   async findOne(@Param('id', ParseIntPipe) id: number, @Req() req: any) {
     const workOrder = await this.workOrdersService.findOne(id);
     const roleName = this.getRoleName(req.user);
-
-    if (roleName === 'Técnico') {
-      const isAssigned = workOrder.technicians?.some(
-        (t) => t.tecnicoId === req.user.userId,
-      );
-      if (!isAssigned) {
-        throw new ForbiddenException();
-      }
-    }
 
     if (roleName === 'Cliente') {
       // Permitir si la orden pertenece a una empresa del usuario

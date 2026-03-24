@@ -1,4 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { ClientType } from './create-client.dto';
 
 export class UserResponseDto {
   @ApiProperty({ example: 1, description: 'ID del usuario' })
@@ -27,15 +28,27 @@ export class ClientResponseDto {
   @ApiProperty({ example: 1, description: 'ID del cliente' })
   idCliente: number;
 
+  @ApiProperty({
+    enum: ClientType,
+    example: 'juridica',
+    description: 'Tipo de cliente (juridica o natural)',
+  })
+  tipoCliente: ClientType;
+
   @ApiProperty({ example: 'IMEC del Norte', description: 'Nombre del cliente' })
   nombre: string;
 
-  @ApiProperty({ example: '900123456-7', description: 'NIT del cliente' })
-  nit: string;
+  @ApiProperty({
+    example: '900123456-7',
+    description: 'NIT del cliente (puede ser nulo para persona natural)',
+    required: false,
+  })
+  nit?: string;
 
   @ApiProperty({
     example: '7',
     description: 'Este es el digito de verificación',
+    required: false,
   })
   verification_digit?: string;
 
@@ -45,17 +58,29 @@ export class ClientResponseDto {
   })
   direccionBase: string;
 
-  @ApiProperty({ example: 'El Poblado', description: 'Barrio' })
-  barrio: string;
+  @ApiProperty({
+    example: 'El Poblado',
+    description: 'Barrio',
+    required: false,
+  })
+  barrio?: string;
 
   @ApiProperty({ example: 'Medellín', description: 'Ciudad' })
   ciudad: string;
 
-  @ApiProperty({ example: 'Antioquia', description: 'Departamento' })
-  departamento: string;
+  @ApiProperty({
+    example: 'Antioquia',
+    description: 'Departamento',
+    required: false,
+  })
+  departamento?: string;
 
-  @ApiProperty({ example: 'Colombia', description: 'País' })
-  pais: string;
+  @ApiProperty({
+    example: 'Colombia',
+    description: 'País',
+    required: false,
+  })
+  pais?: string;
 
   @ApiProperty({
     example: 'Calle 123 #45-67, El Poblado, Medellín, Antioquia, Colombia',
@@ -69,8 +94,9 @@ export class ClientResponseDto {
   @ApiProperty({
     example: 'cliente@imec.com',
     description: 'Email del cliente',
+    required: false,
   })
-  email: string;
+  email?: string;
 
   @ApiProperty({
     example: '3001234567',
@@ -81,14 +107,16 @@ export class ClientResponseDto {
   @ApiProperty({
     example: 'https://www.google.com/maps/place/...',
     description: 'URL de Google Maps',
+    required: false,
   })
-  localizacion: string;
+  localizacion?: string;
 
   @ApiProperty({
     example: '2015-06-01',
     description: 'Fecha de creación de la empresa',
+    required: false,
   })
-  fechaCreacionEmpresa: string;
+  fechaCreacionEmpresa?: string;
 
   @ApiProperty({
     example: false,
@@ -119,11 +147,14 @@ export class ClientSimpleResponseDto {
   @ApiProperty({ example: 1, description: 'ID del cliente' })
   idCliente: number;
 
+  @ApiProperty({ enum: ClientType, example: 'juridica' })
+  tipoCliente: ClientType;
+
   @ApiProperty({ example: 'IMEC del Norte', description: 'Nombre del cliente' })
   nombre: string;
 
   @ApiProperty({ example: '900123456-7', description: 'NIT del cliente' })
-  nit: string;
+  nit?: string;
 
   @ApiProperty({
     example: 'Calle 123 #45-67, El Poblado, Medellín',
@@ -138,7 +169,7 @@ export class ClientSimpleResponseDto {
     example: 'cliente@imec.com',
     description: 'Email del cliente',
   })
-  email: string;
+  email?: string;
 
   @ApiProperty({
     example: '3001234567',

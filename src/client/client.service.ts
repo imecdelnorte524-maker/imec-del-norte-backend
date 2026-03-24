@@ -40,26 +40,64 @@ export class ClientService {
     return parts.join(', ');
   }
 
+  private validateJuridicaFields(createClientDto: CreateClientDto): void {
+    if (!createClientDto.nit) {
+      throw new BadRequestException(
+        'El NIT es requerido para persona jurídica',
+      );
+    }
+    if (!createClientDto.fechaCreacionEmpresa) {
+      throw new BadRequestException(
+        'La fecha de creación es requerida para persona jurídica',
+      );
+    }
+    if (!createClientDto.barrio) {
+      throw new BadRequestException(
+        'El barrio es requerido para persona jurídica',
+      );
+    }
+    if (!createClientDto.departamento) {
+      throw new BadRequestException(
+        'El departamento es requerido para persona jurídica',
+      );
+    }
+    if (!createClientDto.pais) {
+      throw new BadRequestException(
+        'El país es requerido para persona jurídica',
+      );
+    }
+  }
+
   async create(
     createClientDto: CreateClientDto,
     currentUser: any,
   ): Promise<Client> {
     const roleName = this.getRoleName(currentUser);
+    const tipoCliente = createClientDto.tipoCliente || 'juridica';
 
-    // Validar NIT único
-    const existingClient = await this.clientRepository.findOne({
-      where: { nit: createClientDto.nit },
-    });
-    if (existingClient) {
-      throw new ConflictException('Ya existe un cliente con este NIT');
+    // Validar según tipo de cliente
+    if (tipoCliente === 'juridica') {
+      this.validateJuridicaFields(createClientDto);
+
+      // Validar NIT único solo para jurídica
+      if (createClientDto.nit) {
+        const existingClient = await this.clientRepository.findOne({
+          where: { nit: createClientDto.nit },
+        });
+        if (existingClient) {
+          throw new ConflictException('Ya existe un cliente con este NIT');
+        }
+      }
     }
 
-    // Validar email único
-    const existingClientByEmail = await this.clientRepository.findOne({
-      where: { email: createClientDto.email },
-    });
-    if (existingClientByEmail) {
-      throw new ConflictException('Ya existe un cliente con este email');
+    // Validar email único solo si se proporciona
+    if (createClientDto.email) {
+      const existingClientByEmail = await this.clientRepository.findOne({
+        where: { email: createClientDto.email },
+      });
+      if (existingClientByEmail) {
+        throw new ConflictException('Ya existe un cliente con este email');
+      }
     }
 
     let usuariosContacto: User[] = [];
@@ -117,11 +155,35 @@ export class ClientService {
       }
     }
 
-    // Crear la instancia del cliente
-    const client = this.clientRepository.create({
-      ...createClientDto,
+    // Convertir fecha a Date o null
+    let fechaCreacionEmpresa: Date | null = null;
+    if (
+      createClientDto.fechaCreacionEmpresa &&
+      createClientDto.fechaCreacionEmpresa !== ''
+    ) {
+      fechaCreacionEmpresa = new Date(createClientDto.fechaCreacionEmpresa);
+    }
+
+    // Crear la instancia del cliente con los tipos correctos
+    const clientData: Partial<Client> = {
+      tipoCliente,
+      nombre: createClientDto.nombre,
+      nit: createClientDto.nit || undefined,
+      verification_digit: createClientDto.verification_digit,
+      direccionBase: createClientDto.direccionBase,
+      barrio: createClientDto.barrio || undefined,
+      ciudad: createClientDto.ciudad,
+      departamento: createClientDto.departamento || undefined,
+      pais: createClientDto.pais || 'Colombia',
+      contacto: createClientDto.contacto,
+      email: createClientDto.email || undefined,
+      telefono: createClientDto.telefono,
+      localizacion: createClientDto.localizacion,
+      fechaCreacionEmpresa: fechaCreacionEmpresa || undefined,
       usuariosContacto,
-    });
+    };
+
+    const client = this.clientRepository.create(clientData);
 
     // Autogenerar dirección completa
     client.direccionCompleta = this._generateFullAddress(client);
@@ -175,14 +237,27 @@ export class ClientService {
 
   async update(id: number, updateClientDto: UpdateClientDto): Promise<Client> {
     const client = await this.findOne(id);
+    const tipoCliente = updateClientDto.tipoCliente || client.tipoCliente;
 
-    if (updateClientDto.nit && updateClientDto.nit !== client.nit) {
-      const existingClient = await this.findByNit(updateClientDto.nit);
-      if (existingClient) {
-        throw new ConflictException('Ya existe otro cliente con este NIT');
+    // Validar según tipo de cliente
+    if (tipoCliente === 'juridica') {
+      // Para jurídica, validar campos requeridos si se están actualizando
+      if (updateClientDto.nit === '') {
+        throw new BadRequestException(
+          'El NIT no puede estar vacío para persona jurídica',
+        );
+      }
+
+      // Validar NIT único si se está actualizando
+      if (updateClientDto.nit && updateClientDto.nit !== client.nit) {
+        const existingClient = await this.findByNit(updateClientDto.nit);
+        if (existingClient) {
+          throw new ConflictException('Ya existe otro cliente con este NIT');
+        }
       }
     }
 
+    // Validar email único si se actualiza
     if (updateClientDto.email && updateClientDto.email !== client.email) {
       const existingClient = await this.clientRepository.findOne({
         where: { email: updateClientDto.email },
@@ -219,7 +294,47 @@ export class ClientService {
       client.usuariosContacto = usuariosContacto;
     }
 
-    Object.assign(client, updateClientDto);
+    // Actualizar campos uno por uno para evitar problemas de tipos
+    if (updateClientDto.tipoCliente !== undefined)
+      client.tipoCliente = updateClientDto.tipoCliente;
+    if (updateClientDto.nombre !== undefined)
+      client.nombre = updateClientDto.nombre;
+    if (updateClientDto.nit !== undefined)
+      client.nit = updateClientDto.nit || undefined;
+    if (updateClientDto.verification_digit !== undefined)
+      client.verification_digit = updateClientDto.verification_digit;
+    if (updateClientDto.direccionBase !== undefined)
+      client.direccionBase = updateClientDto.direccionBase;
+    if (updateClientDto.barrio !== undefined)
+      client.barrio = updateClientDto.barrio || undefined;
+    if (updateClientDto.ciudad !== undefined)
+      client.ciudad = updateClientDto.ciudad;
+    if (updateClientDto.departamento !== undefined)
+      client.departamento = updateClientDto.departamento || undefined;
+    if (updateClientDto.pais !== undefined)
+      client.pais = updateClientDto.pais || 'Colombia';
+    if (updateClientDto.contacto !== undefined)
+      client.contacto = updateClientDto.contacto;
+    if (updateClientDto.email !== undefined)
+      client.email = updateClientDto.email || undefined;
+    if (updateClientDto.telefono !== undefined)
+      client.telefono = updateClientDto.telefono;
+    if (updateClientDto.localizacion !== undefined)
+      client.localizacion = updateClientDto.localizacion;
+
+    // Manejar fecha correctamente
+    if (updateClientDto.fechaCreacionEmpresa !== undefined) {
+      if (
+        updateClientDto.fechaCreacionEmpresa &&
+        updateClientDto.fechaCreacionEmpresa !== ''
+      ) {
+        client.fechaCreacionEmpresa = new Date(
+          updateClientDto.fechaCreacionEmpresa,
+        );
+      } else {
+        client.fechaCreacionEmpresa = undefined;
+      }
+    }
 
     // Re-autogenerar dirección completa si hay cambios
     const hasAddressChanges =

@@ -84,9 +84,18 @@ export class InventoryNotificationsListener {
             notification,
           });
 
-          this.realtime.emitUnreadCount(notification.usuarioId, unreadCount);
+          // 🔥 CORREGIDO: usar emitToUser en lugar de emitUnreadCount
+          this.realtime.emitToUser(notification.usuarioId, 'unread-count', {
+            total: unreadCount,
+          });
         }),
       );
+
+      // 🔥 NUEVO: Emitir actualización de inventario
+      this.realtime.emitEntityUpdate('inventory', 'updated', {
+        insumoId: payload.insumoId,
+        expiring: true,
+      });
     } catch (error) {
       this.logger.error(`❌ Error en stock.expiring: ${error.message}`);
     }
@@ -129,19 +138,43 @@ export class InventoryNotificationsListener {
         ),
       );
 
+      // 🔥 CORREGIDO: Preparar todos los destinatarios (incluyendo creador si existe)
+      const allRecipients = [
+        ...new Set([
+          ...admins.map((u) => u.usuarioId),
+          ...(payload.createdBy ? [payload.createdBy] : []),
+        ]),
+      ];
+
       await Promise.all(
-        notifications.map(async (notification) => {
-          const unreadCount = await this.notificationsService.getUnreadCount(
-            notification.usuarioId,
+        allRecipients.map(async (userId) => {
+          const unreadCount =
+            await this.notificationsService.getUnreadCount(userId);
+
+          // Buscar la notificación correspondiente a este usuario
+          const userNotification = notifications.find(
+            (n) => n.usuarioId === userId,
           );
 
-          this.realtime.emitToUser(notification.usuarioId, 'notification', {
-            notification,
-          });
+          if (userNotification) {
+            this.realtime.emitToUser(userId, 'notification', {
+              notification: userNotification,
+            });
+          }
 
-          this.realtime.emitUnreadCount(notification.usuarioId, unreadCount);
+          // 🔥 CORREGIDO: usar emitToUser en lugar de emitUnreadCount
+          this.realtime.emitToUser(userId, 'unread-count', {
+            total: unreadCount,
+          });
         }),
       );
+
+      // 🔥 NUEVO: Emitir actualización de inventario
+      this.realtime.emitEntityUpdate('inventory', 'updated', {
+        insumoId: payload.insumoId,
+        cantidad: payload.cantidad,
+        created: true,
+      });
     } catch (error) {
       this.logger.error(`❌ Error en stock.created: ${error.message}`);
     }

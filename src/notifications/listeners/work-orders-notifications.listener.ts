@@ -174,7 +174,6 @@ export class WorkOrdersNotificationsListener {
         ),
       );
 
-      // 🔥 CORREGIDO: Manejar undefined correctamente
       const allRecipients = [
         ...new Set([
           ...adminsAndSecretaries.map((u) => u.usuarioId),
@@ -192,11 +191,11 @@ export class WorkOrdersNotificationsListener {
         }),
       );
 
-      // Emitir evento de creación a TODOS
-      this.realtime.emitWorkOrderUpdate(
-        { ordenId: payload.workOrderId, isEmergency: payload.isEmergency },
-        'created',
-      );
+      // Emitir evento de creación usando emitEntityUpdate
+      this.realtime.emitEntityUpdate('workOrders', 'created', {
+        ordenId: payload.workOrderId,
+        isEmergency: payload.isEmergency,
+      });
 
       this.logger.log(
         `✅ Notificaciones enviadas a ${notifications.length} usuarios`,
@@ -278,7 +277,6 @@ export class WorkOrdersNotificationsListener {
         assignedBy: payload.assignedBy,
       };
 
-      // 🔥 CORREGIDO: Manejar undefined correctamente
       const allRecipients = [
         ...new Set([
           ...technicianIds,
@@ -296,11 +294,12 @@ export class WorkOrdersNotificationsListener {
         }),
       );
 
-      this.realtime.emitWorkOrderAssigned(
-        { ordenId: payload.workOrderId },
+      // Emitir actualización usando emitEntityUpdate
+      this.realtime.emitEntityUpdate('workOrders', 'assigned', {
+        ordenId: payload.workOrderId,
         technicianIds,
         leaderId,
-      );
+      });
 
       return;
     }
@@ -335,7 +334,6 @@ export class WorkOrdersNotificationsListener {
       }),
     );
 
-    // 🔥 CORREGIDO: Manejar undefined correctamente
     const allRecipients = [
       ...new Set([
         ...technicianIds,
@@ -354,12 +352,12 @@ export class WorkOrdersNotificationsListener {
       }),
     );
 
-    // Emitir evento de asignación a TODOS
-    this.realtime.emitWorkOrderAssigned(
-      { ordenId: payload.workOrderId },
+    // Emitir evento de asignación usando emitEntityUpdate
+    this.realtime.emitEntityUpdate('workOrders', 'assigned', {
+      ordenId: payload.workOrderId,
       technicianIds,
       leaderId,
-    );
+    });
 
     this.logger.log(
       `✅ Notificaciones enviadas a ${validTechnicians.length} técnicos`,
@@ -423,13 +421,16 @@ export class WorkOrdersNotificationsListener {
       const unreadCount = await this.notificationsService.getUnreadCount(
         cliente.usuarioId,
       );
-      this.realtime.emitUnreadCount(cliente.usuarioId, unreadCount);
+      this.realtime.emitToUser(cliente.usuarioId, 'unread-count', {
+        total: unreadCount,
+      });
 
-      // Emitir actualización a TODOS
-      this.realtime.emitWorkOrderStatusUpdate(
-        { ordenId: payload.workOrderId, estado: 'IN_PROGRESS' },
-        'ASSIGNED',
-      );
+      // Emitir actualización a TODOS usando emitEntityUpdate
+      this.realtime.emitEntityUpdate('workOrders', 'status-updated', {
+        ordenId: payload.workOrderId,
+        previousStatus: 'ASSIGNED',
+        newStatus: 'IN_PROGRESS',
+      });
 
       this.logger.log(
         `✅ Notificación enviada al cliente ${cliente.nombre || ''}`,
@@ -528,7 +529,6 @@ export class WorkOrdersNotificationsListener {
         );
       }
 
-      // 🔥 CORREGIDO: Manejar undefined correctamente
       const allRecipients = [
         ...new Set([
           ...destinatarios.map((u) => u.usuarioId),
@@ -547,11 +547,12 @@ export class WorkOrdersNotificationsListener {
         }),
       );
 
-      // Emitir actualización a TODOS
-      this.realtime.emitWorkOrderStatusUpdate(
-        { ordenId: payload.workOrderId, estado: 'COMPLETED' },
-        'IN_PROGRESS',
-      );
+      // Emitir actualización a TODOS usando emitEntityUpdate
+      this.realtime.emitEntityUpdate('workOrders', 'status-updated', {
+        ordenId: payload.workOrderId,
+        previousStatus: 'IN_PROGRESS',
+        newStatus: 'COMPLETED',
+      });
 
       this.logger.log(
         `✅ Notificaciones enviadas a ${destinatarios.length} usuarios`,
@@ -624,7 +625,6 @@ export class WorkOrdersNotificationsListener {
         );
       }
 
-      // 🔥 CORREGIDO: Manejar undefined correctamente
       const allRecipients = [
         ...new Set([
           ...adminsAndSecretaries.map((u) => u.usuarioId),
@@ -643,11 +643,16 @@ export class WorkOrdersNotificationsListener {
         }),
       );
 
-      // Emitir actualización a TODOS
-      this.realtime.emitInvoiceUpdate(payload.workOrderId, {
-        facturaUrl: payload.facturaPdfUrl,
-        estadoPago: payload.estadoPago,
-      });
+      // Emitir actualización a TODOS usando emitEntityDetail
+      this.realtime.emitEntityDetail(
+        'workOrders',
+        payload.workOrderId,
+        'invoiceUpdated',
+        {
+          facturaUrl: payload.facturaPdfUrl,
+          estadoPago: payload.estadoPago,
+        },
+      );
 
       this.logger.log(
         `✅ Notificaciones enviadas a ${adminsAndSecretaries.length} usuarios`,
@@ -711,7 +716,6 @@ export class WorkOrdersNotificationsListener {
         );
       }
 
-      // 🔥 CORREGIDO: Manejar undefined correctamente
       const allRecipients = [
         ...new Set([
           ...admins.map((u) => u.usuarioId),
@@ -730,11 +734,12 @@ export class WorkOrdersNotificationsListener {
         }),
       );
 
-      // Emitir actualización a TODOS
-      this.realtime.emitWorkOrderStatusUpdate(
-        { ordenId: payload.workOrderId, estado: 'CANCELLED' },
-        'ACTIVE',
-      );
+      // Emitir actualización a TODOS usando emitEntityUpdate
+      this.realtime.emitEntityUpdate('workOrders', 'status-updated', {
+        ordenId: payload.workOrderId,
+        previousStatus: 'ACTIVE',
+        newStatus: 'CANCELLED',
+      });
     } catch (error) {
       this.logger.error(`❌ Error en work-order.cancelled: ${error.message}`);
     }
@@ -800,12 +805,16 @@ export class WorkOrdersNotificationsListener {
           const unreadCount = await this.notificationsService.getUnreadCount(
             user.usuarioId,
           );
-          this.realtime.emitUnreadCount(user.usuarioId, unreadCount);
+          this.realtime.emitToUser(user.usuarioId, 'unread-count', {
+            total: unreadCount,
+          });
         }),
       );
 
-      // Emitir evento específico
-      this.realtime.emitTechniciansRated(payload.ordenId);
+      // Emitir evento específico usando emitEntityUpdate
+      this.realtime.emitEntityUpdate('workOrders', 'technicians-rated', {
+        ordenId: payload.ordenId,
+      });
     } catch (error) {
       this.logger.error(
         `❌ Error en work-order.technicians-rated: ${error.message}`,
@@ -872,7 +881,6 @@ export class WorkOrdersNotificationsListener {
         );
       }
 
-      // 🔥 CORREGIDO: Manejar undefined correctamente
       const allRecipients = [
         ...new Set([
           ...admins.map((u) => u.usuarioId),
@@ -891,9 +899,10 @@ export class WorkOrdersNotificationsListener {
         }),
       );
 
-      // Emitir evento específico
-      this.realtime.emitEmergencyCreated(payload.originalOrderId, {
-        ordenId: payload.emergencyOrderId,
+      // Emitir evento específico usando emitEntityUpdate
+      this.realtime.emitEntityUpdate('workOrders', 'emergency-created', {
+        originalOrderId: payload.originalOrderId,
+        emergencyOrderId: payload.emergencyOrderId,
       });
     } catch (error) {
       this.logger.error(
@@ -967,7 +976,7 @@ export class WorkOrdersNotificationsListener {
         }),
       );
 
-      // Emitir actualización de inventario
+      // Emitir actualización de inventario usando emitEntityUpdate
       this.realtime.emitEntityUpdate('inventory', 'updated', {
         insumoId: payload.insumoId,
         stockActual: payload.cantidadActual,

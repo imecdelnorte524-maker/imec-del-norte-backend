@@ -55,7 +55,6 @@ export class EquipmentController {
   @UseGuards(JwtAuthGuard)
   async getClientEquipment(@Req() req: any) {
     const userId = req.user.userId;
-    console.log('🔍 Usuario ID:', userId);
 
     if (!userId) {
       return {
