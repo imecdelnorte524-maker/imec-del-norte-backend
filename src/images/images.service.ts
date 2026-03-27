@@ -13,9 +13,9 @@ import { Supply } from '../supplies/entities/supply.entity';
 import { User } from '../users/entities/user.entity';
 import { Equipment } from '../equipment/entities/equipment.entity';
 import { Client } from '../client/entities/client.entity';
-import { WorkOrder } from 'src/work-orders/entities/work-order.entity';
-import { WorkOrderEvidencePhase, WorkOrderStatus } from 'src/shared/index';
 import { RealtimeService } from '../realtime/realtime.service';
+import { WorkOrder } from '../work-orders/entities/work-order.entity';
+import { WorkOrderEvidencePhase, WorkOrderStatus } from '../shared';
 
 @Injectable()
 export class ImagesService {

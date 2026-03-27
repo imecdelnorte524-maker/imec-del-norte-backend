@@ -59,11 +59,12 @@ const dataSource = new DataSource({
   entities: [
     process.env.NODE_ENV === 'production'
       ? path.join(process.cwd(), 'dist', '**', '*.entity{.ts,.js}')
-      : path.join(process.cwd(), 'src', '**', '*.entity{.ts,.js}')
+      : path.join(process.cwd(), 'src', '**', '*.entity{.ts,.js}'),
   ],
   migrations: getMigrationsInOrder(),
   synchronize: false,
   logging: process.env.NODE_ENV !== 'production',
+  migrationsTransactionMode: 'none',
 });
 
 export default dataSource;

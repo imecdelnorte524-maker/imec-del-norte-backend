@@ -35,6 +35,7 @@ import { CommonModule } from './common/common.module';
 import { PdfModule } from './pdf/pdf.module';
 import { TechniciansModule } from './technicians/technicians.module';
 import { RealtimeModule } from './realtime/realtime.module';
+import { join } from 'path';
 @Module({
   imports: [
     ScheduleModule.forRoot(),
@@ -54,19 +55,29 @@ import { RealtimeModule } from './realtime/realtime.module';
       useFactory: (configService: ConfigService) => {
         const dbConfig = configService.get('database');
 
+        const synchronize =
+          configService.get<string>('TYPEORM_SYNCHRONIZE') === 'true' &&
+          configService.get<string>('NODE_ENV') !== 'production';
+
         return {
           ...dbConfig,
-          migrations: [],
+          autoLoadEntities: true,
+          synchronize,
           migrationsRun: false,
+          migrationsTableName: 'migrations',
+          migrations: [
+            // soporta dist/migrations y dist/src/migrations según tu build
+            join(__dirname, '..', 'migrations', '*{.js,.ts}'),
+            join(__dirname, 'migrations', '*{.js,.ts}'),
+          ],
+          logging: ['error', 'warn'],
           extra: {
+            ...(dbConfig as any).extra,
             max: 10,
             idleTimeoutMillis: 30000,
             connectionTimeoutMillis: 5000,
             maxUses: 7500,
           },
-          synchronize: true,
-          autoLoadEntities: true,
-          logging: ['error', 'warn'],
         };
       },
     }),

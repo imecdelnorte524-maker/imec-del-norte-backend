@@ -1,6 +1,7 @@
 //templates/report/height-work-report-html.helper.ts
-import { Form } from 'src/sg-sst/entities/form.entity';
-import { Signature, SignatureType } from 'src/sg-sst/entities/signature.entity';
+
+import { Form } from "../../src/sg-sst/entities/form.entity";
+import { Signature, SignatureType } from "../../src/sg-sst/entities/signature.entity";
 
 export interface HeightWorkReportHtmlOptions {
   headerImageUrl?: string;

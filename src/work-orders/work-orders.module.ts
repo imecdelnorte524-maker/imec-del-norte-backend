@@ -20,12 +20,12 @@ import { Client } from '../client/entities/client.entity';
 import { Equipment } from '../equipment/entities/equipment.entity';
 import { Image } from '../images/entities/image.entity';
 import { PdfModule } from '../pdf/pdf.module';
-import { ImagesModule } from 'src/images/images.module';
-import { MailModule } from 'src/mail/mail.module';
 import { MaintenanceSchedulerService } from './maintenance-scheduler.service';
 import { PlanMantenimiento } from '../equipment/entities/plan-mantenimiento.entity';
 import { WorkOrderMaintenancePlan } from './entities/work-order-maintenance-plan.entity';
 import { RealtimeModule } from '../realtime/realtime.module';
+import { ImagesModule } from '../images/images.module';
+import { MailModule } from '../mail/mail.module';
 
 @Module({
   imports: [

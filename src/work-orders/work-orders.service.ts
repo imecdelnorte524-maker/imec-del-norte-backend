@@ -38,20 +38,20 @@ import { SignWorkOrderDto } from './dto/sign-work-order.dto';
 import { AcInspection } from './entities/ac-inspection.entity';
 import { AcInspectionPhase, WorkOrderEvidencePhase } from '../shared/index';
 import { CreateAcInspectionDto } from './dto/create-ac-inspection.dto';
-import { Image } from 'src/images/entities/image.entity';
 import { CostStatus } from '../shared/index';
-import { PdfService } from 'src/pdf/pdf.service';
 import { ConfigService } from '@nestjs/config';
 import { buildInformeOrdenParams } from '../../templates/report/informe-orden-html.helper';
 import {
   SendWorkOrderReportsDto,
   WorkOrderReportType,
 } from './dto/send-work-order-reports.dto';
-import { MailService } from 'src/mail/mail.service';
 import { SendWorkOrderReportsToClientsDto } from './dto/send-work-order-reports-to-clients.dto';
 import JSZip from 'jszip';
 import { WorkOrderMaintenancePlan } from './entities/work-order-maintenance-plan.entity';
 import { RealtimeService } from '../realtime/realtime.service';
+import { Image } from '../images/entities/image.entity';
+import { PdfService } from '../pdf/pdf.service';
+import { MailService } from '../mail/mail.service';
 
 @Injectable()
 export class WorkOrdersService {

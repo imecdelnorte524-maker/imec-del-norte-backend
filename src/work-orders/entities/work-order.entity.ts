@@ -23,7 +23,7 @@ import { PlanMantenimiento } from '../../equipment/entities/plan-mantenimiento.e
 import { WorkOrderTechnician } from './work-order-technician.entity';
 import { WorkOrderTimer } from './work-order-timer.entity';
 import { WorkOrderPause } from './work-order-pause.entity';
-import { Image } from 'src/images/entities/image.entity';
+import { Image } from '../../images/entities/image.entity';
 import { AcInspection } from './ac-inspection.entity';
 import { CostStatus } from '../../shared/index';
 import { WorkOrderMaintenancePlan } from './work-order-maintenance-plan.entity';

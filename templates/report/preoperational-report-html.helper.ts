@@ -1,7 +1,7 @@
 // templates/report/preoperational-report-html.helper.ts
-import { Form } from 'src/sg-sst/entities/form.entity';
-import { Signature, SignatureType } from 'src/sg-sst/entities/signature.entity';
+import { Form } from '../../src/sg-sst/entities/form.entity';
 import { PreoperationalCheck } from '../../src/sg-sst/entities/preoperational-check.entity';
+import { Signature, SignatureType } from '../../src/sg-sst/entities/signature.entity';
 import { CheckValue } from '../../src/shared';
 
 export interface PreoperationalReportHtmlOptions {

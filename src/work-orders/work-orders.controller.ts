@@ -44,17 +44,16 @@ import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { WorkOrder } from './entities/work-order.entity';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { ServiceCategory } from 'src/shared/index';
 import { RateTechniciansDto } from './dto/rate-technicians.dto';
 import { SignWorkOrderDto } from './dto/sign-work-order.dto';
-import { AcInspectionPhase } from '../shared/index';
+import { AcInspectionPhase, ServiceCategory } from '../shared/index';
 import { CreateAcInspectionDto } from './dto/create-ac-inspection.dto';
-import { CloudinaryService } from 'src/images/cloudinary.service';
 import { Response } from 'express';
 import { SendWorkOrderReportsDto } from './dto/send-work-order-reports.dto';
 import { SendWorkOrderReportsToClientsDto } from './dto/send-work-order-reports-to-clients.dto';
 import { DownloadWorkOrderReportsDto } from './dto/download-work-order-reports.dto';
 import { LightSerializerInterceptor } from '../common/interceptors/light-serializer.interceptor';
+import { CloudinaryService } from '../images/cloudinary.service';
 
 @ApiTags('work-orders')
 @Controller('work-orders')

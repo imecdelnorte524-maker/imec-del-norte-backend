@@ -21,11 +21,11 @@ import {
 } from '@nestjs/swagger';
 import { ImagesService } from './images.service';
 import { UploadImageSwaggerDto } from './dto/upload-image.dto';
-import { Roles } from 'src/common/decorators/roles.decorator';
-import { WorkOrderEvidencePhase } from 'src/shared/index';
 import { CloudinaryService } from './cloudinary.service';
 import { UploadHeaderResponseDto } from './dto/upload-header-response.dto';
 import { ConfigService } from '@nestjs/config';
+import { Roles } from '../common/decorators/roles.decorator';
+import { WorkOrderEvidencePhase } from '../shared';
 
 @ApiTags('Images')
 @Controller('images')
