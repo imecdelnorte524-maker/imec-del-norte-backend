@@ -10,7 +10,8 @@ import {
 import { WorkOrder } from './work-order.entity';
 import { AcInspectionPhase } from '../../shared/index';
 import { User } from '../../users/entities/user.entity';
-import { Equipment } from 'src/equipment/entities/equipment.entity';
+import { Equipment } from '../../equipment/entities/equipment.entity';
+
 
 @Entity('ac_inspections')
 export class AcInspection {

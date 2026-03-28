@@ -20,7 +20,7 @@
     "test:e2e": "jest --config ./test/jest-e2e.json",
     "typeorm": "typeorm-ts-node-commonjs",
     "migration:generate": "npm run typeorm -- migration:generate -d src/data-source.ts",
-    "migration:create": "npm run typeorm -- migration:create -d src/data-source.ts",
+    "migration:create": "npm run typeorm -- migration:create",
     "migration:run": "npm run typeorm -- migration:run -d src/data-source.ts",
     "migration:revert": "npm run typeorm -- migration:revert -d src/data-source.ts",
     "db:seed": "ts-node src/scripts/seed.ts",
@@ -28,7 +28,9 @@
     "docker:build": "docker-compose build",
     "docker:up": "docker-compose up -d",
     "docker:down": "docker-compose down",
-    "docker:logs": "docker-compose logs -f backend"
+    "docker:logs": "docker-compose logs -f backend",
+    "migration:run:docker": "npm run typeorm -- migration:run -d dist/src/data-source.js",
+    "migration:revert:docker": "npm run typeorm -- migration:revert -d dist/src/data-source.js"
   },
   "dependencies": {
     "@nestjs/common": "^11.1.15",

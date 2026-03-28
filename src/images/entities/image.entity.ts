@@ -12,8 +12,8 @@ import { Supply } from '../../supplies/entities/supply.entity';
 import { User } from '../../users/entities/user.entity';
 import { Equipment } from '../../equipment/entities/equipment.entity';
 import { Client } from '../../client/entities/client.entity';
-import { WorkOrder } from 'src/work-orders/entities/work-order.entity';
-import { WorkOrderEvidencePhase } from 'src/shared/index';
+import { WorkOrderEvidencePhase } from '../../shared';
+import { WorkOrder } from '../../work-orders/entities/work-order.entity';
 
 @Entity('images')
 export class Image {

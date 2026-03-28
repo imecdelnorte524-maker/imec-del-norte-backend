@@ -35,3 +35,4 @@ build/
 .cache/
 package-lock.json
 .env.docker
+bloc.txt

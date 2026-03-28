@@ -1,6 +1,6 @@
 run:
 
-	make down-volumes && make build && make start
+	make down-volumes && make build && make start && make db-migrate
 
 dev:
 	docker-compose up --build -d 
@@ -33,7 +33,7 @@ migration-generate:
 	npm cross-env DB_HOST=localhost NODE_ENV=development DB_NAME=imec_del_norte npx ts-node -r tsconfig-paths/register ./node_modules/typeorm/cli-ts-node-commonjs.js migration:generate src/migrations/$(name) -d src/data-source.ts
 
 db-migrate:
-	docker-compose exec backend npm run migration:run
+	docker-compose exec backend npm run migration:run:docker
 
 db-revert:
-	docker-compose exec backend npm run migration:revert
+	docker-compose exec backend npm run migration:revert:docker

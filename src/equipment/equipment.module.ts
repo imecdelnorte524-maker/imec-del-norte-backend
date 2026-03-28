@@ -14,13 +14,13 @@ import { EquipmentEvaporator } from './entities/evaporator.entity';
 import { EquipmentCondenser } from './entities/condenser.entity';
 import { EquipmentCompressor } from './entities/compressor.entity';
 import { PlanMantenimiento } from './entities/plan-mantenimiento.entity';
-import { WorkOrdersModule } from 'src/work-orders/work-orders.module';
 import { EquipmentDocumentsService } from './equipment-documents.service';
 import { EquipmentDocumentsController } from './equipment-documents.controller';
 import { EquipmentDocument } from './entities/equipment-document.entity';
 import { PdfModule } from '../pdf/pdf.module';
 import { User } from '../users/entities/user.entity';
 import { RealtimeModule } from '../realtime/realtime.module';
+import { WorkOrdersModule } from '../work-orders/work-orders.module';
 
 @Module({
   imports: [
