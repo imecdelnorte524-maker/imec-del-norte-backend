@@ -42,9 +42,8 @@ async function bootstrap() {
   SwaggerModule.setup('api/docs', app, document);
 
   const allowedOrigins = [
-    'imec-del-norte-web.up.railway.app',
-    'imec-del-norte-staggin.up.railway.app',
-    'imec-del-norte-backend-stagging.up.railway.app',
+    'https://imec-del-norte-web.up.railway.app',
+    'https://imec-del-norte-staggin.up.railway.app',
     'imec-del-norte-backend.up.railway.app',
     'https://m3h6rtnz-3032.use.devtunnels.ms',
     'http://localhost:3032',
