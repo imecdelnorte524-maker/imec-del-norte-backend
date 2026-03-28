@@ -44,7 +44,7 @@ async function bootstrap() {
   const allowedOrigins = [
     'https://imec-del-norte-web.up.railway.app',
     'https://imec-del-norte-staggin.up.railway.app',
-    'imec-del-norte-backend.up.railway.app',
+    'https://imec-del-norte-backend.up.railway.app',
     'https://m3h6rtnz-3032.use.devtunnels.ms',
     'http://localhost:3032',
     'http://localhost:3000',
@@ -69,7 +69,7 @@ async function bootstrap() {
     }),
   );
 
-  const port = configService.get<number>('PORT') || 3032;
+  const port = configService.get<number>('PORT') || 4001;
   console.log(`🔧 Puerto configurado: ${port}`);
   console.log(`🔧 Entorno: ${process.env.NODE_ENV || 'development'}`);
 

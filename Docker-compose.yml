@@ -1,37 +1,72 @@
 services:
-  backend:
+  backend_api:
     build:
       context: .
       target: production
-    container_name: imec_del_norte_backend
+    container_name: imec_del_norte_backend_api
     ports:
-      - "4001:4001"
-    environment:
-      - RUN_SEED=true
-      - UPLOADS_PATH=/app/uploads  # Variable para el path de uploads
+      - '4001:4001'
     env_file:
       - .env
+    environment:
+      - RUN_SEED=true
+      - PROCESS_TYPE=api
+      - REDIS_URL=redis://redis:6379
+    command: ['node', 'dist/src/main']
     restart: unless-stopped
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_started
     networks:
       - app-network
-    # 🔥 VOLUMEN PERSISTENTE AÑADIDO AQUÍ 🔥
     volumes:
       - uploads_data:/app/uploads
     healthcheck:
-      test: [ "CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:4001/api/health" ]
+      test: ['CMD', 'wget', '--no-verbose', '--tries=1', '--spider', 'http://localhost:4001/api/health']
       interval: 30s
       timeout: 10s
       retries: 3
+
+  backend_worker:
+    build:
+      context: .
+      target: production
+    container_name: imec_del_norte_backend_worker
+    env_file:
+      - .env
+    environment:
+      - RUN_SEED=false
+      - PROCESS_TYPE=worker
+      - REDIS_URL=redis://redis:6379
+    command: ['node', 'dist/src/worker.js']
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    networks:
+      - app-network
+    volumes:
+      - uploads_data:/app/uploads
+
+  redis:
+    image: redis:7-alpine
+    container_name: imec_redis
+    restart: unless-stopped
+    ports:
+      - '6379:6379'
+    networks:
+      - app-network
 
   postgres:
     image: postgres:16
     container_name: postgres-db
     restart: always
     ports:
-      - "5431:5432"
+      - '5431:5432'
     env_file:
       - .env
     environment:
@@ -43,19 +78,19 @@ services:
     networks:
       - app-network
     healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}" ]
+      test: ['CMD-SHELL', 'pg_isready -U ${DB_USER} -d ${DB_NAME}']
       interval: 5s
       timeout: 5s
       retries: 10
       start_period: 10s
 
-# 🔥 VOLÚMENES PERSISTENTES AÑADIDOS 🔥
 volumes:
   postgres_data:
     driver: local
   uploads_data:
     driver: local
     name: imec_uploads_data
+
 networks:
   app-network:
     driver: bridge

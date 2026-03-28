@@ -31,7 +31,6 @@ export class ClientController {
   constructor(private readonly clientService: ClientService) {}
 
   @Post()
-  @Roles('Administrador', 'Secretaria', 'Cliente')
   @ApiOperation({
     summary: 'Crear cliente',
     description: 'Crea un nuevo cliente',
@@ -135,7 +134,7 @@ export class ClientController {
   }
 
   @Patch(':id')
-  @Roles('Administrador', 'Secretaria')
+ 
   @ApiOperation({
     summary: 'Actualizar cliente',
     description: 'Actualiza un cliente existente',
@@ -155,7 +154,7 @@ export class ClientController {
   }
 
   @Delete(':id')
-  @Roles('Administrador')
+   
   @ApiOperation({
     summary: 'Eliminar cliente',
     description: 'Elimina un cliente permanentemente',

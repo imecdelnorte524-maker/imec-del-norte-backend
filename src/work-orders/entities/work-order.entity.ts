@@ -57,16 +57,16 @@ export class WorkOrder {
   @JoinColumn({ name: 'cliente_empresa_id' })
   clienteEmpresa?: Client;
 
-  @CreateDateColumn({ name: 'fecha_solicitud' })
+  @CreateDateColumn({ name: 'fecha_solicitud', type: 'timestamptz' })
   fechaSolicitud!: Date;
 
   @Column({ name: 'fecha_programada', type: 'date', nullable: true })
   fechaProgramada?: Date;
 
-  @Column({ name: 'fecha_inicio', type: 'timestamp', nullable: true })
+  @Column({ name: 'fecha_inicio', type: 'timestamptz', nullable: true })
   fechaInicio?: Date;
 
-  @Column({ name: 'fecha_finalizacion', type: 'timestamp', nullable: true })
+  @Column({ name: 'fecha_finalizacion', type: 'timestamptz', nullable: true })
   fechaFinalizacion?: Date;
 
   @Column({
@@ -167,7 +167,7 @@ export class WorkOrder {
   @Column({ name: 'received_by_signature_data', type: 'text', nullable: true })
   receivedBySignatureData?: string | null;
 
-  @Column({ name: 'received_at', type: 'timestamp', nullable: true })
+  @Column({ name: 'received_at', type: 'timestamptz', nullable: true })
   receivedAt?: Date | null;
 
   // Evidencias (imágenes)

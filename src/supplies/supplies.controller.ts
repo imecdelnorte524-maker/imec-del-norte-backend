@@ -37,7 +37,7 @@ export class SuppliesController {
   constructor(private readonly suppliesService: SuppliesService) {}
 
   @Post()
-  @Roles('Administrador', 'Secretaria')
+ 
   @ApiOperation({ summary: 'Crear insumo' })
   @ApiResponse({
     status: 201,
@@ -123,7 +123,7 @@ export class SuppliesController {
   }
 
   @Patch(':id')
-  @Roles('Administrador', 'Secretaria')
+ 
   @ApiOperation({ summary: 'Actualizar insumo' })
   @ApiResponse({
     status: 200,
@@ -149,7 +149,7 @@ export class SuppliesController {
   }
 
   @Delete(':id')
-  @Roles('Administrador')
+   
   @ApiOperation({ summary: 'Eliminar insumo (soft delete)' })
   @ApiResponse({
     status: 200,
@@ -165,7 +165,7 @@ export class SuppliesController {
   }
 
   @Patch(':id/restore')
-  @Roles('Administrador')
+   
   @ApiOperation({ summary: 'Restaurar insumo eliminado' })
   @ApiResponse({
     status: 200,
@@ -184,7 +184,7 @@ export class SuppliesController {
   }
 
   @Patch(':id/stock')
-  @Roles('Administrador', 'Técnico', 'Secretaria')
+   
   @ApiOperation({ summary: 'Actualizar stock de insumo' })
   @ApiResponse({
     status: 200,
@@ -206,7 +206,7 @@ export class SuppliesController {
   }
 
   @Post(':id/increment')
-  @Roles('Administrador', 'Técnico', 'Secretaria')
+   
   @ApiOperation({ summary: 'Incrementar stock de insumo' })
   async incrementStock(
     @Param('id', ParseIntPipe) id: number,
@@ -220,7 +220,7 @@ export class SuppliesController {
   }
 
   @Post(':id/decrement')
-  @Roles('Administrador', 'Técnico', 'Secretaria')
+   
   @ApiOperation({ summary: 'Decrementar stock de insumo' })
   async decrementStock(
     @Param('id', ParseIntPipe) id: number,

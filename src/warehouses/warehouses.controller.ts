@@ -33,7 +33,7 @@ export class WarehousesController {
   constructor(private readonly warehousesService: WarehousesService) {}
 
   @Post()
-  @Roles('Administrador', 'Técnico')
+   
   @ApiOperation({ summary: 'Crear una nueva bodega' })
   @ApiResponse({
     status: 201,
@@ -115,7 +115,7 @@ export class WarehousesController {
   }
 
   @Patch(':id')
-  @Roles('Administrador', 'Técnico')
+   
   @ApiOperation({ summary: 'Actualizar una bodega' })
   @ApiResponse({
     status: 200,
@@ -138,7 +138,7 @@ export class WarehousesController {
   }
 
   @Delete(':id')
-  @Roles('Administrador')
+   
   @ApiOperation({ summary: 'Eliminar una bodega (soft delete)' })
   @ApiResponse({
     status: 200,

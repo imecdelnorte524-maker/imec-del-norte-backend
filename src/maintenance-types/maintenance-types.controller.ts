@@ -14,7 +14,7 @@ export class MaintenanceTypesController {
   constructor(private readonly service: MaintenanceTypesService) {}
 
   @Post()
-  @Roles('Administrador')
+   
   @ApiOperation({ summary: 'Crear nuevo tipo de mantenimiento (Solo Admin)' })
   create(@Body() dto: CreateMaintenanceTypeDto) {
     return this.service.create(dto);
@@ -27,7 +27,7 @@ export class MaintenanceTypesController {
   }
 
   @Delete(':id')
-  @Roles('Administrador')
+   
   @ApiOperation({ summary: 'Desactivar un tipo de mantenimiento' })
   remove(@Param('id', ParseIntPipe) id: number) {
     return this.service.remove(id);

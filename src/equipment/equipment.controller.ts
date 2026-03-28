@@ -181,7 +181,7 @@ export class EquipmentController {
   }
 
   @Patch(':id')
-  @Roles('Administrador', 'Técnico')
+   
   @ApiOperation({ summary: 'Actualizar equipo' })
   @ApiResponse({
     status: 200,
@@ -209,7 +209,7 @@ export class EquipmentController {
   }
 
   @Delete(':id')
-  @Roles('Administrador')
+   
   @ApiOperation({ summary: 'Eliminar equipo' })
   async remove(@Param('id', ParseIntPipe) id: number) {
     await this.equipmentService.remove(id);
@@ -255,7 +255,7 @@ export class EquipmentController {
   }
 
   @Patch(':id/maintenance-plan/advance')
-  @Roles('Administrador', 'Técnico')
+   
   @ApiOperation({
     summary: 'Avanzar plan de mantenimiento del equipo',
   })
@@ -276,7 +276,7 @@ export class EquipmentController {
   }
 
   @Post(':id/documents')
-  @Roles('Administrador', 'Técnico')
+   
   @UseInterceptors(
     FileInterceptor('file', {
       storage: memoryStorage(),

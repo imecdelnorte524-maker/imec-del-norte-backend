@@ -16,11 +16,11 @@ import {
   UseInterceptors,
   Res,
   HttpStatus,
+  NotFoundException,
 } from '@nestjs/common';
 import {
   ApiTags,
   ApiOperation,
-  ApiResponse,
   ApiBearerAuth,
   ApiQuery,
   ApiConsumes,
@@ -49,11 +49,14 @@ import { SignWorkOrderDto } from './dto/sign-work-order.dto';
 import { AcInspectionPhase, ServiceCategory } from '../shared/index';
 import { CreateAcInspectionDto } from './dto/create-ac-inspection.dto';
 import { Response } from 'express';
-import { SendWorkOrderReportsDto } from './dto/send-work-order-reports.dto';
-import { SendWorkOrderReportsToClientsDto } from './dto/send-work-order-reports-to-clients.dto';
-import { DownloadWorkOrderReportsDto } from './dto/download-work-order-reports.dto';
 import { LightSerializerInterceptor } from '../common/interceptors/light-serializer.interceptor';
 import { CloudinaryService } from '../images/cloudinary.service';
+import { WoReportsQueueService } from '../wo-reports/wo-reports.queue.service';
+import { WoReportsTokenStore } from '../wo-reports/wo-reports.token-store';
+import { SupabaseTempStorageService } from '../wo-reports/supabase-temp-storage.service';
+import { CreateAsyncReportDto } from '../wo-reports/dto/create-async-report.dto';
+import { CreateBatchAsyncReportDto } from '../wo-reports/dto/create-batch-async-report.dto';
+import { CreateClientsAsyncReportDto } from '../wo-reports/dto/create-clients-async-report.dto';
 
 @ApiTags('work-orders')
 @Controller('work-orders')
@@ -63,6 +66,9 @@ export class WorkOrdersController {
   constructor(
     private readonly workOrdersService: WorkOrdersService,
     private readonly cloudinaryService: CloudinaryService,
+    private readonly woReportsQueue: WoReportsQueueService,
+    private readonly tokenStore: WoReportsTokenStore,
+    private readonly tempStorage: SupabaseTempStorageService,
   ) {}
 
   private getRoleName(user: any): string {
@@ -70,7 +76,6 @@ export class WorkOrdersController {
   }
 
   @Post()
-  @Roles('Administrador', 'Cliente')
   @ApiOperation({ summary: 'Crear una nueva orden de trabajo' })
   async create(@Body() dto: CreateWorkOrderDto, @Req() req: any) {
     const workOrder = await this.workOrdersService.create(dto, req.user);
@@ -195,7 +200,6 @@ export class WorkOrdersController {
   }
 
   @Patch(':id')
-  @Roles('Administrador', 'Técnico', 'Secretaria', 'Supervisor')
   @ApiOperation({ summary: 'Actualizar una orden de trabajo' })
   async update(
     @Param('id', ParseIntPipe) id: number,
@@ -237,7 +241,6 @@ export class WorkOrdersController {
   }
 
   @Delete(':id')
-  @Roles('Administrador')
   @ApiOperation({ summary: 'Eliminar una orden de trabajo' })
   async remove(@Param('id', ParseIntPipe) id: number) {
     await this.workOrdersService.remove(id);
@@ -247,7 +250,6 @@ export class WorkOrdersController {
   }
 
   @Patch(':id/assign-technician')
-  @Roles('Administrador', 'Secretaria', 'Supervisor')
   @ApiOperation({
     summary:
       'Asignar o cambiar el técnico de una orden (legacy - un solo técnico)',
@@ -278,7 +280,6 @@ export class WorkOrdersController {
   }
 
   @Patch(':id/assign-technicians')
-  @Roles('Administrador', 'Secretaria', 'Supervisor')
   @ApiOperation({ summary: 'Asignar múltiples técnicos a una orden' })
   async assignTechnicians(
     @Param('id', ParseIntPipe) id: number,
@@ -297,7 +298,6 @@ export class WorkOrdersController {
   }
 
   @Delete(':id/technicians')
-  @Roles('Administrador', 'Secretaria', 'Supervisor')
   @ApiOperation({
     summary: 'Quitar todos los técnicos de una orden de trabajo',
   })
@@ -367,7 +367,6 @@ export class WorkOrdersController {
   }
 
   @Post(':id/equipment/:equipmentId')
-  @Roles('Administrador', 'Técnico', 'Secretaria', 'Supervisor')
   @ApiOperation({ summary: 'Asociar un equipo a una orden' })
   async addEquipment(
     @Param('id', ParseIntPipe) ordenId: number,
@@ -386,7 +385,6 @@ export class WorkOrdersController {
   }
 
   @Delete(':id/equipment/:equipmentId')
-  @Roles('Administrador', 'Técnico', 'Secretaria', 'Supervisor')
   @ApiOperation({ summary: 'Desasociar un equipo de una orden' })
   async removeEquipment(
     @Param('id', ParseIntPipe) ordenId: number,
@@ -444,7 +442,6 @@ export class WorkOrdersController {
   }
 
   @Post(':id/supplies')
-  @Roles('Administrador', 'Técnico', 'Secretaria', 'Supervisor')
   @ApiOperation({ summary: 'Agregar un insumo usado a la orden' })
   async addSupplyDetail(
     @Param('id', ParseIntPipe) id: number,
@@ -458,7 +455,6 @@ export class WorkOrdersController {
   }
 
   @Delete(':id/supplies/:detalleInsumoId')
-  @Roles('Administrador', 'Técnico', 'Secretaria', 'Supervisor')
   @ApiOperation({ summary: 'Eliminar un insumo usado de la orden' })
   async removeSupplyDetail(
     @Param('id', ParseIntPipe) id: number,
@@ -471,7 +467,6 @@ export class WorkOrdersController {
   }
 
   @Post(':id/tools')
-  @Roles('Administrador', 'Técnico', 'Secretaria', 'Supervisor')
   @ApiOperation({ summary: 'Agregar una herramienta usada a la orden' })
   async addToolDetail(
     @Param('id', ParseIntPipe) id: number,
@@ -485,7 +480,6 @@ export class WorkOrdersController {
   }
 
   @Delete(':id/tools/:detalleHerramientaId')
-  @Roles('Administrador', 'Técnico', 'Secretaria', 'Supervisor')
   @ApiOperation({ summary: 'Eliminar una herramienta usada de la orden' })
   async removeToolDetail(
     @Param('id', ParseIntPipe) id: number,
@@ -499,7 +493,6 @@ export class WorkOrdersController {
   }
 
   @Post(':id/invoice')
-  @Roles('Administrador', 'Secretaria')
   @ApiOperation({ summary: 'Subir factura PDF para una orden finalizada' })
   @ApiConsumes('multipart/form-data')
   @ApiBody({
@@ -568,7 +561,6 @@ export class WorkOrdersController {
 
   // Opcional: Endpoint para eliminar factura
   @Delete(':id/invoice')
-  @Roles('Administrador', 'Secretaria')
   @ApiOperation({ summary: 'Eliminar factura de una orden' })
   async deleteInvoice(@Param('id', ParseIntPipe) id: number) {
     const workOrder = await this.workOrdersService.findOne(id);
@@ -598,7 +590,6 @@ export class WorkOrdersController {
   }
 
   @Post(':id/rate-technicians')
-  @Roles('Administrador', 'Supervisor')
   @ApiOperation({
     summary: 'Calificar el desempeño de los técnicos de una orden completada',
   })
@@ -624,7 +615,6 @@ export class WorkOrdersController {
   }
 
   @Post(':id/sign-receipt')
-  @Roles('Administrador', 'Supervisor', 'Cliente', 'Técnico', 'Secretaria')
   @ApiOperation({
     summary: 'Registrar firma de recibido de la orden de servicio',
   })
@@ -650,7 +640,6 @@ export class WorkOrdersController {
   }
 
   @Post(':id/ac-inspections/before')
-  @Roles('Administrador', 'Técnico', 'Secretaria', 'Supervisor')
   @ApiOperation({
     summary:
       'Registrar inspección inicial (antes del mantenimiento) para aire acondicionado',
@@ -674,7 +663,6 @@ export class WorkOrdersController {
   }
 
   @Post(':id/ac-inspections/after')
-  @Roles('Administrador', 'Técnico', 'Secretaria', 'Supervisor')
   @ApiOperation({
     summary:
       'Registrar inspección final (después del mantenimiento) para aire acondicionado',
@@ -695,178 +683,6 @@ export class WorkOrdersController {
       message: 'Inspección final registrada correctamente',
       data: inspection,
     };
-  }
-
-  @Get(':id/informe')
-  @Roles('Administrador', 'Supervisor', 'Secretaria', 'Técnico')
-  @ApiOperation({
-    summary: 'Generar informe PDF interno de la orden de trabajo',
-  })
-  async generarInforme(
-    @Param('id', ParseIntPipe) id: number,
-    @Res() res: Response,
-    @Req() req: any,
-  ) {
-    try {
-      const workOrder = await this.workOrdersService.findOne(id);
-      const roleName = this.getRoleName(req.user);
-
-      // Mismas validaciones que en GET /:id
-
-      // Si es Técnico: solo si está asignado
-      if (roleName === 'Técnico') {
-        const isAssigned = workOrder.technicians?.some(
-          (t) => t.tecnicoId === req.user.userId,
-        );
-        if (!isAssigned) {
-          throw new ForbiddenException();
-        }
-      }
-
-      // Por seguridad extra (aunque aquí no incluimos rol Cliente en @Roles)
-      if (roleName === 'Cliente') {
-        const hasAccess = await this.workOrdersService.userHasAccessToEmpresa(
-          req.user.userId,
-          workOrder.clienteEmpresaId,
-        );
-        if (!hasAccess) {
-          throw new ForbiddenException();
-        }
-      }
-
-      const pdfBuffer = await this.workOrdersService.generarInformeOrden(id);
-
-      res.setHeader('Content-Type', 'application/pdf');
-      res.setHeader(
-        'Content-Disposition',
-        `inline; filename="OT-${id}-interno.pdf"`,
-      );
-      res.setHeader('Content-Length', pdfBuffer.length);
-
-      return res.status(HttpStatus.OK).send(pdfBuffer);
-    } catch (error) {
-      return res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
-        error: error.message,
-      });
-    }
-  }
-
-  @Get(':id/informe-client')
-  @Roles('Administrador', 'Supervisor', 'Cliente', 'Secretaria', 'Técnico')
-  @ApiOperation({
-    summary: 'Generar informe PDF versión cliente de la orden de trabajo',
-  })
-  async generarInformeClient(
-    @Param('id', ParseIntPipe) id: number,
-    @Res() res: Response,
-    @Req() req: any,
-  ) {
-    try {
-      const workOrder = await this.workOrdersService.findOne(id);
-      const roleName = this.getRoleName(req.user);
-
-      // Mismas validaciones de acceso que en GET /:id
-      if (roleName === 'Técnico') {
-        const isAssigned = workOrder.technicians?.some(
-          (t) => t.tecnicoId === req.user.userId,
-        );
-        if (!isAssigned) {
-          throw new ForbiddenException();
-        }
-      }
-
-      if (roleName === 'Cliente') {
-        const hasAccess = await this.workOrdersService.userHasAccessToEmpresa(
-          req.user.userId,
-          workOrder.clienteEmpresaId,
-        );
-        if (!hasAccess) {
-          throw new ForbiddenException();
-        }
-      }
-
-      const pdfBuffer =
-        await this.workOrdersService.generarInformeOrdenCliente(id);
-
-      res.setHeader('Content-Type', 'application/pdf');
-      res.setHeader(
-        'Content-Disposition',
-        `inline; filename="Informe-Orden-Servicio-${id}-${workOrder.clienteEmpresa?.nombre}.pdf"`,
-      );
-      res.setHeader('Content-Length', pdfBuffer.length);
-
-      return res.status(HttpStatus.OK).send(pdfBuffer);
-    } catch (error) {
-      return res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
-        error: error.message,
-      });
-    }
-  }
-
-  @Post('send-reports')
-  @Roles('Administrador', 'Supervisor', 'Secretaria', 'Cliente', 'Técnico')
-  @ApiOperation({
-    summary:
-      'Enviar por correo electrónico los informes PDF de varias órdenes de trabajo',
-  })
-  async sendReportsByEmail(
-    @Body() dto: SendWorkOrderReportsDto,
-    @Req() req: any,
-  ) {
-    const result = await this.workOrdersService.sendReportsByEmail(
-      dto,
-      req.user,
-    );
-
-    return {
-      message: 'Informes enviados correctamente',
-      data: result,
-    };
-  }
-
-  @Post('send-reports-to-clients')
-  @Roles('Administrador', 'Supervisor', 'Secretaria')
-  @ApiOperation({
-    summary:
-      'Enviar por correo electrónico informes PDF de órdenes completadas a los clientes (usuarios contacto de cada empresa)',
-  })
-  async sendReportsToClients(
-    @Body() dto: SendWorkOrderReportsToClientsDto,
-    @Req() req: any,
-  ) {
-    const result = await this.workOrdersService.sendReportsToClientsByEmail(
-      dto,
-      req.user,
-    );
-
-    return {
-      message: 'Informes enviados a clientes correctamente',
-      data: result,
-    };
-  }
-
-  @Post('download-reports')
-  @Roles('Administrador', 'Supervisor', 'Secretaria', 'Cliente', 'Técnico')
-  @ApiOperation({
-    summary: 'Descargar informes PDF (o ZIP) de varias órdenes de trabajo',
-  })
-  async downloadReports(
-    @Body() dto: DownloadWorkOrderReportsDto,
-    @Req() req: any,
-    @Res() res: Response,
-  ) {
-    const { buffer, fileName, contentType } =
-      await this.workOrdersService.generateBatchReportsFile(
-        dto.orderIds,
-        dto.reportType,
-        req.user,
-      );
-
-    res.setHeader('Content-Type', contentType);
-    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
-    res.setHeader('Content-Length', buffer.length);
-
-    return res.status(HttpStatus.OK).send(buffer);
   }
 
   @Get('light')
@@ -910,6 +726,161 @@ export class WorkOrdersController {
         fechaCreacion: wo.fechaSolicitud,
         clienteId: wo.clienteId,
       })),
+    };
+  }
+
+  @Post('reports/clients-async')
+  @ApiOperation({
+    summary: 'Enviar reportes a clientes en segundo plano',
+  })
+  async sendReportsToClientsAsync(
+    @Body() dto: CreateClientsAsyncReportDto,
+    @Req() req: any,
+  ) {
+    const roleName = this.getRoleName(req.user);
+
+    if (!['Administrador', 'Secretaria', 'Supervisor'].includes(roleName)) {
+      throw new ForbiddenException(
+        'No tiene permisos para enviar reportes a clientes',
+      );
+    }
+
+    const { jobId } = await this.woReportsQueue.enqueue({
+      kind: 'clients',
+      userId: req.user.userId,
+      orderIds: dto.orderIds,
+      message: dto.message,
+    });
+
+    return {
+      message: 'Envío a clientes encolado correctamente',
+      data: { jobId },
+    };
+  }
+
+  @Post(':id/informe-async')
+  @ApiOperation({
+    summary: 'Generar informe en segundo plano (download/email)',
+  })
+  async generarInformeAsync(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: CreateAsyncReportDto,
+    @Req() req: any,
+  ) {
+    const workOrder = await this.workOrdersService.findOne(id);
+    const roleName = this.getRoleName(req.user);
+
+    if (roleName === 'Técnico') {
+      const isAssigned = workOrder.technicians?.some(
+        (t) => t.tecnicoId === req.user.userId,
+      );
+      if (!isAssigned) throw new ForbiddenException();
+    }
+
+    if (roleName === 'Cliente') {
+      const hasAccess = await this.workOrdersService.userHasAccessToEmpresa(
+        req.user.userId,
+        workOrder.clienteEmpresaId,
+      );
+      if (!hasAccess) throw new ForbiddenException();
+    }
+
+    if (dto.action === 'email' && !dto.toEmail) {
+      throw new BadRequestException('toEmail es requerido cuando action=email');
+    }
+
+    const { jobId } = await this.woReportsQueue.enqueue({
+      kind: 'single',
+      userId: req.user.userId,
+      ordenId: id,
+      reportType: dto.reportType,
+      action: dto.action,
+      toEmail: dto.toEmail,
+      ccEmails: dto.ccEmails,
+    });
+
+    return {
+      message: 'Reporte encolado correctamente',
+      data: { jobId },
+    };
+  }
+
+  @Get('informe-download/:token')
+  @ApiOperation({ summary: 'Descargar PDF generado (token 1 uso / expira)' })
+  async downloadInforme(@Param('token') token: string, @Res() res: Response) {
+    const payload = await this.tokenStore.consumeToken(token);
+    if (!payload) {
+      throw new NotFoundException('El token no existe o expiró');
+    }
+
+    const buffer = await this.tempStorage.downloadPdf({
+      path: payload.objectPath,
+    });
+
+    await this.tempStorage.remove([payload.objectPath]);
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${payload.fileName}"`,
+    );
+    res.setHeader('Content-Length', buffer.length);
+
+    return res.status(200).send(buffer);
+  }
+
+  @Post('reports/batch-async')
+  @ApiOperation({
+    summary:
+      'Generar o enviar lote de reportes en segundo plano (download/email)',
+  })
+  async generarBatchAsync(
+    @Body() dto: CreateBatchAsyncReportDto,
+    @Req() req: any,
+  ) {
+    const roleName = this.getRoleName(req.user);
+
+    if (dto.action === 'email' && !dto.toEmail) {
+      throw new BadRequestException('toEmail es requerido cuando action=email');
+    }
+
+    // Validación básica de acceso por orden
+    for (const orderId of dto.orderIds) {
+      const workOrder = await this.workOrdersService.findOne(orderId);
+
+      if (roleName === 'Técnico') {
+        const isAssigned = workOrder.technicians?.some(
+          (t) => t.tecnicoId === req.user.userId,
+        );
+        if (!isAssigned) {
+          throw new ForbiddenException(`No tiene acceso a la orden ${orderId}`);
+        }
+      }
+
+      if (roleName === 'Cliente') {
+        const hasAccess = await this.workOrdersService.userHasAccessToEmpresa(
+          req.user.userId,
+          workOrder.clienteEmpresaId,
+        );
+        if (!hasAccess) {
+          throw new ForbiddenException(`No tiene acceso a la orden ${orderId}`);
+        }
+      }
+    }
+
+    const { jobId } = await this.woReportsQueue.enqueue({
+      kind: 'batch',
+      userId: req.user.userId,
+      orderIds: dto.orderIds,
+      reportType: dto.reportType,
+      action: dto.action,
+      toEmail: dto.toEmail,
+      ccEmails: dto.ccEmails,
+    });
+
+    return {
+      message: 'Lote de reportes encolado correctamente',
+      data: { jobId },
     };
   }
 

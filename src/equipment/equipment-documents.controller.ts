@@ -24,7 +24,7 @@ export class EquipmentDocumentsController {
   constructor(private readonly docsService: EquipmentDocumentsService) {}
 
   @Delete(':id')
-  @Roles('Administrador', 'Técnico')
+   
   @ApiOperation({ summary: 'Eliminar un PDF por ID (Cloudinary + BD)' })
   @ApiResponse({ status: 200, description: 'Documento eliminado' })
   deletePdf(@Param('id', ParseIntPipe) id: number) {

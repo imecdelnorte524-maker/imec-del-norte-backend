@@ -260,7 +260,7 @@ export class ImagesController {
   }
 
   @Post('work-order/:id')
-  @Roles('Administrador', 'Técnico', 'Secretaria', 'Supervisor')
+   
   @ApiOperation({
     summary: 'Subir evidencias (imágenes) de una orden de trabajo',
   })
@@ -323,7 +323,7 @@ export class ImagesController {
   }
 
   @Delete('work-order/:id')
-  @Roles('Administrador')
+   
   @ApiOperation({
     summary: 'Eliminar todas las evidencias de una orden de trabajo',
   })

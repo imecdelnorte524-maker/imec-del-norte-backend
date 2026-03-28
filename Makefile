@@ -1,6 +1,8 @@
 run:
+	make build && make start
 
-	make down-volumes && make build && make start && make db-migrate
+run-volumes:
+	make down-volumes && make build && make start
 
 dev:
 	docker-compose up --build -d 
@@ -18,7 +20,10 @@ down-volumes:
 	docker-compose down -v
 
 logs:
-	docker-compose logs -f backend
+	docker-compose logs -f backend_api
+
+logs-worker: 
+	docker-compose logs -f backend_worker
 
 test:
 	npm run build && rm -rf dist
