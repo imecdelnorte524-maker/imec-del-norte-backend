@@ -69,7 +69,7 @@ async function bootstrap() {
     }),
   );
 
-  const port = configService.get<number>('PORT') || 3032;
+  const port = configService.get<number>('PORT') || 4001;
   console.log(`🔧 Puerto configurado: ${port}`);
   console.log(`🔧 Entorno: ${process.env.NODE_ENV || 'development'}`);
 

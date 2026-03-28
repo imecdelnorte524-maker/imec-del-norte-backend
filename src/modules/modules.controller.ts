@@ -35,7 +35,7 @@ export class ModulesController {
   constructor(private readonly modulesService: ModulesService) {}
 
   @Post()
-  @Roles('Administrador')
+   
   @ApiOperation({
     summary: 'Crear un nuevo módulo',
     description: 'Permite crear un nuevo módulo y asociarle roles (Solo Adminisrtrador)',
@@ -104,7 +104,7 @@ export class ModulesController {
   }
 
   @Patch(':id')
-  @Roles('Administrador')
+   
   @ApiOperation({
     summary: 'Actualizar un módulo',
     description:
@@ -139,7 +139,7 @@ export class ModulesController {
   }
 
   @Delete(':id')
-  @Roles('Administrador')
+   
   @ApiOperation({
     summary: 'Eliminar un módulo',
     description: 'Elimina un módulo permanentemente (Solo Administrador)',
@@ -164,7 +164,7 @@ export class ModulesController {
    */
 
   @Post(':id/roles')
-  @Roles('Administrador')
+   
   @ApiOperation({ summary: 'Asignar (reemplazar) roles a un módulo', description: 'Reemplaza los roles asociados a un módulo.' })
   @ApiResponse({ status: HttpStatus.OK, description: 'Roles asignados al módulo', type: ModuleResponseDto })
   async setRoles(
@@ -176,7 +176,7 @@ export class ModulesController {
   }
 
   @Post(':id/roles/:rolId')
-  @Roles('Administrador')
+   
   @ApiOperation({ summary: 'Añadir un rol a un módulo' })
   @ApiResponse({ status: HttpStatus.OK, description: 'Rol añadido al módulo' })
   async addRole(
@@ -188,7 +188,7 @@ export class ModulesController {
   }
 
   @Delete(':id/roles/:rolId')
-  @Roles('Administrador')
+   
   @ApiOperation({ summary: 'Quitar un rol de un módulo' })
   @ApiResponse({ status: HttpStatus.OK, description: 'Rol removido del módulo' })
   async removeRole(

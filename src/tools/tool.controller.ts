@@ -40,7 +40,7 @@ export class ToolController {
   constructor(private readonly toolService: ToolService) {}
 
   @Post()
-  @Roles('Administrador', 'Técnico')
+   
   @ApiOperation({
     summary: 'Crear herramienta',
     description: 'Crea una nueva herramienta (Administrador y Técnico)',
@@ -185,7 +185,7 @@ export class ToolController {
   }
 
   @Patch(':id')
-  @Roles('Administrador', 'Técnico')
+   
   @ApiOperation({
     summary: 'Actualizar herramienta',
     description:
@@ -209,7 +209,7 @@ export class ToolController {
   }
 
   @Delete(':id')
-  @Roles('Administrador')
+   
   @ApiOperation({
     summary: 'Eliminar herramienta permanentemente',
     description: 'Elimina una herramienta permanentemente (Solo Administrador)',
@@ -227,7 +227,7 @@ export class ToolController {
   }
 
   @Delete(':id/soft')
-  @Roles('Administrador', 'Técnico')
+   
   @ApiOperation({
     summary: 'Eliminar herramienta con motivo (soft delete)',
     description: 'Elimina una herramienta lógicamente con motivo específico',
@@ -253,7 +253,7 @@ export class ToolController {
   }
 
   @Patch(':id/restore')
-  @Roles('Administrador')
+   
   @ApiOperation({
     summary: 'Restaurar herramienta eliminada',
     description: 'Restaura una herramienta que fue eliminada lógicamente',
@@ -272,7 +272,7 @@ export class ToolController {
   }
 
   @Patch(':id/status')
-  @Roles('Administrador', 'Técnico')
+   
   @ApiOperation({
     summary: 'Actualizar estado de la herramienta',
     description:

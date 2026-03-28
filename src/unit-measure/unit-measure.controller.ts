@@ -33,7 +33,7 @@ export class UnitMeasureController {
   constructor(private readonly unitMeasureService: UnitMeasureService) {}
 
   @Post()
-  @Roles('Administrador', 'Técnico')
+   
   @ApiOperation({ summary: 'Crear una nueva unidad de medida' })
   @ApiResponse({
     status: 201,
@@ -49,7 +49,7 @@ export class UnitMeasureController {
   }
 
   @Post('find-or-create')
-  @Roles('Administrador', 'Técnico')
+   
   @ApiOperation({
     summary: 'Buscar o crear unidad de medida (para autocompletado)',
   })
@@ -122,7 +122,7 @@ export class UnitMeasureController {
   }
 
   @Patch(':id')
-  @Roles('Administrador', 'Técnico')
+   
   @ApiOperation({ summary: 'Actualizar una unidad de medida' })
   @ApiResponse({
     status: 200,
@@ -145,7 +145,7 @@ export class UnitMeasureController {
   }
 
   @Delete(':id')
-  @Roles('Administrador')
+   
   @ApiOperation({ summary: 'Eliminar una unidad de medida' })
   @ApiResponse({
     status: 200,

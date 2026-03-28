@@ -1,9 +1,48 @@
-// src/work-orders/report/informe-orden-html.helper.ts
 import { WorkOrder } from '../../src/work-orders/entities/work-order.entity';
 
 export interface InformeOrdenOptions {
   headerImageUrl: string;
-  forClient: boolean; // true = versión cliente (sin ranking, sin facturación/ubicación)
+  forClient: boolean;
+}
+
+function escapeHtml(value: any): string {
+  if (value === null || value === undefined) return '';
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+function optimizeCloudinaryImageForPdf(
+  url: string | null | undefined,
+  options?: {
+    width?: number;
+    quality?: string;
+  },
+): string {
+  if (!url) return '';
+
+  const width = options?.width ?? 1000;
+  const quality = options?.quality ?? 'auto:low';
+
+  // Solo transformar si es Cloudinary
+  if (!url.includes('/image/upload/')) return url;
+
+  // Evitar duplicar transformación si ya la tiene
+  if (
+    url.includes('/f_auto,') ||
+    url.includes('/q_auto') ||
+    url.includes('/w_')
+  ) {
+    return url;
+  }
+
+  return url.replace(
+    '/image/upload/',
+    `/image/upload/f_auto,q_${quality},w_${width},c_limit/`,
+  );
 }
 
 export function buildInformeOrdenParams(
@@ -54,18 +93,18 @@ export function buildInformeOrdenParams(
   const comentariosBloque = orden.comentarios
     ? `<div class="info-box" style="margin-bottom: 15px;">
         <h3>COMENTARIOS</h3>
-        <p style="font-size: 11px;">${orden.comentarios}</p>
+        <p style="font-size: 11px;">${escapeHtml(orden.comentarios)}</p>
        </div>`
     : '';
 
   const facturaLink =
     !options.forClient && orden.facturaPdfUrl
-      ? `<p><span class="label">Factura:</span> <a href="${orden.facturaPdfUrl}" class="factura-link" target="_blank">Ver factura</a></p>`
+      ? `<p><span class="label">Factura:</span> <a href="${escapeHtml(orden.facturaPdfUrl)}" class="factura-link" target="_blank">Ver factura</a></p>`
       : '';
 
   const ubicacionLink =
     !options.forClient && orden.clienteEmpresa?.localizacion
-      ? `<p><a href="${orden.clienteEmpresa.localizacion}" target="_blank">Ver en Google Maps</a></p>`
+      ? `<p><a href="${escapeHtml(orden.clienteEmpresa.localizacion)}" target="_blank">Ver en Google Maps</a></p>`
       : options.forClient
         ? ''
         : '<p style="color: #999;">No disponible</p>';
@@ -80,8 +119,8 @@ export function buildInformeOrdenParams(
         <div class="info-grid">
           <div class="info-box">
             <h3>RECIBIDO POR</h3>
-            <p><span class="label">Nombre:</span> ${orden.receivedByName}</p>
-            <p><span class="label">Cargo:</span> ${orden.receivedByPosition || ''}</p>
+            <p><span class="label">Nombre:</span> ${escapeHtml(orden.receivedByName)}</p>
+            <p><span class="label">Cargo:</span> ${escapeHtml(orden.receivedByPosition || '')}</p>
             <p><span class="label">Fecha:</span> ${formatDate(orden.receivedAt)}</p>
           </div>
           <div class="info-box">
@@ -124,8 +163,10 @@ export function buildInformeOrdenParams(
         const inspeccionAfter = inspecciones.find((i) => i.phase === 'AFTER');
 
         const imagenesEquipo =
-          orden.images?.filter((img) =>
-            img.observation?.includes(`[${equipo.code}]`),
+          orden.images?.filter(
+            (img) =>
+              img.observation?.includes(`[${equipo.code}]`) ||
+              img.equipmentId === equipo.equipmentId,
           ) || [];
 
         const imagenesBefore = imagenesEquipo.filter(
@@ -146,29 +187,37 @@ export function buildInformeOrdenParams(
 
           return `
             <div style="margin-top: 20px; page-break-inside: avoid;">
-              <h4 style="color: #003366; border-bottom: 1px solid #003366; padding-bottom: 5px;">📸 ${titulo} (${imagenes.length})</h4>
-              <div style="display: flex; flex-wrap: wrap; gap: 25px; justify-content: center; margin-top: 15px;">
+              <h4 style="color: #003366; border-bottom: 1px solid #003366; padding-bottom: 5px;">📸 ${escapeHtml(titulo)} (${imagenes.length})</h4>
+              <div style="display: flex; flex-wrap: wrap; gap: 18px; justify-content: center; margin-top: 15px;">
                 ${imagenes
-                  .map(
-                    (img) => `
-                      <div style="width: 300px; text-align: center; page-break-inside: avoid; margin-bottom: 20px;">
-                        <img src="${img.url}" 
-                             style="width: 300px; height: 225px; object-fit: cover; 
+                  .map((img) => {
+                    const optimizedUrl = optimizeCloudinaryImageForPdf(
+                      img.url,
+                      {
+                        width: 1000,
+                        quality: 'auto:low',
+                      },
+                    );
+
+                    return `
+                      <div style="width: 260px; text-align: center; page-break-inside: avoid; margin-bottom: 18px;">
+                        <img src="${optimizedUrl}" 
+                             style="width: 260px; height: 195px; object-fit: cover; 
                                     border: 2px solid #003366; border-radius: 8px; 
                                     box-shadow: 0 4px 8px rgba(0,0,0,0.2);" 
                              alt="Evidencia"
-                             onerror="this.onerror=null; this.src='https://via.placeholder.com/300x225?text=Error+al+cargar';" />
-                        <p style="font-size: 11px; color: #666; margin-top: 8px; font-weight: bold;">
+                             onerror="this.onerror=null; this.src='https://via.placeholder.com/260x195?text=Error+al+cargar';" />
+                        <p style="font-size: 10px; color: #666; margin-top: 8px; font-weight: bold;">
                           📅 ${formatImageDate(img.created_at)}
                         </p>
                         ${
                           img.observation
-                            ? `<p style="font-size: 10px; color: #333; font-style: italic; background: #f5f5f5; padding: 5px; border-radius: 4px;">${img.observation}</p>`
+                            ? `<p style="font-size: 10px; color: #333; font-style: italic; background: #f5f5f5; padding: 5px; border-radius: 4px;">${escapeHtml(img.observation)}</p>`
                             : ''
                         }
                       </div>
-                    `,
-                  )
+                    `;
+                  })
                   .join('')}
               </div>
             </div>
@@ -185,77 +234,32 @@ export function buildInformeOrdenParams(
 
     <table class="inspection-metrics">
       <tr class="inspection-section-row">
-        <th colspan="2">Evaporadora </th>
+        <th colspan="2">Evaporadora</th>
       </tr>
-      <tr>
-        <th>T° Suministro</th>
-        <td>${formatNumber(inspeccionBefore.evapTempSupply)} °C</td>
-      </tr>
-      <tr>
-        <th>T° Retorno</th>
-        <td>${formatNumber(inspeccionBefore.evapTempReturn)} °C</td>
-      </tr>
-      <tr>
-        <th>T° Ambiente</th>
-        <td>${formatNumber(inspeccionBefore.evapTempAmbient)} °C</td>
-      </tr>
-      <tr>
-        <th>T° Exterior</th>
-        <td>${formatNumber(inspeccionBefore.evapTempOutdoor)} °C</td>
-      </tr>
-      <tr>
-        <th>RPM Motor</th>
-        <td>${formatNumber(inspeccionBefore.evapMotorRpm)} RPM</td>
-      </tr>
-      <tr>
-        <th>Microfaradios (capacitor)</th>
-        <td>${formatNumber(inspeccionBefore.evapMicrofarads)} µF</td>
-      </tr>
+      <tr><th>T° Suministro</th><td>${formatNumber(inspeccionBefore.evapTempSupply)} °C</td></tr>
+      <tr><th>T° Retorno</th><td>${formatNumber(inspeccionBefore.evapTempReturn)} °C</td></tr>
+      <tr><th>T° Ambiente</th><td>${formatNumber(inspeccionBefore.evapTempAmbient)} °C</td></tr>
+      <tr><th>T° Exterior</th><td>${formatNumber(inspeccionBefore.evapTempOutdoor)} °C</td></tr>
+      <tr><th>RPM Motor</th><td>${formatNumber(inspeccionBefore.evapMotorRpm)} RPM</td></tr>
+      <tr><th>Microfaradios (capacitor)</th><td>${formatNumber(inspeccionBefore.evapMicrofarads)} µF</td></tr>
 
       <tr class="inspection-section-row">
-        <th colspan="2">Condensadora </th>
+        <th colspan="2">Condensadora</th>
       </tr>
-      <tr>
-        <th>Presión Alta</th>
-        <td>${formatNumber(inspeccionBefore.condHighPressure)} PSI</td>
-      </tr>
-      <tr>
-        <th>Presión Baja</th>
-        <td>${formatNumber(inspeccionBefore.condLowPressure)} PSI</td>
-      </tr>
-      <tr>
-        <th>Amperaje</th>
-        <td>${formatNumber(inspeccionBefore.condAmperage)} A</td>
-      </tr>
-      <tr>
-        <th>Voltaje</th>
-        <td>${formatNumber(inspeccionBefore.condVoltage)} V</td>
-      </tr>
-      <tr>
-        <th>T° Entrada</th>
-        <td>${formatNumber(inspeccionBefore.condTempIn)} °C</td>
-      </tr>
-      <tr>
-        <th>T° Descarga</th>
-        <td>${formatNumber(inspeccionBefore.condTempDischarge)} °C</td>
-      </tr>
-      <tr>
-        <th>RPM Motor</th>
-        <td>${formatNumber(inspeccionBefore.condMotorRpm)} RMP</td>
-      </tr>
-      <tr>
-        <th>Microfarafios (capacitor)</th>
-        <td>${formatNumber(inspeccionBefore.condMicrofarads)} µF</td>
-      </tr>
-      <tr>
-        <th>Ω Ohmio Compresor</th>
-        <td>${formatNumber(inspeccionBefore.compressorOhmio)} Ω</td>
-      </tr>
+      <tr><th>Presión Alta</th><td>${formatNumber(inspeccionBefore.condHighPressure)} PSI</td></tr>
+      <tr><th>Presión Baja</th><td>${formatNumber(inspeccionBefore.condLowPressure)} PSI</td></tr>
+      <tr><th>Amperaje</th><td>${formatNumber(inspeccionBefore.condAmperage)} A</td></tr>
+      <tr><th>Voltaje</th><td>${formatNumber(inspeccionBefore.condVoltage)} V</td></tr>
+      <tr><th>T° Entrada</th><td>${formatNumber(inspeccionBefore.condTempIn)} °C</td></tr>
+      <tr><th>T° Descarga</th><td>${formatNumber(inspeccionBefore.condTempDischarge)} °C</td></tr>
+      <tr><th>RPM Motor</th><td>${formatNumber(inspeccionBefore.condMotorRpm)} RPM</td></tr>
+      <tr><th>Microfaradios (capacitor)</th><td>${formatNumber(inspeccionBefore.condMicrofarads)} µF</td></tr>
+      <tr><th>Ω Ohmio Compresor</th><td>${formatNumber(inspeccionBefore.compressorOhmio)} Ω</td></tr>
     </table>
 
     ${
       inspeccionBefore.observation
-        ? `<p class="inspection-observation before">📝 ${inspeccionBefore.observation}</p>`
+        ? `<p class="inspection-observation before">📝 ${escapeHtml(inspeccionBefore.observation)}</p>`
         : ''
     }
 
@@ -274,65 +278,29 @@ export function buildInformeOrdenParams(
 
     <table class="inspection-metrics">
       <tr class="inspection-section-row">
-        <th colspan="2">Evaporadora </th>
+        <th colspan="2">Evaporadora</th>
       </tr>
-      <tr>
-        <th>T° Suministro</th>
-        <td>${formatNumber(inspeccionAfter.evapTempSupply)} °C</td>
-      </tr>
-      <tr>
-        <th>T° Retorno</th>
-        <td>${formatNumber(inspeccionAfter.evapTempReturn)} °C</td>
-      </tr>
-      <tr>
-        <th>T° Ambiente</th>
-        <td>${formatNumber(inspeccionAfter.evapTempAmbient)} °C</td>
-      </tr>
-      <tr>
-        <th>T° Exterior</th>
-        <td>${formatNumber(inspeccionAfter.evapTempOutdoor)} °C</td>
-      </tr>
-      <tr>
-        <th>RPM Motor</th>
-        <td>${formatNumber(inspeccionAfter.evapMotorRpm)} RPM</td>
-      </tr>
+      <tr><th>T° Suministro</th><td>${formatNumber(inspeccionAfter.evapTempSupply)} °C</td></tr>
+      <tr><th>T° Retorno</th><td>${formatNumber(inspeccionAfter.evapTempReturn)} °C</td></tr>
+      <tr><th>T° Ambiente</th><td>${formatNumber(inspeccionAfter.evapTempAmbient)} °C</td></tr>
+      <tr><th>T° Exterior</th><td>${formatNumber(inspeccionAfter.evapTempOutdoor)} °C</td></tr>
+      <tr><th>RPM Motor</th><td>${formatNumber(inspeccionAfter.evapMotorRpm)} RPM</td></tr>
 
       <tr class="inspection-section-row">
-        <th colspan="2">Condensadora </th>
+        <th colspan="2">Condensadora</th>
       </tr>
-      <tr>
-        <th>Presión Alta</th>
-        <td>${formatNumber(inspeccionAfter.condHighPressure)} PSI</td>
-      </tr>
-      <tr>
-        <th>Presión Baja</th>
-        <td>${formatNumber(inspeccionAfter.condLowPressure)} PSI</td>
-      </tr>
-      <tr>
-        <th>Amperaje</th>
-        <td>${formatNumber(inspeccionAfter.condAmperage)} A</td>
-      </tr>
-      <tr>
-        <th>Voltaje</th>
-        <td>${formatNumber(inspeccionAfter.condVoltage)} V</td>
-      </tr>
-      <tr>
-        <th>T° Entrada</th>
-        <td>${formatNumber(inspeccionAfter.condTempIn)} °C</td>
-      </tr>
-      <tr>
-        <th>T° Descarga</th>
-        <td>${formatNumber(inspeccionAfter.condTempDischarge)} °C</td>
-      </tr>
-      <tr>
-        <th>RPM Motor</th>
-        <td>${formatNumber(inspeccionAfter.condMotorRpm)} RMP</td>
-      </tr>
+      <tr><th>Presión Alta</th><td>${formatNumber(inspeccionAfter.condHighPressure)} PSI</td></tr>
+      <tr><th>Presión Baja</th><td>${formatNumber(inspeccionAfter.condLowPressure)} PSI</td></tr>
+      <tr><th>Amperaje</th><td>${formatNumber(inspeccionAfter.condAmperage)} A</td></tr>
+      <tr><th>Voltaje</th><td>${formatNumber(inspeccionAfter.condVoltage)} V</td></tr>
+      <tr><th>T° Entrada</th><td>${formatNumber(inspeccionAfter.condTempIn)} °C</td></tr>
+      <tr><th>T° Descarga</th><td>${formatNumber(inspeccionAfter.condTempDischarge)} °C</td></tr>
+      <tr><th>RPM Motor</th><td>${formatNumber(inspeccionAfter.condMotorRpm)} RPM</td></tr>
     </table>
 
     ${
       inspeccionAfter.observation
-        ? `<p class="inspection-observation after">📝 ${inspeccionAfter.observation}</p>`
+        ? `<p class="inspection-observation after">📝 ${escapeHtml(inspeccionAfter.observation)}</p>`
         : ''
     }
     
@@ -354,18 +322,18 @@ export function buildInformeOrdenParams(
         return `
           <div class="equipment-card">
             <div style="background: #003366; color: white; padding: 15px; border-radius: 8px 8px 0 0;">
-              <h2 style="margin: 0; font-size: 20px;">🔧 ${equipo.code || 'N/A'}</h2>
+              <h2 style="margin: 0; font-size: 20px;">🔧 ${escapeHtml(equipo.code || 'N/A')}</h2>
               <p style="margin: 5px 0 0 0; font-size: 14px;">
-                ${equipo.area?.nombreArea || 'N/A'}${
+                ${escapeHtml(equipo.area?.nombreArea || 'N/A')}${
                   equipo.subArea?.nombreSubArea
-                    ? ` - ${equipo.subArea.nombreSubArea}`
+                    ? ` - ${escapeHtml(equipo.subArea.nombreSubArea)}`
                     : ''
                 }
               </p>
             </div>
             
             <div style="background: white; padding: 20px; border: 1px solid #ddd; border-top: none; border-radius: 0 0 8px 8px;">
-              <p style="font-size: 14px; margin-bottom: 20px;"><strong>Categoría:</strong> ${equipo.category || 'N/A'}</p>
+              <p style="font-size: 14px; margin-bottom: 20px;"><strong>Categoría:</strong> ${escapeHtml(equipo.category || 'N/A')}</p>
               
               ${beforeHtml}
               ${duringHtml}
@@ -396,9 +364,9 @@ export function buildInformeOrdenParams(
         return `
           <div class="technician-row">
             <div>
-              <strong>${nombre}</strong>${lider}
+              <strong>${escapeHtml(nombre)}</strong>${lider}
             </div>
-            ${options.forClient ? '' : `<div>${ratingHtml}</div>`}
+            ${options.forClient ? '' : `<div>${escapeHtml(ratingHtml)}</div>`}
           </div>
         `;
       })

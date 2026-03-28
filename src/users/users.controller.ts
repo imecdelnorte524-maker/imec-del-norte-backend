@@ -78,7 +78,7 @@ export class UsersController {
   }
 
   @Post()
-  @Roles('Administrador')
+   
   @ApiOperation({
     summary: 'Crear usuario',
     description: 'Crea un nuevo usuario (Solo Administrador)',
@@ -248,7 +248,7 @@ export class UsersController {
   }
 
   @Delete(':id')
-  @Roles('Administrador')
+   
   @ApiOperation({
     summary: 'Eliminar usuario',
     description: 'Elimina un usuario permanentemente (Solo Administrador)',
@@ -263,7 +263,7 @@ export class UsersController {
   }
 
   @Patch(':id/deactivate')
-  @Roles('Administrador')
+   
   @ApiOperation({
     summary: 'Desactivar usuario',
     description: 'Desactiva un usuario (Solo Administrador)',
@@ -279,7 +279,7 @@ export class UsersController {
   }
 
   @Patch(':id/activate')
-  @Roles('Administrador')
+   
   @ApiOperation({
     summary: 'Activar usuario',
     description:

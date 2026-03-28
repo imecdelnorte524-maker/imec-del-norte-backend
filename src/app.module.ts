@@ -36,6 +36,7 @@ import { PdfModule } from './pdf/pdf.module';
 import { TechniciansModule } from './technicians/technicians.module';
 import { RealtimeModule } from './realtime/realtime.module';
 import { join } from 'path';
+import { WoReportsModule } from './wo-reports/wo-reports.module';
 @Module({
   imports: [
     ScheduleModule.forRoot(),
@@ -109,6 +110,7 @@ import { join } from 'path';
     CommonModule,
     TechniciansModule,
     RealtimeModule,
+    WoReportsModule,
   ],
 })
 export class AppModule {}

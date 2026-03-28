@@ -1,5 +1,5 @@
 // src/work-orders/work-orders.module.ts
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { WorkOrdersService } from './work-orders.service';
 import { WorkOrdersController } from './work-orders.controller';
@@ -26,6 +26,7 @@ import { WorkOrderMaintenancePlan } from './entities/work-order-maintenance-plan
 import { RealtimeModule } from '../realtime/realtime.module';
 import { ImagesModule } from '../images/images.module';
 import { MailModule } from '../mail/mail.module';
+import { WoReportsModule } from '../wo-reports/wo-reports.module';
 
 @Module({
   imports: [
@@ -53,6 +54,7 @@ import { MailModule } from '../mail/mail.module';
     ImagesModule,
     MailModule,
     RealtimeModule,
+    forwardRef(() => WoReportsModule),
   ],
   controllers: [WorkOrdersController],
   providers: [WorkOrdersService, MaintenanceSchedulerService],

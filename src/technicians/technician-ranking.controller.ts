@@ -119,7 +119,7 @@ export class TechnicianRankingController {
   }
 
   @Get('historical')
-  @Roles('Administrador', 'Supervisor')
+   
   @ApiOperation({ summary: 'Obtener ranking histórico con paginación' })
   @ApiQuery({ name: 'page', type: Number, required: false })
   @ApiQuery({ name: 'limit', type: Number, required: false })
@@ -148,7 +148,7 @@ export class TechnicianRankingController {
   }
 
   @Get('top/:category')
-  @Roles('Administrador', 'Supervisor')
+   
   @ApiOperation({ summary: 'Obtener mejores técnicos por categoría' })
   @ApiQuery({ name: 'limit', type: Number, required: false })
   @ApiQuery({ name: 'mes', type: Number, required: false })
@@ -174,7 +174,7 @@ export class TechnicianRankingController {
   }
 
   @Post('recalculate/:mes/:año')
-  @Roles('Administrador')
+   
   @ApiOperation({
     summary: 'Forzar recálculo del ranking para un mes específico',
   })

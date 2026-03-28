@@ -93,7 +93,7 @@ export class InventoryController {
   }
 
   @Post()
-  @Roles('Administrador', 'Técnico', 'Secretaria')
+   
   @ApiOperation({
     summary: 'Crear registro de inventario',
     description:
@@ -224,7 +224,7 @@ export class InventoryController {
   }
 
   @Patch(':id')
-  @Roles('Administrador', 'Técnico', 'Secretaria')
+   
   @ApiOperation({
     summary: 'Actualizar registro de inventario',
     description: 'Actualiza un registro existente de inventario',
@@ -256,7 +256,7 @@ export class InventoryController {
   }
 
   @Delete(':id')
-  @Roles('Administrador')
+   
   @ApiOperation({
     summary: 'Eliminar registro de inventario (soft delete)',
     description: 'Elimina un registro de inventario de forma lógica',
@@ -277,7 +277,7 @@ export class InventoryController {
   }
 
   @Delete('complete/:id')
-  @Roles('Administrador')
+   
   @ApiOperation({
     summary: 'Eliminar registro de inventario y item asociado',
     description:
@@ -309,7 +309,7 @@ export class InventoryController {
   }
 
   @Patch(':id/restore')
-  @Roles('Administrador')
+   
   @ApiOperation({
     summary: 'Restaurar registro de inventario eliminado',
     description:
@@ -332,7 +332,7 @@ export class InventoryController {
   }
 
   @Patch(':id/stock')
-  @Roles('Administrador', 'Técnico', 'Secretaria')
+   
   @ApiOperation({
     summary: 'Actualizar stock',
     description: 'Actualiza la cantidad de stock de un insumo en inventario',

@@ -7,7 +7,7 @@ import { Roles } from '../common/decorators/roles.decorator';
 
 @Controller('api/memory')
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles('ADMINISTRADOR')
+ 
 export class MemoryController {
   constructor(private readonly memoryService: MemoryService) {}
 

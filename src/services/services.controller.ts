@@ -35,7 +35,7 @@ export class ServicesController {
   constructor(private readonly servicesService: ServicesService) {}
 
   @Post()
-  @Roles('Administrador', 'Secretaria')
+ 
   @ApiOperation({
     summary: 'Crear servicio',
     description: 'Crea un nuevo servicio (Administrador y Secretaria)',
@@ -108,7 +108,7 @@ export class ServicesController {
   }
 
   @Patch(':id')
-  @Roles('Administrador', 'Secretaria')
+ 
   @ApiOperation({
     summary: 'Actualizar servicio',
     description: 'Actualiza un servicio existente (Administrador y Secretaria)',
@@ -131,7 +131,7 @@ export class ServicesController {
   }
 
   @Delete(':id')
-  @Roles('Administrador')
+   
   @ApiOperation({
     summary: 'Eliminar servicio',
     description: 'Elimina un servicio permanentemente (Solo Administrador)',

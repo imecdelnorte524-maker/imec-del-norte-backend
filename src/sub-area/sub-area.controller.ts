@@ -142,7 +142,7 @@ export class SubAreaController {
   }
 
   @Delete(':id')
-  @Roles('Administrador')
+   
   @ApiOperation({
     summary: 'Eliminar subárea',
     description: 'Elimina una subárea permanentemente',

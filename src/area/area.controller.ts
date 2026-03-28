@@ -111,7 +111,7 @@ export class AreaController {
   }
 
   @Delete(':id')
-  @Roles('Administrador')
+   
   @ApiOperation({ summary: 'Eliminar área', description: 'Elimina un área permanentemente' })
   @ApiResponse({ status: 200, description: 'Área eliminada exitosamente' })
   @ApiResponse({ status: 404, description: 'Área no encontrado' })

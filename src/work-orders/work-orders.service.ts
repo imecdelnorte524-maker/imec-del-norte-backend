@@ -106,12 +106,16 @@ export class WorkOrdersService {
     return currentUser?.role?.nombreRol || currentUser?.role || '';
   }
 
-  private getColombiaTime(): Date {
-    const now = new Date();
-    const colombiaOffset = -5 * 60;
-    const localOffset = now.getTimezoneOffset();
-    const offsetDiff = colombiaOffset - localOffset;
-    return new Date(now.getTime() + offsetDiff * 60000);
+  private async dbNow(): Promise<Date> {
+    const row = await this.dataSource.query(`SELECT now() as "now"`);
+    return new Date(row[0].now);
+  }
+
+  /**
+   * Para updates directos: fecha_inicio = now()
+   */
+  private dbNowSql(): () => string {
+    return () => 'now()';
   }
 
   private startOfDay(d: Date): Date {
@@ -119,7 +123,11 @@ export class WorkOrdersService {
   }
 
   private dateOnlyStr(d: Date): string {
-    return this.startOfDay(d).toISOString().slice(0, 10);
+    const x = this.startOfDay(d);
+    const yyyy = x.getFullYear();
+    const mm = String(x.getMonth() + 1).padStart(2, '0');
+    const dd = String(x.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
   }
 
   private addBusinessDays(date: Date, businessDays: number): Date {
@@ -637,16 +645,24 @@ export class WorkOrdersService {
       );
     }
 
+    // OJO: inicializa antes, porque los updates de fecha también cuentan como cambios.
+    let hasChanges = false;
+
     if (
       updateWorkOrderDto.estado === WorkOrderStatus.IN_PROGRESS &&
       !workOrder.fechaInicio
     ) {
-      updateWorkOrderDto.fechaInicio = this.getColombiaTime().toISOString();
+      await this.workOrdersRepository.update(id, {
+        fechaInicio: this.dbNowSql(), // => now() en DB
+      });
+
+      hasChanges = true;
+
       await this.startTimer(id, currentUser.userId);
+
       this.eventEmitter.emit('work-order.started', {
         workOrderId: id,
         clienteId: workOrder.clienteId,
-        fechaInicio: updateWorkOrderDto.fechaInicio,
         iniciadoPor: currentUser.userId,
       });
     }
@@ -655,8 +671,12 @@ export class WorkOrdersService {
       updateWorkOrderDto.estado === WorkOrderStatus.COMPLETED &&
       !workOrder.fechaFinalizacion
     ) {
-      updateWorkOrderDto.fechaFinalizacion =
-        this.getColombiaTime().toISOString();
+      await this.workOrdersRepository.update(id, {
+        fechaFinalizacion: this.dbNowSql(),
+      });
+
+      hasChanges = true;
+
       await this.stopTimer(id);
     }
 
@@ -666,6 +686,7 @@ export class WorkOrdersService {
         currentUser.userId,
         updateWorkOrderDto.pauseObservation,
       );
+      hasChanges = true; // opcional, pero recomendado
     }
 
     if (
@@ -673,9 +694,8 @@ export class WorkOrdersService {
       updateWorkOrderDto.estado === WorkOrderStatus.IN_PROGRESS
     ) {
       await this.resumeOrder(id, currentUser.userId);
+      hasChanges = true; // opcional, pero recomendado
     }
-
-    let hasChanges = false;
 
     if (updateWorkOrderDto.equipmentIds !== undefined) {
       if (!workOrder.clienteEmpresaId)
@@ -715,6 +735,8 @@ export class WorkOrdersService {
       technicianIds,
       leaderTechnicianId,
       tecnicoId,
+      fechaInicio,
+      fechaFinalizacion,
       ...directFields
     } = updateWorkOrderDto;
 
@@ -897,7 +919,7 @@ export class WorkOrdersService {
     const previousStatus = workOrder.estado;
     workOrder.estado = WorkOrderStatus.CANCELED;
     if (!workOrder.fechaFinalizacion) {
-      workOrder.fechaFinalizacion = this.getColombiaTime();
+      workOrder.fechaFinalizacion = await this.dbNow();
     }
 
     await this.workOrdersRepository.save(workOrder);
@@ -1480,7 +1502,7 @@ export class WorkOrdersService {
 
     const timer = this.workOrderTimerRepository.create({
       ordenId,
-      startTime: this.getColombiaTime(),
+      startTime: await this.dbNow(),
       endTime: null,
       totalSeconds: 0,
     });
@@ -1497,7 +1519,7 @@ export class WorkOrdersService {
       throw new NotFoundException('No hay un timer activo para esta orden');
     }
 
-    const endTime = this.getColombiaTime();
+    const endTime = await this.dbNow();
     const startTime = new Date(activeTimer.startTime);
     const totalSeconds = Math.floor(
       (endTime.getTime() - startTime.getTime()) / 1000,
@@ -1531,11 +1553,10 @@ export class WorkOrdersService {
     const pause = this.workOrderPauseRepository.create({
       ordenId,
       userId,
-      startTime: this.getColombiaTime(),
+      startTime: await this.dbNow(),
       endTime: null,
       observacion,
     });
-
     return await this.workOrderPauseRepository.save(pause);
   }
 
@@ -1552,7 +1573,7 @@ export class WorkOrdersService {
     });
 
     if (activePause) {
-      activePause.endTime = this.getColombiaTime();
+      activePause.endTime = await this.dbNow();
       await this.workOrderPauseRepository.save(activePause);
     }
 
@@ -2392,7 +2413,7 @@ export class WorkOrdersService {
 
     const tiempoTotal = (workOrder.timers || []).reduce((total, timer) => {
       if (timer.endTime) return total + timer.totalSeconds;
-      const now = this.getColombiaTime();
+      const now = new Date();
       return (
         total +
         Math.floor((now.getTime() - new Date(timer.startTime).getTime()) / 1000)
@@ -2581,7 +2602,7 @@ export class WorkOrdersService {
 
       technicianRelation.rating = rating;
       technicianRelation.ratedByUserId = currentUser.userId;
-      technicianRelation.ratedAt = this.getColombiaTime();
+      technicianRelation.ratedAt = await this.dbNow();
 
       await this.workOrderTechnicianRepository.save(technicianRelation);
     }
@@ -2655,7 +2676,7 @@ export class WorkOrdersService {
     workOrder.receivedByName = dto.name;
     workOrder.receivedByPosition = dto.position;
     workOrder.receivedBySignatureData = dto.signatureData;
-    workOrder.receivedAt = this.getColombiaTime();
+    workOrder.receivedAt = await this.dbNow();
 
     await this.workOrdersRepository.save(workOrder);
 
@@ -3245,7 +3266,7 @@ export class WorkOrdersService {
     created: number;
     skipped: number;
   }> {
-    const hoyCol = this.startOfDay(this.getColombiaTime());
+    const hoyCol = this.startOfDay(await this.dbNow());
     const { weekStart, weekEnd } = this.getNextWeekRangeFromFriday(hoyCol);
 
     const planes = await this.planRepo
