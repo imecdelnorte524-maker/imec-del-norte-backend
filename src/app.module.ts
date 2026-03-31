@@ -37,6 +37,7 @@ import { TechniciansModule } from './technicians/technicians.module';
 import { RealtimeModule } from './realtime/realtime.module';
 import { join } from 'path';
 import { WoReportsModule } from './wo-reports/wo-reports.module';
+import { TermsModule } from './terms/terms.module';
 @Module({
   imports: [
     ScheduleModule.forRoot(),
@@ -56,15 +57,11 @@ import { WoReportsModule } from './wo-reports/wo-reports.module';
       useFactory: (configService: ConfigService) => {
         const dbConfig = configService.get('database');
 
-        const synchronize =
-          configService.get<string>('TYPEORM_SYNCHRONIZE') === 'true' &&
-          configService.get<string>('NODE_ENV') !== 'production';
-
         return {
           ...dbConfig,
           autoLoadEntities: true,
-          synchronize,
-          migrationsRun: false,
+          synchronize: false,
+          migrationsRun: true,
           migrationsTableName: 'migrations',
           migrations: [
             // soporta dist/migrations y dist/src/migrations según tu build
@@ -111,6 +108,7 @@ import { WoReportsModule } from './wo-reports/wo-reports.module';
     TechniciansModule,
     RealtimeModule,
     WoReportsModule,
+    TermsModule,
   ],
 })
 export class AppModule {}
