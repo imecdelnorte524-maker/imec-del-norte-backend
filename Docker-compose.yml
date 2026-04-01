@@ -2,7 +2,6 @@ services:
   backend_api:
     build:
       context: .
-      target: production
     container_name: imec_del_norte_backend_api
     ports:
       - '4001:4001'
@@ -32,7 +31,6 @@ services:
   backend_worker:
     build:
       context: .
-      target: production
     container_name: imec_del_norte_backend_worker
     env_file:
       - .env

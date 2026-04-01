@@ -1,4 +1,4 @@
-// src/app.module.ts (VERSIÓN CORREGIDA)
+// src/app.module.ts
 import { Module } from '@nestjs/common';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ConfigModule, ConfigService } from '@nestjs/config';
@@ -69,6 +69,7 @@ import { TermsModule } from './terms/terms.module';
             join(__dirname, 'migrations', '*{.js,.ts}'),
           ],
           logging: ['error', 'warn'],
+          migrationsTransactionMode: 'each',
           extra: {
             ...(dbConfig as any).extra,
             max: 10,
