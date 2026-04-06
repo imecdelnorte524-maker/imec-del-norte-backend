@@ -1,4 +1,3 @@
-// src/sg-sst/entities/signature.entity.ts
 import {
   Entity,
   PrimaryGeneratedColumn,
@@ -6,51 +5,49 @@ import {
   CreateDateColumn,
   ManyToOne,
   JoinColumn,
+  Index,
 } from 'typeorm';
 import { Form } from './form.entity';
-
-export enum SignatureType {
-  TECHNICIAN = 'TECHNICIAN',
-  SST = 'SST',
-}
+import { SignatureType } from '../../shared/index';
 
 @Entity('signatures')
+@Index(['formId', 'formVersion', 'signatureType', 'userId'], { unique: true })
 export class Signature {
   @PrimaryGeneratedColumn()
   id: number;
 
-  @Column()
+  @Column({ type: 'int' })
   formId: number;
 
-  @Column({
-    type: 'enum',
-    enum: SignatureType,
-  })
+  @Column({ name: 'form_version', type: 'int', default: 1 })
+  formVersion: number;
+
+  @Column({ type: 'enum', enum: SignatureType })
   signatureType: SignatureType;
 
-  @Column()
+  @Column({ type: 'int' })
   userId: number;
 
-  @Column()
+  @Column({ type: 'varchar' })
   userName: string;
 
   @Column({ type: 'text', nullable: true })
-  signatureData: string;
+  signatureData?: string | null;
 
-  @CreateDateColumn()
+  @CreateDateColumn({ type: 'timestamp' })
   signedAt: Date;
 
-  @Column({ nullable: true })
-  ip: string;
+  @Column({ type: 'varchar', nullable: true })
+  ip?: string | null;
 
-  @Column({ nullable: true })
-  userAgent: string;
+  @Column({ type: 'varchar', nullable: true })
+  userAgent?: string | null;
 
-  @Column({ nullable: true })
-  method: string; // Ej: 'OTP_EMAIL'
+  @Column({ type: 'varchar', nullable: true })
+  method?: string | null;
 
-  @Column({ nullable: true })
-  contactSnapshot: string; // email del usuario al momento de la firma
+  @Column({ type: 'varchar', nullable: true })
+  contactSnapshot?: string | null;
 
   @ManyToOne(() => Form, (form) => form.signatures)
   @JoinColumn({ name: 'formId' })

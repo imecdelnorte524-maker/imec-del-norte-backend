@@ -12,9 +12,7 @@ export class SupabaseTempStorageService {
     this.bucket = process.env.SUPABASE_TEMP_BUCKET || 'temp-reports';
 
     if (!url || !key) {
-      throw new Error(
-        'SUPABASE_URL y SUPABASE_SERVICE_ROLE_KEY son requeridas',
-      );
+      throw new Error('SUPABASE_URL y SUPABASE_SERVICE_ROLE_KEY son requeridas');
     }
 
     this.client = createClient(url, key, { auth: { persistSession: false } });
@@ -24,18 +22,40 @@ export class SupabaseTempStorageService {
     return this.bucket;
   }
 
-  async uploadPdf(params: { path: string; buffer: Buffer }): Promise<void> {
+  /**
+   * Subida genérica: PDF, ZIP, XLSX, etc.
+   */
+  async uploadFile(params: {
+    path: string;
+    buffer: Buffer;
+    contentType: string;
+  }): Promise<void> {
     const { error } = await this.client.storage
       .from(this.bucket)
       .upload(params.path, params.buffer, {
-        contentType: 'application/pdf',
+        contentType: params.contentType,
         upsert: true,
       });
 
     if (error) throw new Error(`Supabase upload error: ${error.message}`);
   }
 
-  async downloadPdf(params: { path: string }): Promise<Buffer> {
+  /**
+   * Compatibilidad: sigue existiendo, pero ahora llama a uploadFile()
+   */
+  async uploadPdf(params: { path: string; buffer: Buffer }): Promise<void> {
+    return this.uploadFile({
+      path: params.path,
+      buffer: params.buffer,
+      contentType: 'application/pdf',
+    });
+  }
+
+  /**
+   * Descarga genérica (devuelve Buffer).
+   * Nota: Supabase Storage SDK aquí devuelve Blob, no stream.
+   */
+  async downloadFile(params: { path: string }): Promise<Buffer> {
     const { data, error } = await this.client.storage
       .from(this.bucket)
       .download(params.path);
@@ -44,6 +64,13 @@ export class SupabaseTempStorageService {
 
     const arrayBuffer = await data.arrayBuffer();
     return Buffer.from(arrayBuffer);
+  }
+
+  /**
+   * Compatibilidad: sigue existiendo, pero ahora llama a downloadFile()
+   */
+  async downloadPdf(params: { path: string }): Promise<Buffer> {
+    return this.downloadFile(params);
   }
 
   async remove(paths: string[]): Promise<void> {

@@ -33,66 +33,142 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 @UsePipes(new ValidationPipe({ transform: true }))
 @UseGuards(JwtAuthGuard)
 export class SgSstController {
-  constructor(private readonly sgSstService: SgSstService) {}
+  constructor(private readonly sgSstService: SgSstService) { }
+
+  private getReqMeta(req: Request) {
+    const ip =
+      (req.headers['x-forwarded-for'] as string) ||
+      req.ip ||
+      (req.socket && (req.socket as any).remoteAddress) ||
+      '';
+    const userAgent = (req.headers['user-agent'] as string) || '';
+    const currentUser = (req as any).user ?? {};
+    return { ip, userAgent, currentUser };
+  }
 
   // ========== ENDPOINTS PARA CREAR FORMULARIOS ==========
   @Post('ats')
-  async createAts(@Body() createAtsDto: CreateAtsDto) {
-    try {
-      const result = await this.sgSstService.createAts(createAtsDto);
-      return {
-        success: true,
-        message: 'ATS creado exitosamente',
-        data: result,
-      };
-    } catch (error) {
-      return {
-        success: false,
-        message: 'Error al crear ATS',
-        error: (error as any).message,
-      };
-    }
+  async createAts(@Body() dto: CreateAtsDto, @Req() req: Request) {
+    const { ip, userAgent, currentUser } = this.getReqMeta(req);
+
+    // Seguridad: no confiar en userId/createdBy que vienen del front
+    dto.userId = currentUser.userId;
+    dto.createdBy = currentUser.userId;
+
+    const result = await this.sgSstService.createAts(dto, ip, userAgent);
+    return { success: true, message: 'ATS creado exitosamente', data: result };
   }
 
   @Post('height-work')
-  async createHeightWork(@Body() createHeightWorkDto: CreateHeightWorkDto) {
-    try {
-      const result =
-        await this.sgSstService.createHeightWork(createHeightWorkDto);
-      return {
-        success: true,
-        message: 'Trabajo en alturas creado exitosamente',
-        data: result,
-      };
-    } catch (error) {
-      return {
-        success: false,
-        message: 'Error al crear trabajo en alturas',
-        error: (error as any).message,
-      };
-    }
+  async createHeightWork(@Body() dto: CreateHeightWorkDto, @Req() req: Request) {
+    const { ip, userAgent, currentUser } = this.getReqMeta(req);
+
+    dto.userId = currentUser.userId;
+    dto.createdBy = currentUser.userId;
+
+    const result = await this.sgSstService.createHeightWork(dto, ip, userAgent);
+    return {
+      success: true,
+      message: 'Trabajo en alturas creado exitosamente',
+      data: result,
+    };
   }
 
   @Post('preoperational')
   async createPreoperational(
-    @Body() createPreoperationalDto: CreatePreoperationalDto,
+    @Body() dto: CreatePreoperationalDto,
+    @Req() req: Request,
   ) {
-    try {
-      const result = await this.sgSstService.createPreoperational(
-        createPreoperationalDto,
-      );
-      return {
-        success: true,
-        message: 'Checklist preoperacional creado exitosamente',
-        data: result,
-      };
-    } catch (error) {
-      return {
-        success: false,
-        message: 'Error al crear checklist preoperacional',
-        error: (error as any).message,
-      };
-    }
+    const { ip, userAgent, currentUser } = this.getReqMeta(req);
+
+    dto.userId = currentUser.userId;
+    dto.createdBy = currentUser.userId;
+
+    const result = await this.sgSstService.createPreoperational(
+      dto,
+      ip,
+      userAgent,
+    );
+    return {
+      success: true,
+      message: 'Checklist preoperacional creado exitosamente',
+      data: result,
+    };
+  }
+
+  // ========== ENDPOINTS PARA EDITAR (DRAFT al editar + obliga re-firma) ==========
+  @Put('forms/:id/ats')
+  @ApiOperation({ summary: 'Editar ATS (solo DRAFT/REJECTED). Resetea firmas y pasa a DRAFT.' })
+  async updateAts(
+    @Param('id', ParseIntPipe) formId: number,
+    @Body() dto: CreateAtsDto,
+    @Req() req: Request,
+  ) {
+    const { ip, userAgent, currentUser } = this.getReqMeta(req);
+
+    dto.userId = currentUser.userId;
+    dto.createdBy = currentUser.userId;
+
+    const result = await this.sgSstService.updateAts(
+      formId,
+      dto,
+      currentUser.userId,
+      ip,
+      userAgent,
+    );
+    return { success: true, message: 'ATS actualizado exitosamente', data: result };
+  }
+
+  @Put('forms/:id/height-work')
+  @ApiOperation({ summary: 'Editar Trabajo en Alturas (solo DRAFT/REJECTED). Resetea firmas y pasa a DRAFT.' })
+  async updateHeightWork(
+    @Param('id', ParseIntPipe) formId: number,
+    @Body() dto: CreateHeightWorkDto,
+    @Req() req: Request,
+  ) {
+    const { ip, userAgent, currentUser } = this.getReqMeta(req);
+
+    dto.userId = currentUser.userId;
+    dto.createdBy = currentUser.userId;
+
+    const result = await this.sgSstService.updateHeightWork(
+      formId,
+      dto,
+      currentUser.userId,
+      ip,
+      userAgent,
+    );
+    return {
+      success: true,
+      message: 'Trabajo en alturas actualizado exitosamente',
+      data: result,
+    };
+  }
+
+  @Put('forms/:id/preoperational')
+  @ApiOperation({ summary: 'Editar Preoperacional (solo DRAFT/REJECTED). Resetea firmas y pasa a DRAFT.' })
+  async updatePreoperational(
+    @Param('id', ParseIntPipe) formId: number,
+    @Body() dto: CreatePreoperationalDto,
+    @Req() req: Request,
+  ) {
+    const { ip, userAgent, currentUser } = this.getReqMeta(req);
+
+    dto.userId = currentUser.userId;
+    dto.createdBy = currentUser.userId;
+
+    const result = await this.sgSstService.updatePreoperational(
+      formId,
+      dto,
+      currentUser.userId,
+      ip,
+      userAgent,
+    );
+    return {
+      success: true,
+      message: 'Checklist preoperacional actualizado exitosamente',
+      data: result,
+    };
   }
 
   // ========== OTP PARA FIRMA ==========
@@ -176,7 +252,7 @@ export class SgSstController {
 
   @Post('forms/:id/authorize-height-work')
   @ApiOperation({
-    summary: 'Autorizar un Trabajo en Alturas por parte del personal SST',
+    summary: 'Autorizar un Trabajo en Alturas por parte del personal SST (legacy)',
   })
   async authorizeHeightWork(
     @Param('id', ParseIntPipe) formId: number,
@@ -369,7 +445,7 @@ export class SgSstController {
 
   @Put('preoperational-templates/:id')
   @ApiOperation({
-    summary: 'Actualizar plantilla de checklist preoperacional',
+    summary: 'Actualizar plantilla de checklist preoperacional (crea nueva versión y desactiva la anterior)',
   })
   async updatePreoperationalTemplate(
     @Param('id', ParseIntPipe) id: number,
@@ -471,5 +547,82 @@ export class SgSstController {
         error: (error as any).message,
       };
     }
+  }
+
+  // ========== CATALOGS ==========
+  @Get('catalogs/ats')
+  async getAtsCatalogs() {
+    return {
+      success: true,
+      data: await this.sgSstService.getAtsCatalogs(),
+    };
+  }
+
+  @Post('catalogs/ats/risk-categories')
+  async createAtsRiskCategory(
+    @Body() dto: { code: string; name: string; displayOrder?: number },
+    @Req() req: Request,
+  ) {
+    const currentUser = (req as any).user ?? {};
+    return {
+      success: true,
+      data: await this.sgSstService.createAtsRiskCategory(
+        currentUser.userId,
+        dto,
+      ),
+    };
+  }
+
+  @Post('catalogs/ats/risks')
+  async createAtsRisk(
+    @Body()
+    dto: {
+      categoryId: number;
+      name: string;
+      description?: string;
+      displayOrder?: number;
+    },
+    @Req() req: Request,
+  ) {
+    const currentUser = (req as any).user ?? {};
+    return {
+      success: true,
+      data: await this.sgSstService.createAtsRisk(currentUser.userId, dto),
+    };
+  }
+
+  @Post('catalogs/ats/ppe-items')
+  async createAtsPpeItem(
+    @Body() dto: { name: string; type?: string; displayOrder?: number },
+    @Req() req: Request,
+  ) {
+    const currentUser = (req as any).user ?? {};
+    return {
+      success: true,
+      data: await this.sgSstService.createAtsPpeItem(currentUser.userId, dto),
+    };
+  }
+
+  @Get('catalogs/heights')
+  async getHeightsCatalogs() {
+    return {
+      success: true,
+      data: await this.sgSstService.getHeightsCatalogs(),
+    };
+  }
+
+  @Post('catalogs/heights/protection-elements')
+  async createHeightProtectionElement(
+    @Body() dto: { name: string; displayOrder?: number },
+    @Req() req: Request,
+  ) {
+    const currentUser = (req as any).user ?? {};
+    return {
+      success: true,
+      data: await this.sgSstService.createHeightProtectionElement(
+        currentUser.userId,
+        dto,
+      ),
+    };
   }
 }

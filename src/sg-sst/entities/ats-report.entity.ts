@@ -1,78 +1,82 @@
-// src/sg-sst/entities/ats-report.entity.ts
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, OneToOne, JoinColumn, ManyToOne } from 'typeorm';
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  CreateDateColumn,
+  OneToOne,
+  JoinColumn,
+  ManyToOne,
+  OneToMany,
+} from 'typeorm';
 import { Form } from './form.entity';
-import { Client } from '../../client/entities/client.entity'; // Asegúrate de que esta ruta sea correcta
+import { Client } from '../../client/entities/client.entity';
+import { AtsReportRisk } from './ats-report-risk.entity';
+import { AtsReportPpeItem } from './ats-report-ppe-item.entity';
 
 @Entity('ats_reports')
 export class AtsReport {
   @PrimaryGeneratedColumn()
   id: number;
 
-  @Column()
+  @Column({ type: 'int' })
   formId: number;
 
-  // Nuevo campo: ID del cliente
-  @Column({ name: 'client_id', nullable: true })
-  clientId?: number;
+  @Column({ name: 'client_id', type: 'int', nullable: true })
+  clientId?: number | null;
 
-  @Column()
+  @Column({ type: 'varchar' })
   workerName: string;
 
-  @Column({ nullable: true })
-  position: string;
+  @Column({ name: 'worker_identification', type: 'varchar', nullable: true })
+  workerIdentification?: string | null;
 
-  @Column({ nullable: true })
-  area: string;
+  @Column({ type: 'varchar', nullable: true })
+  position?: string | null;
+
+  @Column({ type: 'varchar', nullable: true })
+  area?: string | null;
+
+  @Column({ name: 'sub_area', type: 'varchar', nullable: true })
+  subArea?: string | null;
 
   @Column({ type: 'text', nullable: true })
-  workToPerform: string;
+  workToPerform?: string | null;
 
-  @Column({ nullable: true })
-  location: string;
-
-  @Column({ type: 'time', nullable: true })
-  startTime: string;
+  @Column({ type: 'varchar', nullable: true })
+  location?: string | null;
 
   @Column({ type: 'time', nullable: true })
-  endTime: string;
+  startTime?: string | null;
+
+  @Column({ type: 'time', nullable: true })
+  endTime?: string | null;
 
   @Column({ type: 'date', nullable: true })
-  date: string;
+  date?: string | null;
 
   @Column({ type: 'text', nullable: true })
-  observations: string;
+  observations?: string | null;
 
-  @Column({ type: 'jsonb', nullable: true })
-  selectedRisks: any;
-
-  @Column({ type: 'jsonb', nullable: true })
-  requiredPpe: any;
-
-  @CreateDateColumn()
+  @CreateDateColumn({ type: 'timestamp' })
   createdAt: Date;
 
-  // Relación con Form
-  @OneToOne(() => Form, form => form.atsReport)
+  @OneToOne(() => Form, (form) => form.atsReport)
   @JoinColumn({ name: 'formId' })
   form: Form;
 
-  // Nueva relación con Client
-  @ManyToOne(() => Client, client => client.atsReports, { nullable: true })
+  @ManyToOne(() => Client, (client) => client.atsReports, { nullable: true })
   @JoinColumn({ name: 'client_id' })
-  client?: Client;
+  client?: Client | null;
 
-  // Nuevos campos para información del cliente (opcional, por si quieres denormalizar)
-  @Column({ name: 'client_name', nullable: true })
-  clientName?: string;
+  @Column({ name: 'client_name', type: 'varchar', nullable: true })
+  clientName?: string | null;
 
-  @Column({ name: 'client_nit', nullable: true })
-  clientNit?: string;
+  @Column({ name: 'client_nit', type: 'varchar', nullable: true })
+  clientNit?: string | null;
 
-  // Nuevo campo: cédula del trabajador
-  @Column({ name: 'worker_identification', nullable: true })
-  workerIdentification?: string;
+  @OneToMany(() => AtsReportRisk, (x) => x.atsReport, { cascade: true })
+  risks: AtsReportRisk[];
 
-  // Nuevo campo: sub-área (opcional)
-  @Column({ name: 'sub_area', nullable: true })
-  subArea?: string;
+  @OneToMany(() => AtsReportPpeItem, (x) => x.atsReport, { cascade: true })
+  ppeItems: AtsReportPpeItem[];
 }

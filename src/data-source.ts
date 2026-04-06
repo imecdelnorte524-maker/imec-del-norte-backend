@@ -64,7 +64,7 @@ const dataSource = new DataSource({
   migrations: getMigrationsInOrder(),
   synchronize: false,
   logging: process.env.NODE_ENV !== 'production',
-  migrationsTransactionMode: 'none',
+  migrationsTransactionMode: 'each',
 });
 
 export default dataSource;

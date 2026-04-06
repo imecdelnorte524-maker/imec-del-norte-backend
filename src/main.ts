@@ -45,7 +45,7 @@ async function bootstrap() {
     'https://imec-del-norte-web.up.railway.app',
     'https://imec-del-norte-staggin.up.railway.app',
     'https://imec-del-norte-backend.up.railway.app',
-    'https://m3h6rtnz-3032.use.devtunnels.ms',
+    'https://fkm9z6xf-3032.use2.devtunnels.ms',
     'http://localhost:3032',
     'http://localhost:3000',
   ];
