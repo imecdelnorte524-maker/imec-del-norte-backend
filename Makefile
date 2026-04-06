@@ -25,7 +25,7 @@ logs:
 logs-worker: 
 	docker-compose logs -f backend_worker
 
-test:
+testing:
 	npm run build && rm -rf dist
 
 migrate:

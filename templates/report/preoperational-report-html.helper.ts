@@ -1,8 +1,7 @@
-// templates/report/preoperational-report-html.helper.ts
 import { Form } from '../../src/sg-sst/entities/form.entity';
 import { PreoperationalCheck } from '../../src/sg-sst/entities/preoperational-check.entity';
-import { Signature, SignatureType } from '../../src/sg-sst/entities/signature.entity';
-import { CheckValue } from '../../src/shared';
+import { Signature } from '../../src/sg-sst/entities/signature.entity';
+import { CheckValue, SignatureType } from '../../src/shared';
 
 export interface PreoperationalReportHtmlOptions {
   headerImageUrl?: string;
@@ -13,45 +12,13 @@ function buildPreopChecksHtml(checks: PreoperationalCheck[]): string {
     return `<div class="no-data">No se registraron parámetros en el checklist.</div>`;
   }
 
-  const getCategoryClass = (category?: string): string => {
-    switch (category) {
-      case 'safety':
-        return 'category-safety';
-      case 'functional':
-        return 'category-functional';
-      case 'visual':
-        return 'category-visual';
-      case 'operational':
-        return 'category-operational';
-      case 'electrical':
-        return 'category-electrical';
-      default:
-        return '';
-    }
-  };
-
-  const getCategoryLabel = (category?: string): string => {
-    switch (category) {
-      case 'safety':
-        return 'SEGURIDAD';
-      case 'functional':
-        return 'FUNCIONAL';
-      case 'visual':
-        return 'VISUAL';
-      case 'operational':
-        return 'OPERACIONAL';
-      case 'electrical':
-        return 'ELÉCTRICO';
-      default:
-        return category?.toUpperCase() || 'OTRO';
-    }
-  };
-
-  const getValueClass = (value: CheckValue): string => {
+  const getValueClass = (value?: CheckValue | null): string => {
+    if (!value) return `value-NA`;
     return `value-${value}`;
   };
 
-  const getValueLabel = (value: CheckValue): string => {
+  const getValueLabel = (value?: CheckValue | null): string => {
+    if (!value) return 'N/A';
     switch (value) {
       case CheckValue.GOOD:
         return 'BUENO';
@@ -64,11 +31,11 @@ function buildPreopChecksHtml(checks: PreoperationalCheck[]): string {
       case CheckValue.NO:
         return 'NO';
       default:
-        return value || 'N/A';
+        return String(value);
     }
   };
 
-  // Calcular resumen
+  // Resumen
   const total = checks.length;
   const good = checks.filter(
     (c) => c.value === CheckValue.GOOD || c.value === CheckValue.YES,
@@ -79,21 +46,23 @@ function buildPreopChecksHtml(checks: PreoperationalCheck[]): string {
   const regular = checks.filter((c) => c.value === CheckValue.REGULAR).length;
 
   const rows = checks
-    .map(
-      (c) => `
-      <tr>
-        <td>
-          <strong>${c.parameter || ''}</strong>
-        </td>
-        <td style="text-align: center;">
-          <span class="value-badge ${getValueClass(c.value)}">
-            ${getValueLabel(c.value)}
-          </span>
-        </td>
-        <td>${c.observations || ''}</td>
-      </tr>
-    `,
-    )
+    .map((c) => {
+      const param = c.parameterSnapshot ?? '';
+      const value = c.value ?? null;
+      const obs = c.observations ?? '';
+
+      return `
+        <tr>
+          <td><strong>${param}</strong></td>
+          <td style="text-align: center;">
+            <span class="value-badge ${getValueClass(value)}">
+              ${getValueLabel(value)}
+            </span>
+          </td>
+          <td>${obs}</td>
+        </tr>
+      `;
+    })
     .join('');
 
   return `
@@ -106,27 +75,20 @@ function buildPreopChecksHtml(checks: PreoperationalCheck[]): string {
         <div class="summary-number" style="color: #22543d;">${good}</div>
         <div class="summary-label">Aprobados</div>
       </div>
-      ${
-        regular > 0
-          ? `
+      ${regular > 0 ? `
         <div class="summary-item">
           <div class="summary-number" style="color: #744210;">${regular}</div>
           <div class="summary-label">Regulares</div>
         </div>
-      `
-          : ''
-      }
-      ${
-        bad > 0
-          ? `
+      ` : ''}
+      ${bad > 0 ? `
         <div class="summary-item">
           <div class="summary-number" style="color: #742a2a;">${bad}</div>
           <div class="summary-label">Fallas</div>
         </div>
-      `
-          : ''
-      }
+      ` : ''}
     </div>
+
     <table class="preop-table">
       <thead>
         <tr>
@@ -148,15 +110,12 @@ function populateSignatureParams(
   params: Record<string, any>,
 ) {
   params[`${prefix}_SIGNER_NAME`] = signature?.userName ?? '';
-  params[`${prefix}_SIGNED_AT`] = signature
-    ? signature.signedAt.toISOString()
-    : '';
+  params[`${prefix}_SIGNED_AT`] = signature ? signature.signedAt.toISOString() : '';
   params[`${prefix}_SIGN_METHOD`] = signature?.method ?? '';
   params[`${prefix}_SIGN_IP`] = signature?.ip ?? '';
   params[`${prefix}_SIGN_USER_AGENT`] = signature?.userAgent ?? '';
   params[`${prefix}_SIGN_CONTACT`] = signature?.contactSnapshot ?? '';
 
-  // CORREGIDO: Formatear la firma como imagen si existe
   if (signature?.signatureData) {
     if (signature.signatureData.includes('<img')) {
       params[`${prefix}_SIGNATURE_IMAGE`] = signature.signatureData;
@@ -168,8 +127,7 @@ function populateSignatureParams(
         `<img src="${signature.signatureData}" alt="Firma ${prefix}" style="max-width: 180px; max-height: 70px; object-fit: contain;" />`;
     }
   } else {
-    params[`${prefix}_SIGNATURE_IMAGE`] =
-      '<span class="no-signature">Sin firma</span>';
+    params[`${prefix}_SIGNATURE_IMAGE`] = '<span class="no-signature">Sin firma</span>';
   }
 }
 
@@ -197,12 +155,8 @@ export function buildPreoperationalReportParams(
     ),
   };
 
-  const techSig = form.signatures?.find(
-    (s) => s.signatureType === SignatureType.TECHNICIAN,
-  );
-  const sstSig = form.signatures?.find(
-    (s) => s.signatureType === SignatureType.SST,
-  );
+  const techSig = form.signatures?.find((s) => s.signatureType === SignatureType.TECHNICIAN);
+  const sstSig = form.signatures?.find((s) => s.signatureType === SignatureType.SST);
 
   populateSignatureParams('TECH', techSig, params);
   populateSignatureParams('SST', sstSig, params);

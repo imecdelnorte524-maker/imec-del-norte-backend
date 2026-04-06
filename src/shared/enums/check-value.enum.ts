@@ -27,3 +27,21 @@ export enum FormStatus {
   COMPLETED = 'COMPLETED',
   REJECTED = 'REJECTED', 
 }
+
+export enum SignatureType {
+  TECHNICIAN = 'TECHNICIAN',
+  SST = 'SST',
+}
+
+export enum AtsPpeItemType {
+  PPE = 'PPE',
+  TOOL = 'TOOL',
+}
+
+export enum TermsType {
+  DATA_PRIVACY = 'dataprivacy',
+  ATS = 'ats',
+  HEIGHT_WORK = 'height_work',
+  PREOPERATIONAL_FORM = 'preoperational_form',
+  SECURITY = 'security',
+}

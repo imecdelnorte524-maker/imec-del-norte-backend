@@ -73,11 +73,7 @@ export class WoReportsProcessor extends WorkerHost {
         await this.wsPublisher.publish({
           type: 'sent',
           userId,
-          payload: {
-            jobId: job.id,
-            ordenId,
-            reportType,
-          },
+          payload: { jobId: job.id, ordenId, reportType },
         });
 
         return { sent: true };
@@ -86,11 +82,16 @@ export class WoReportsProcessor extends WorkerHost {
       const prefix = buildTimePrefixUTC(new Date());
       const objectPath = `${prefix}/u${userId}-o${ordenId}-j${job.id}.pdf`;
 
-      await this.storage.uploadPdf({ path: objectPath, buffer: pdfBuffer });
+      await this.storage.uploadFile({
+        path: objectPath,
+        buffer: pdfBuffer,
+        contentType: 'application/pdf',
+      });
 
       const token = await this.tokenStore.createToken({
         objectPath,
         fileName,
+        contentType: 'application/pdf',
         ordenId,
         reportType,
       });
@@ -126,12 +127,12 @@ export class WoReportsProcessor extends WorkerHost {
   private async processBatch(job: Job<WoReportJobData>) {
     if (job.data.kind !== 'batch') return;
 
-    const { userId, orderIds, reportType, action, toEmail, ccEmails } =
-      job.data;
+    const { userId, orderIds, reportType, action, toEmail, ccEmails } = job.data;
 
     try {
       const attachments: { filename: string; content: Buffer }[] = [];
 
+      // Genera TODOS los PDFs
       for (const id of orderIds) {
         const buffer =
           reportType === 'internal'
@@ -148,20 +149,31 @@ export class WoReportsProcessor extends WorkerHost {
 
       let finalBuffer: Buffer;
       let fileName: string;
+      let contentType: string;
 
       if (attachments.length === 1) {
         finalBuffer = attachments[0].content;
         fileName = attachments[0].filename;
+        contentType = 'application/pdf';
       } else {
+        // Si hay 2 o más: ZIP con TODOS los PDFs
         const zip = new JSZip();
         for (const att of attachments) {
           zip.file(att.filename, att.content);
         }
-        finalBuffer = await zip.generateAsync({ type: 'nodebuffer' });
+
+        finalBuffer = await zip.generateAsync({
+          type: 'nodebuffer',
+          compression: 'DEFLATE',
+          compressionOptions: { level: 6 },
+        });
+
         fileName =
           reportType === 'internal'
             ? 'informes-internos-ordenes.zip'
             : 'informes-cliente-ordenes.zip';
+
+        contentType = 'application/zip';
       }
 
       if (action === 'email') {
@@ -180,29 +192,27 @@ export class WoReportsProcessor extends WorkerHost {
         await this.wsPublisher.publish({
           type: 'sent',
           userId,
-          payload: {
-            jobId: job.id,
-            orderIds,
-            reportType,
-          },
+          payload: { jobId: job.id, orderIds, reportType },
         });
 
         return { sent: true };
       }
 
       const prefix = buildTimePrefixUTC(new Date());
-      const ext = fileName.endsWith('.zip') ? 'zip' : 'pdf';
+      const ext = contentType === 'application/zip' ? 'zip' : 'pdf';
       const objectPath = `${prefix}/u${userId}-batch-j${job.id}.${ext}`;
 
-      await this.storage.uploadPdf({
+      await this.storage.uploadFile({
         path: objectPath,
         buffer: finalBuffer,
+        contentType,
       });
 
       const token = await this.tokenStore.createToken({
         objectPath,
         fileName,
-        ordenId: orderIds[0],
+        contentType,
+        ordenId: orderIds[0], // legacy
         reportType,
       });
 
@@ -241,11 +251,8 @@ export class WoReportsProcessor extends WorkerHost {
 
     try {
       const result = await this.woService.sendReportsToClientsByEmail(
-        {
-          orderIds,
-          message,
-        },
-        { userId, role: 'Administrador' }, // si quieres luego refinamos esto
+        { orderIds, message },
+        { userId, role: 'Administrador' },
       );
 
       await this.wsPublisher.publish({

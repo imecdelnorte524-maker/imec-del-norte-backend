@@ -8,7 +8,7 @@ import {
   JoinColumn,
 } from 'typeorm';
 import { Form } from './form.entity';
-import { SignatureType } from './signature.entity';
+import { SignatureType } from '../../shared';
 
 @Entity('sign_otps')
 export class SignOtp {

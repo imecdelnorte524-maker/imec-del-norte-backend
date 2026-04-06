@@ -1,4 +1,4 @@
-import { TermsType } from "../entities/terms.entity";
+import { TermsType } from "../../shared";
 
 export class TermsResponseDto {
   id: number;

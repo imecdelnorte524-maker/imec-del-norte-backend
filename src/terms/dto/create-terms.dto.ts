@@ -1,6 +1,6 @@
 // src/dto/terms.dto.ts
 import { IsEnum, IsString, IsArray, IsBoolean, IsOptional } from 'class-validator';
-import { TermsType } from '../entities/terms.entity';
+import { TermsType } from '../../shared';
 
 export class CreateTermsDto {
   @IsEnum(TermsType)

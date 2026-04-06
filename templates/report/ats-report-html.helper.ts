@@ -1,7 +1,6 @@
-// templates/report/ats-report-html.helper.ts
-
-import { Form } from "../../src/sg-sst/entities/form.entity";
-import { Signature, SignatureType } from "../../src/sg-sst/entities/signature.entity";
+import { Form } from '../../src/sg-sst/entities/form.entity';
+import { Signature } from '../../src/sg-sst/entities/signature.entity';
+import { SignatureType } from '../../src/shared';
 
 export interface AtsReportHtmlOptions {
   headerImageUrl?: string;
@@ -19,11 +18,11 @@ function buildCategoryListHtml(data: any, emptyMsg: string): string {
     return `
       <ul class="bullet-list">
         ${data
-          .map(
-            (item) =>
-              `<li class="bullet-item">${String(item).trim() || 'Sin descripción'}</li>`,
-          )
-          .join('')}
+        .map(
+          (item) =>
+            `<li class="bullet-item">${String(item).trim() || 'Sin descripción'}</li>`,
+        )
+        .join('')}
       </ul>
     `;
   }
@@ -37,6 +36,7 @@ function buildCategoryListHtml(data: any, emptyMsg: string): string {
     let html = '';
     for (const [category, value] of entries) {
       const catName = String(category).toUpperCase();
+
       if (Array.isArray(value)) {
         if (value.length === 0) continue;
         html += `
@@ -44,11 +44,11 @@ function buildCategoryListHtml(data: any, emptyMsg: string): string {
             <div class="category-title">${catName}</div>
             <div class="tag-list">
               ${value
-                .map(
-                  (v) =>
-                    `<span class="tag">${String(v).trim() || 'Sin descripción'}</span>`,
-                )
-                .join('')}
+            .map(
+              (v) =>
+                `<span class="tag">${String(v).trim() || 'Sin descripción'}</span>`,
+            )
+            .join('')}
             </div>
           </div>
         `;
@@ -63,24 +63,56 @@ function buildCategoryListHtml(data: any, emptyMsg: string): string {
         `;
       }
     }
+
     return html || `<div class="no-data">${emptyMsg}</div>`;
   }
 
   return `<div class="no-data">${emptyMsg}</div>`;
 }
 
-function buildRisksHtml(selectedRisks: any): string {
-  return buildCategoryListHtml(
-    selectedRisks,
-    'No se registraron riesgos específicos.',
-  );
+function computeSelectedRisksFromRelations(form: Form): Record<string, string[]> {
+  const ats = form.atsReport as any;
+  const out: Record<string, string[]> = {};
+
+  const rows = ats?.risks || [];
+  for (const rr of rows) {
+    const catCode = rr?.risk?.category?.code || 'OTROS';
+    const riskName = rr?.risk?.name;
+    if (!riskName) continue;
+
+    if (!out[catCode]) out[catCode] = [];
+    out[catCode].push(riskName);
+  }
+
+  // opcional: ordenar alfabético por categoría
+  for (const k of Object.keys(out)) {
+    out[k] = out[k].sort((a, b) => a.localeCompare(b));
+  }
+
+  return out;
 }
 
-function buildPpeHtml(requiredPpe: any): string {
-  return buildCategoryListHtml(
-    requiredPpe,
-    'No se registraron elementos de protección personal.',
-  );
+function computeRequiredPpeFromRelations(form: Form): Record<string, boolean> {
+  const ats = form.atsReport as any;
+  const out: Record<string, boolean> = {};
+
+  const rows = ats?.ppeItems || [];
+  for (const p of rows) {
+    const name = p?.ppeItem?.name;
+    if (name) out[name] = true;
+  }
+
+  return out;
+}
+
+function buildRisksHtml(form: Form): string {
+  const selectedRisks = computeSelectedRisksFromRelations(form);
+  return buildCategoryListHtml(selectedRisks, 'No se registraron riesgos específicos.');
+}
+
+function buildPpeHtml(form: Form): string {
+  const requiredPpe = computeRequiredPpeFromRelations(form);
+  return buildCategoryListHtml(requiredPpe, 'No se registraron elementos de protección personal.');
 }
 
 function populateSignatureParams(
@@ -89,33 +121,24 @@ function populateSignatureParams(
   params: Record<string, any>,
 ) {
   params[`${prefix}_SIGNER_NAME`] = signature?.userName ?? '';
-  params[`${prefix}_SIGNED_AT`] = signature
-    ? signature.signedAt.toISOString()
-    : '';
+  params[`${prefix}_SIGNED_AT`] = signature ? signature.signedAt.toISOString() : '';
   params[`${prefix}_SIGN_METHOD`] = signature?.method ?? '';
   params[`${prefix}_SIGN_IP`] = signature?.ip ?? '';
   params[`${prefix}_SIGN_USER_AGENT`] = signature?.userAgent ?? '';
   params[`${prefix}_SIGN_CONTACT`] = signature?.contactSnapshot ?? '';
 
-  // CORREGIDO: Formatear la firma como imagen si existe
   if (signature?.signatureData) {
-    // Si ya viene con etiqueta img, la dejamos igual
     if (signature.signatureData.includes('<img')) {
       params[`${prefix}_SIGNATURE_IMAGE`] = signature.signatureData;
-    }
-    // Si es base64 (empieza con data:image)
-    else if (signature.signatureData.startsWith('data:image')) {
+    } else if (signature.signatureData.startsWith('data:image')) {
       params[`${prefix}_SIGNATURE_IMAGE`] =
         `<img src="${signature.signatureData}" alt="Firma ${prefix}" style="max-width: 180px; max-height: 70px; object-fit: contain;" />`;
-    }
-    // Si es una URL
-    else {
+    } else {
       params[`${prefix}_SIGNATURE_IMAGE`] =
         `<img src="${signature.signatureData}" alt="Firma ${prefix}" style="max-width: 180px; max-height: 70px; object-fit: contain;" />`;
     }
   } else {
-    params[`${prefix}_SIGNATURE_IMAGE`] =
-      '<span class="no-signature">Sin firma</span>';
+    params[`${prefix}_SIGNATURE_IMAGE`] = '<span class="no-signature">Sin firma</span>';
   }
 }
 
@@ -156,16 +179,12 @@ export function buildAtsReportParams(
     CLIENT_NAME: ats.clientName ?? '',
     CLIENT_NIT: ats.clientNit ?? '',
 
-    RISKS_HTML: buildRisksHtml(ats.selectedRisks),
-    PPE_HTML: buildPpeHtml(ats.requiredPpe),
+    RISKS_HTML: buildRisksHtml(form),
+    PPE_HTML: buildPpeHtml(form),
   };
 
-  const techSig = form.signatures?.find(
-    (s) => s.signatureType === SignatureType.TECHNICIAN,
-  );
-  const sstSig = form.signatures?.find(
-    (s) => s.signatureType === SignatureType.SST,
-  );
+  const techSig = form.signatures?.find((s) => s.signatureType === SignatureType.TECHNICIAN);
+  const sstSig = form.signatures?.find((s) => s.signatureType === SignatureType.SST);
 
   populateSignatureParams('TECH', techSig, params);
   populateSignatureParams('SST', sstSig, params);

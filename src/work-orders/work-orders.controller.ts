@@ -69,7 +69,7 @@ export class WorkOrdersController {
     private readonly woReportsQueue: WoReportsQueueService,
     private readonly tokenStore: WoReportsTokenStore,
     private readonly tempStorage: SupabaseTempStorageService,
-  ) {}
+  ) { }
 
   private getRoleName(user: any): string {
     return user?.role?.nombreRol || user?.role || '';
@@ -137,32 +137,31 @@ export class WorkOrdersController {
 
     let data: WorkOrder[];
 
-    // Si es técnico y se solicita all=true, devolver todas las órdenes
     if (roleName === 'Técnico' && showAll) {
       data = await this.workOrdersService.findAll();
     } else if (roleName === 'Técnico') {
-      data = await this.workOrdersService.getWorkOrdersByTechnician(
-        req.user.userId,
-      );
+      data = await this.workOrdersService.getWorkOrdersByTechnician(req.user.userId);
     } else if (roleName === 'Cliente') {
-      data = await this.workOrdersService.getWorkOrdersForClientUser(
-        req.user.userId,
-      );
+      data = await this.workOrdersService.getWorkOrdersForClientUser(req.user.userId);
     } else {
       data = await this.workOrdersService.findAll();
     }
 
-    const ordersWithCosts = await Promise.all(
-      data.map(async (order) => {
-        const costs = await this.workOrdersService.calculateTotalCost(
-          order.ordenId,
-        );
-        return {
-          ...this.mapToResponseDto(order),
-          ...costs,
-        };
-      }),
-    );
+    // ✅ 2 queries para costos/tiempo en lote (no N+1)
+    const ids = data.map((o) => o.ordenId);
+    const totalsMap = await this.workOrdersService.calculateTotalsForOrders(ids);
+
+    const ordersWithCosts = data.map((order) => {
+      const totals = totalsMap.get(order.ordenId) ?? {
+        costoTotalInsumos: 0,
+        tiempoTotal: 0,
+      };
+
+      return {
+        ...this.mapToResponseDto(order),
+        ...totals,
+      };
+    });
 
     return {
       message: 'Órdenes de trabajo obtenidas exitosamente',
@@ -806,25 +805,38 @@ export class WorkOrdersController {
   }
 
   @Get('informe-download/:token')
-  @ApiOperation({ summary: 'Descargar PDF generado (token 1 uso / expira)' })
+  @ApiOperation({ summary: 'Descargar PDF/ZIP generado (token expira, 1 uso real al finalizar)' })
   async downloadInforme(@Param('token') token: string, @Res() res: Response) {
-    const payload = await this.tokenStore.consumeToken(token);
+    const payload = await this.tokenStore.getToken(token);
     if (!payload) {
       throw new NotFoundException('El token no existe o expiró');
     }
 
-    const buffer = await this.tempStorage.downloadPdf({
+    const buffer = await this.tempStorage.downloadFile({
       path: payload.objectPath,
     });
 
-    await this.tempStorage.remove([payload.objectPath]);
+    const contentType =
+      payload.contentType ||
+      (payload.fileName.toLowerCase().endsWith('.zip')
+        ? 'application/zip'
+        : 'application/pdf');
 
-    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Type', contentType);
     res.setHeader(
       'Content-Disposition',
       `attachment; filename="${payload.fileName}"`,
     );
     res.setHeader('Content-Length', buffer.length);
+
+    res.on('finish', async () => {
+      try {
+        await this.tokenStore.deleteToken(token);
+        await this.tempStorage.remove([payload.objectPath]);
+      } catch (e) {
+        console.error('Error limpiando token/archivo:', e);
+      }
+    });
 
     return res.status(200).send(buffer);
   }
@@ -975,15 +987,15 @@ export class WorkOrdersController {
 
     const serviceInfo = workOrder.service
       ? {
-          servicioId: workOrder.service.servicioId,
-          nombreServicio: workOrder.service.nombreServicio,
-          categoriaServicio: workOrder.service.categoriaServicio,
-        }
+        servicioId: workOrder.service.servicioId,
+        nombreServicio: workOrder.service.nombreServicio,
+        categoriaServicio: workOrder.service.categoriaServicio,
+      }
       : {
-          servicioId: 0,
-          nombreServicio: '',
-          categoriaServicio: undefined,
-        };
+        servicioId: 0,
+        nombreServicio: '',
+        categoriaServicio: undefined,
+      };
 
     const acInspections =
       workOrder.acInspections?.map((insp) => ({
@@ -1028,9 +1040,9 @@ export class WorkOrdersController {
       tipoServicio: workOrder.tipoServicio ?? null,
       maintenanceType: workOrder.maintenanceType
         ? {
-            id: workOrder.maintenanceType.id,
-            nombre: workOrder.maintenanceType.nombre,
-          }
+          id: workOrder.maintenanceType.id,
+          nombre: workOrder.maintenanceType.nombre,
+        }
         : null,
       comentarios: workOrder.comentarios,
       estadoFacturacion: workOrder.estadoFacturacion,
@@ -1039,23 +1051,23 @@ export class WorkOrdersController {
       service: serviceInfo,
       cliente: workOrder.cliente
         ? {
-            usuarioId: workOrder.cliente.usuarioId,
-            nombre: workOrder.cliente.nombre,
-            apellido: workOrder.cliente.apellido || undefined,
-            email: workOrder.cliente.email ?? undefined,
-            telefono: workOrder.cliente.telefono ?? undefined,
-            cedula: workOrder.cliente.cedula ?? undefined,
-          }
+          usuarioId: workOrder.cliente.usuarioId,
+          nombre: workOrder.cliente.nombre,
+          apellido: workOrder.cliente.apellido || undefined,
+          email: workOrder.cliente.email ?? undefined,
+          telefono: workOrder.cliente.telefono ?? undefined,
+          cedula: workOrder.cliente.cedula ?? undefined,
+        }
         : null,
       clienteEmpresa: workOrder.clienteEmpresa
         ? {
-            idCliente: workOrder.clienteEmpresa.idCliente,
-            nombre: workOrder.clienteEmpresa.nombre,
-            nit: workOrder.clienteEmpresa.nit,
-            email: workOrder.clienteEmpresa.email ?? undefined,
-            telefono: workOrder.clienteEmpresa.telefono ?? undefined,
-            localizacion: workOrder.clienteEmpresa.localizacion ?? undefined,
-          }
+          idCliente: workOrder.clienteEmpresa.idCliente,
+          nombre: workOrder.clienteEmpresa.nombre,
+          nit: workOrder.clienteEmpresa.nit,
+          email: workOrder.clienteEmpresa.email ?? undefined,
+          telefono: workOrder.clienteEmpresa.telefono ?? undefined,
+          localizacion: workOrder.clienteEmpresa.localizacion ?? undefined,
+        }
         : null,
       technicians,
       equipos: equipments,

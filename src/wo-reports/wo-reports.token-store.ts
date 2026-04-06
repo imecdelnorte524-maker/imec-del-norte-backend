@@ -5,7 +5,8 @@ import Redis from 'ioredis';
 export type ReportTokenPayload = {
   objectPath: string;
   fileName: string;
-  ordenId: number;
+  contentType: string; // <-- NUEVO (pdf/zip/etc)
+  ordenId: number; // legacy: para batch guardamos el primero
   reportType: 'internal' | 'client';
 };
 
@@ -33,7 +34,22 @@ export class WoReportsTokenStore {
     return token;
   }
 
-  /** 1 solo uso */
+  /**
+   * Lee token SIN consumir (para no perderlo si la descarga tarda o se corta).
+   */
+  async getToken(token: string): Promise<ReportTokenPayload | null> {
+    const value = await this.redis.get(`wo:report:${token}`);
+    return value ? (JSON.parse(value) as ReportTokenPayload) : null;
+  }
+
+  /**
+   * Borra token manualmente (lo usaremos cuando el response termine).
+   */
+  async deleteToken(token: string): Promise<void> {
+    await this.redis.del(`wo:report:${token}`);
+  }
+
+  /** (Se deja por compatibilidad) 1 solo uso inmediato */
   async consumeToken(token: string): Promise<ReportTokenPayload | null> {
     const key = `wo:report:${token}`;
     const value = await this.redis.get(key);

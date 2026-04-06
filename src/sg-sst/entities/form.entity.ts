@@ -1,4 +1,3 @@
-// src/sg-sst/entities/form.entity.ts
 import {
   Entity,
   PrimaryGeneratedColumn,
@@ -18,74 +17,66 @@ import { User } from '../../users/entities/user.entity';
 import { WorkOrder } from '../../work-orders/entities/work-order.entity';
 import { FormStatus, FormType } from '../../shared/index';
 import { SignOtp } from './sign-otp.entity';
+import { FormTermsAcceptance } from './form-terms-acceptance.entity';
 
 @Entity('forms')
 export class Form {
   @PrimaryGeneratedColumn()
   id: number;
 
-  @Column({
-    type: 'enum',
-    enum: FormType,
-    default: FormType.PREOPERATIONAL,
-  })
+  @Column({ type: 'enum', enum: FormType, default: FormType.PREOPERATIONAL })
   formType: FormType;
 
-  @Column({
-    type: 'enum',
-    enum: FormStatus,
-    default: FormStatus.DRAFT,
-  })
+  @Column({ type: 'enum', enum: FormStatus, default: FormStatus.DRAFT })
   status: FormStatus;
 
-  @Column({ nullable: true })
-  equipmentTool: string;
+  @Column({ type: 'varchar', nullable: true })
+  equipmentTool?: string | null;
 
-  @CreateDateColumn()
+  @CreateDateColumn({ type: 'timestamp' })
   createdAt: Date;
 
-  @Column({ nullable: true })
-  technicianSignatureDate: Date;
+  @Column({ type: 'timestamp', nullable: true })
+  technicianSignatureDate?: Date | null;
 
-  @Column({ nullable: true })
-  sstSignatureDate: Date;
+  @Column({ type: 'timestamp', nullable: true })
+  sstSignatureDate?: Date | null;
 
-  @Column()
+  @Column({ type: 'int' })
   userId: number;
 
-  @Column({ nullable: true })
-  rejectionReason?: string;
+  @Column({ type: 'varchar', nullable: true })
+  rejectionReason?: string | null;
 
-  @Column({ nullable: true })
-  rejectedByUserId?: number;
+  @Column({ type: 'int', nullable: true })
+  rejectedByUserId?: number | null;
 
-  @Column({ nullable: true })
-  rejectedByUserName?: string;
+  @Column({ type: 'varchar', nullable: true })
+  rejectedByUserName?: string | null;
 
-  @Column({ nullable: true })
-  rejectedAt?: Date;
+  @Column({ type: 'timestamp', nullable: true })
+  rejectedAt?: Date | null;
 
-  @Column()
+  @Column({ type: 'int' })
   createdBy: number;
 
-  @UpdateDateColumn()
+  @UpdateDateColumn({ type: 'timestamp' })
   updatedAt: Date;
 
-  // 🔹 Nueva columna: orden de trabajo asociada
-  @Column({ name: 'work_order_id', nullable: true })
-  workOrderId?: number;
+  @Column({ name: 'work_order_id', type: 'int', nullable: true })
+  workOrderId?: number | null;
 
-  // Relación con el usuario que creó el formulario
+  @Column({ type: 'int', default: 1 })
+  version: number;
+
   @ManyToOne(() => User, (user) => user.forms)
   @JoinColumn({ name: 'userId', referencedColumnName: 'usuarioId' })
   user: User;
 
-  // Relación con la orden de trabajo
   @ManyToOne(() => WorkOrder, { nullable: true })
   @JoinColumn({ name: 'work_order_id' })
-  workOrder?: WorkOrder;
+  workOrder?: WorkOrder | null;
 
-  // Relations
   @OneToOne(() => AtsReport, (ats) => ats.form)
   atsReport: AtsReport;
 
@@ -100,20 +91,23 @@ export class Form {
 
   @OneToMany(() => SignOtp, (otp) => otp.form)
   signOtps: SignOtp[];
-  
-  // ===== Metadatos del PDF generado =====
-  @Column({ nullable: true })
-  pdfFilePath?: string;
 
-  @Column({ nullable: true })
-  pdfFileName?: string;
+  @OneToMany(() => FormTermsAcceptance, (x) => x.form)
+  termsAcceptances: FormTermsAcceptance[];
+
+  // PDF metadata
+  @Column({ type: 'varchar', nullable: true })
+  pdfFilePath?: string | null;
+
+  @Column({ type: 'varchar', nullable: true })
+  pdfFileName?: string | null;
 
   @Column({ type: 'int', nullable: true })
-  pdfFileSize?: number;
+  pdfFileSize?: number | null;
 
-  @Column({ nullable: true })
-  pdfHash?: string;
+  @Column({ type: 'varchar', nullable: true })
+  pdfHash?: string | null;
 
   @Column({ type: 'timestamp', nullable: true })
-  pdfGeneratedAt?: Date;
+  pdfGeneratedAt?: Date | null;
 }

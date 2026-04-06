@@ -8,14 +8,7 @@ import {
   Index,
   Unique,
 } from 'typeorm';
-
-export enum TermsType {
-  DATA_PRIVACY = 'dataprivacy',
-  ATS = 'ats',
-  HEIGHT_WORK = 'height_work',
-  PREOPERATIONAL_FORM = 'preoperational_form',
-  SECURITY = 'security',
-}
+import { TermsType } from '../../shared';
 
 @Entity('terms_conditions')
 @Unique(['type'])

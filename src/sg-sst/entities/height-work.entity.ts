@@ -1,55 +1,65 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, OneToOne, JoinColumn } from 'typeorm';
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  CreateDateColumn,
+  OneToOne,
+  JoinColumn,
+  OneToMany,
+} from 'typeorm';
 import { Form } from './form.entity';
+import { HeightWorkProtectionElement } from './height-work-protection-element.entity';
 
 @Entity('height_works')
 export class HeightWork {
   @PrimaryGeneratedColumn()
   id: number;
 
-  @Column()
+  @Column({ type: 'int' })
   formId: number;
 
-  @Column()
+  @Column({ type: 'varchar' })
   workerName: string;
 
-  @Column({ nullable: true })
-  identification: string;
+  @Column({ type: 'varchar', nullable: true })
+  identification?: string | null;
 
-  @Column({ nullable: true })
-  position: string;
-
-  @Column({ type: 'text', nullable: true })
-  workDescription: string;
+  @Column({ type: 'varchar', nullable: true })
+  position?: string | null;
 
   @Column({ type: 'text', nullable: true })
-  location: string;
+  workDescription?: string | null;
 
-  @Column({ nullable: true })
-  estimatedTime: string;
+  @Column({ type: 'text', nullable: true })
+  location?: string | null;
 
-  @Column({ type: 'jsonb', nullable: true })
-  protectionElements: any;
+  @Column({ type: 'varchar', nullable: true })
+  estimatedTime?: string | null;
 
-  @Column({ nullable: true })
-  physicalCondition: boolean;
+  @Column({ type: 'boolean', nullable: true })
+  physicalCondition?: boolean | null;
 
-  @Column({ nullable: true })
-  instructionsReceived: boolean;
+  @Column({ type: 'boolean', nullable: true })
+  instructionsReceived?: boolean | null;
 
-  @Column({ nullable: true })
-  fitForHeightWork: boolean;
+  @Column({ type: 'boolean', nullable: true })
+  fitForHeightWork?: boolean | null;
 
-  @Column({ nullable: true })
-  authorizerName: string;
+  @Column({ type: 'varchar', nullable: true })
+  authorizerName?: string | null;
 
-  @Column({ nullable: true })
-  authorizerIdentification: string;
+  @Column({ type: 'varchar', nullable: true })
+  authorizerIdentification?: string | null;
 
-  @CreateDateColumn()
+  @CreateDateColumn({ type: 'timestamp' })
   createdAt: Date;
 
-  // Relation
-  @OneToOne(() => Form, form => form.heightWork)
+  @OneToOne(() => Form, (form) => form.heightWork)
   @JoinColumn({ name: 'formId' })
   form: Form;
+
+  @OneToMany(() => HeightWorkProtectionElement, (x) => x.heightWork, {
+    cascade: true,
+  })
+  protectionElements: HeightWorkProtectionElement[];
 }

@@ -98,7 +98,7 @@ export class WorkOrdersService {
     private readonly configService: ConfigService,
     private readonly mailService: MailService,
     private readonly realtime: RealtimeService,
-  ) {}
+  ) { }
 
   private readonly MAX_EMAIL_ATTACHMENT_BYTES = 30 * 1024 * 1024;
 
@@ -448,39 +448,101 @@ export class WorkOrdersService {
     }
   }
 
+  async calculateTotalsForOrders(
+    ordenIds: number[],
+  ): Promise<Map<number, { costoTotalInsumos: number; tiempoTotal: number }>> {
+    const map = new Map<
+      number,
+      { costoTotalInsumos: number; tiempoTotal: number }
+    >();
+
+    if (!ordenIds || ordenIds.length === 0) return map;
+
+    // Inicializa con 0
+    for (const id of ordenIds) {
+      map.set(id, { costoTotalInsumos: 0, tiempoTotal: 0 });
+    }
+
+    // 1) Sumar insumos en JS (1 query)
+    const supplyDetails = await this.supplyDetailsRepository
+      .createQueryBuilder('sd')
+      .select(['sd.ordenId', 'sd.cantidadUsada', 'sd.costoUnitarioAlMomento'])
+      .where('sd.ordenId IN (:...ordenIds)', { ordenIds })
+      .getMany();
+
+    for (const sd of supplyDetails) {
+      const ordenId = Number(sd.ordenId);
+      const prev = map.get(ordenId);
+      if (!prev) continue;
+
+      const cantidad = Number(sd.cantidadUsada ?? 0);
+      const unitario = Number(sd.costoUnitarioAlMomento ?? 0);
+
+      prev.costoTotalInsumos += cantidad * unitario;
+    }
+
+    // 2) Sumar timers en JS (1 query)
+    const timers = await this.workOrderTimerRepository
+      .createQueryBuilder('t')
+      .select(['t.ordenId', 't.startTime', 't.endTime', 't.totalSeconds'])
+      .where('t.ordenId IN (:...ordenIds)', { ordenIds })
+      .getMany();
+
+    const nowMs = Date.now();
+
+    for (const t of timers) {
+      const ordenId = Number(t.ordenId);
+      const prev = map.get(ordenId);
+      if (!prev) continue;
+
+      if (t.endTime) {
+        prev.tiempoTotal += Number(t.totalSeconds ?? 0);
+      } else if (t.startTime) {
+        const startMs = new Date(t.startTime).getTime();
+        const deltaSeconds = Math.max(0, Math.floor((nowMs - startMs) / 1000));
+        prev.tiempoTotal += deltaSeconds;
+      }
+    }
+
+    return map;
+  }
+
   async findAll(): Promise<WorkOrder[]> {
     return this.workOrdersRepository
       .createQueryBuilder('workOrder')
       .leftJoinAndSelect('workOrder.service', 'service')
       .leftJoinAndSelect('workOrder.cliente', 'cliente')
       .leftJoinAndSelect('workOrder.clienteEmpresa', 'clienteEmpresa')
+
       .leftJoinAndSelect('workOrder.technicians', 'technicians')
       .leftJoinAndSelect('technicians.technician', 'technician')
+
       .leftJoinAndSelect('workOrder.equipmentWorkOrders', 'equipmentWorkOrders')
       .leftJoinAndSelect('equipmentWorkOrders.equipment', 'equipment')
       .leftJoinAndSelect('equipment.area', 'area')
       .leftJoinAndSelect('equipment.subArea', 'subArea')
+
+      // si en la tarjeta necesitas saber si hay insumos/herramientas:
       .leftJoinAndSelect('workOrder.supplyDetails', 'supplyDetails')
       .leftJoinAndSelect('supplyDetails.supply', 'supply')
       .leftJoinAndSelect('workOrder.toolDetails', 'toolDetails')
       .leftJoinAndSelect('toolDetails.tool', 'tool')
+
       .leftJoinAndSelect('workOrder.maintenanceType', 'maintenanceType')
-      .leftJoinAndSelect('workOrder.timers', 'timers')
-      .leftJoinAndSelect('workOrder.pauses', 'pauses')
-      .leftJoinAndSelect('pauses.user', 'pauseUser')
-      .leftJoinAndSelect('clienteEmpresa.usuariosContacto', 'usuariosContacto')
-      .leftJoinAndSelect('workOrder.acInspections', 'acInspections')
-      .leftJoinAndSelect('workOrder.images', 'images')
+
+      // QUITADOS por performance (solo deberían ir en findOne):
+      // timers, pauses, pauseUser, acInspections, images, usuariosContacto
+
       .orderBy(
         `CASE
-          WHEN workOrder.estado = :unassigned THEN 1
-          WHEN workOrder.estado = :assigned THEN 2
-          WHEN workOrder.estado = :inProgress THEN 3
-          WHEN workOrder.estado = :paused THEN 4
-          WHEN workOrder.estado = :completed THEN 5
-          WHEN workOrder.estado = :canceled THEN 6
-          ELSE 7
-        END`,
+        WHEN workOrder.estado = :unassigned THEN 1
+        WHEN workOrder.estado = :assigned THEN 2
+        WHEN workOrder.estado = :inProgress THEN 3
+        WHEN workOrder.estado = :paused THEN 4
+        WHEN workOrder.estado = :completed THEN 5
+        WHEN workOrder.estado = :canceled THEN 6
+        ELSE 7
+      END`,
         'ASC',
       )
       .addOrderBy('workOrder.fechaSolicitud', 'DESC')
@@ -1681,7 +1743,7 @@ export class WorkOrdersService {
 
     const leaderTechnicianId =
       dto.leaderTechnicianId &&
-      emergencyTechIds.includes(dto.leaderTechnicianId)
+        emergencyTechIds.includes(dto.leaderTechnicianId)
         ? dto.leaderTechnicianId
         : emergencyTechIds[0];
 
@@ -2142,33 +2204,33 @@ export class WorkOrdersService {
       .leftJoinAndSelect('workOrder.service', 'service')
       .leftJoinAndSelect('workOrder.cliente', 'cliente')
       .leftJoinAndSelect('workOrder.clienteEmpresa', 'clienteEmpresa')
+
       .innerJoinAndSelect('workOrder.technicians', 'technicians')
       .innerJoinAndSelect('technicians.technician', 'technician')
+
       .leftJoinAndSelect('workOrder.equipmentWorkOrders', 'equipmentWorkOrders')
       .leftJoinAndSelect('equipmentWorkOrders.equipment', 'equipment')
       .leftJoinAndSelect('equipment.area', 'area')
       .leftJoinAndSelect('equipment.subArea', 'subArea')
+
       .leftJoinAndSelect('workOrder.supplyDetails', 'supplyDetails')
       .leftJoinAndSelect('supplyDetails.supply', 'supply')
       .leftJoinAndSelect('workOrder.toolDetails', 'toolDetails')
       .leftJoinAndSelect('toolDetails.tool', 'tool')
+
       .leftJoinAndSelect('workOrder.maintenanceType', 'maintenanceType')
-      .leftJoinAndSelect('workOrder.timers', 'timers')
-      .leftJoinAndSelect('workOrder.pauses', 'pauses')
-      .leftJoinAndSelect('pauses.user', 'pauseUser')
-      .leftJoinAndSelect('workOrder.acInspections', 'acInspections')
-      .leftJoinAndSelect('workOrder.images', 'images')
+
       .where('technicians.tecnicoId = :tecnicoId', { tecnicoId })
       .orderBy(
         `CASE
-          WHEN workOrder.estado = :unassigned THEN 1
-          WHEN workOrder.estado = :assigned THEN 2
-          WHEN workOrder.estado = :inProgress THEN 3
-          WHEN workOrder.estado = :paused THEN 4
-          WHEN workOrder.estado = :completed THEN 5
-          WHEN workOrder.estado = :canceled THEN 6
-          ELSE 7
-        END`,
+        WHEN workOrder.estado = :unassigned THEN 1
+        WHEN workOrder.estado = :assigned THEN 2
+        WHEN workOrder.estado = :inProgress THEN 3
+        WHEN workOrder.estado = :paused THEN 4
+        WHEN workOrder.estado = :completed THEN 5
+        WHEN workOrder.estado = :canceled THEN 6
+        ELSE 7
+      END`,
         'ASC',
       )
       .addOrderBy('workOrder.fechaSolicitud', 'DESC')
@@ -2299,34 +2361,33 @@ export class WorkOrdersService {
       .leftJoinAndSelect('workOrder.service', 'service')
       .leftJoinAndSelect('workOrder.cliente', 'cliente')
       .leftJoinAndSelect('workOrder.clienteEmpresa', 'clienteEmpresa')
+
       .leftJoinAndSelect('workOrder.technicians', 'technicians')
       .leftJoinAndSelect('technicians.technician', 'technician')
+
       .leftJoinAndSelect('workOrder.equipmentWorkOrders', 'equipmentWorkOrders')
       .leftJoinAndSelect('equipmentWorkOrders.equipment', 'equipment')
       .leftJoinAndSelect('equipment.area', 'area')
       .leftJoinAndSelect('equipment.subArea', 'subArea')
+
       .leftJoinAndSelect('workOrder.supplyDetails', 'supplyDetails')
       .leftJoinAndSelect('supplyDetails.supply', 'supply')
       .leftJoinAndSelect('workOrder.toolDetails', 'toolDetails')
       .leftJoinAndSelect('toolDetails.tool', 'tool')
+
       .leftJoinAndSelect('workOrder.maintenanceType', 'maintenanceType')
-      .leftJoinAndSelect('workOrder.timers', 'timers')
-      .leftJoinAndSelect('workOrder.pauses', 'pauses')
-      .leftJoinAndSelect('pauses.user', 'pauseUser')
-      .leftJoinAndSelect('workOrder.acInspections', 'acInspections')
-      .leftJoinAndSelect('workOrder.images', 'images')
-      .leftJoinAndSelect('clienteEmpresa.usuariosContacto', 'usuariosContacto')
+
       .where('workOrder.clienteEmpresaId IN (:...empresaIds)', { empresaIds })
       .orderBy(
         `CASE
-          WHEN workOrder.estado = :unassigned THEN 1
-          WHEN workOrder.estado = :assigned THEN 2
-          WHEN workOrder.estado = :inProgress THEN 3
-          WHEN workOrder.estado = :paused THEN 4
-          WHEN workOrder.estado = :completed THEN 5
-          WHEN workOrder.estado = :canceled THEN 6
-          ELSE 7
-        END`,
+        WHEN workOrder.estado = :unassigned THEN 1
+        WHEN workOrder.estado = :assigned THEN 2
+        WHEN workOrder.estado = :inProgress THEN 3
+        WHEN workOrder.estado = :paused THEN 4
+        WHEN workOrder.estado = :completed THEN 5
+        WHEN workOrder.estado = :canceled THEN 6
+        ELSE 7
+      END`,
         'ASC',
       )
       .addOrderBy('workOrder.fechaSolicitud', 'DESC')
@@ -2407,7 +2468,7 @@ export class WorkOrdersService {
       (total, detail) =>
         total +
         Number(detail.cantidadUsada) *
-          Number(detail.costoUnitarioAlMomento || 0),
+        Number(detail.costoUnitarioAlMomento || 0),
       0,
     );
 

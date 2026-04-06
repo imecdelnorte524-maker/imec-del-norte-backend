@@ -1,7 +1,8 @@
 //templates/report/height-work-report-html.helper.ts
 
+import { SignatureType } from "src/shared";
 import { Form } from "../../src/sg-sst/entities/form.entity";
-import { Signature, SignatureType } from "../../src/sg-sst/entities/signature.entity";
+import { Signature } from "../../src/sg-sst/entities/signature.entity";
 
 export interface HeightWorkReportHtmlOptions {
   headerImageUrl?: string;
@@ -31,11 +32,11 @@ function buildProtectionElementsHtml(protectionElements: any): string {
     return `
       <div class="tag-list">
         ${protectionElements
-          .map(
-            (item) =>
-              `<span class="tag">${String(item).trim() || 'Sin descripción'}</span>`,
-          )
-          .join('')}
+        .map(
+          (item) =>
+            `<span class="tag">${String(item).trim() || 'Sin descripción'}</span>`,
+        )
+        .join('')}
       </div>
     `;
   }
